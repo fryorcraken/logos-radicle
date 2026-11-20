@@ -154,7 +154,7 @@ expected.
 #### Scenario: An external address carrying a node id is refused
 
 - **WHEN** `setNodeConfig` sets `externalAddresses` to
-  `["z6MkrLMM@seed.example.test:8776"]`
+  `["z6MkrLMMsiPWUcNPHcRajuMi9mDfYckSoJyPwwnknocNYPm7@seed.example.test:8776"]`
 - **THEN** the reply MUST be `{"error":"..."}`
 - **AND** a subsequent `getNodeConfig` reply's `externalAddresses` MUST be
   unchanged
@@ -162,7 +162,7 @@ expected.
 #### Scenario: Each spelling is accepted in its own field
 
 - **WHEN** `setNodeConfig` sets `connect` to
-  `["z6MkrLMM@seed.example.test:8776"]` and `externalAddresses` to
+  `["z6MkrLMMsiPWUcNPHcRajuMi9mDfYckSoJyPwwnknocNYPm7@seed.example.test:8776"]` and `externalAddresses` to
   `["node.example.test:8776"]`
 - **THEN** the reply MUST NOT be an error
 - **AND** a subsequent `getNodeConfig` reply MUST report both values as
@@ -381,11 +381,13 @@ succeed, because reading the user's configuration is what lets a view show it.
 #### Scenario: Local is readable but not writable
 
 - **WHEN** the mode is `local` against a home whose `config.json` sets `alias`
-  to `local-node-alias` and `connect` to `["z6MkrLMM@seed.example.test:8776"]`
+  to `local-node-alias` and `connect` to
+  `["z6MkrLMMsiPWUcNPHcRajuMi9mDfYckSoJyPwwnknocNYPm7@seed.example.test:8776"]`
 - **AND** the home `embedded` would resolve holds no `config.json`
 - **THEN** `getNodeConfig` MUST NOT return an error
 - **AND** the reply's `alias` MUST be `local-node-alias`
-- **AND** the reply's `connect` MUST be `["z6MkrLMM@seed.example.test:8776"]`
+- **AND** the reply's `connect` MUST be
+  `["z6MkrLMMsiPWUcNPHcRajuMi9mDfYckSoJyPwwnknocNYPm7@seed.example.test:8776"]`
 - **AND WHEN** `setNodeConfig` is called with `alias` set to `renamed`
 - **THEN** the reply MUST be `{"error":"..."}`
 - **AND** the message MUST contain `local`
