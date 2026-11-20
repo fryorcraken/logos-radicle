@@ -380,11 +380,19 @@ succeed, because reading the user's configuration is what lets a view show it.
 
 #### Scenario: Local is readable but not writable
 
-- **WHEN** the mode is `local` against a home holding a node configuration
-- **THEN** `getNodeConfig` MUST report that home's configuration rather than an
-  error
-- **AND** `setNodeConfig` MUST return `{"error":"..."}` naming the mode
-- **AND** that home's `config.json` MUST be unchanged afterwards
+- **WHEN** the mode is `local` against a home whose `config.json` sets `alias`
+  to `local-node-alias` and `connect` to `["z6MkrLMM@seed.example.test:8776"]`
+- **AND** the home `embedded` would resolve holds no `config.json`
+- **THEN** `getNodeConfig` MUST NOT return an error
+- **AND** the reply's `alias` MUST be `local-node-alias`
+- **AND** the reply's `connect` MUST be `["z6MkrLMM@seed.example.test:8776"]`
+- **AND WHEN** `setNodeConfig` is called with `alias` set to `renamed`
+- **THEN** the reply MUST be `{"error":"..."}`
+- **AND** the message MUST contain `local`
+- **AND** that home's `config.json` MUST be byte-for-byte what it was before the
+  call
+- **AND** a subsequent `getNodeConfig` reply's `alias` MUST still be
+  `local-node-alias`
 
 #### Scenario: Embedded reads and writes its own home
 

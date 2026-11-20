@@ -154,10 +154,21 @@ mode, and MUST write nothing.
 
 #### Scenario: Local is readable but not writable
 
-- **WHEN** the mode is `local` against a home holding a node
-- **THEN** `listSeeded` MUST report that node's policies rather than an error
-- **AND** `seedRepo` MUST return `{"error":"..."}` naming the mode
-- **AND** that home's policies MUST be unchanged afterwards
+- **WHEN** the mode is `local` against a home whose policy store seeds
+  `rad:z3gqcJUoA1n9HaHKufZs5FCSGazv5` with scope `followed`, and seeds nothing
+  else
+- **AND** the home `embedded` would resolve holds no policy store
+- **THEN** `listSeeded` MUST NOT return an error
+- **AND** its `items` MUST be exactly one entry, with `rid`
+  `rad:z3gqcJUoA1n9HaHKufZs5FCSGazv5` and `scope` `followed`
+- **AND WHEN** `seedRepo` is called for `rad:z2rHiZ6dDxcRSeYB1nT3FMc4qFcDR` with
+  scope `all`, and `unseedRepo` is called for
+  `rad:z3gqcJUoA1n9HaHKufZs5FCSGazv5`
+- **THEN** each reply MUST be `{"error":"..."}`
+- **AND** each message MUST contain `local`
+- **AND** a subsequent `listSeeded` reply's `items` MUST still be exactly that
+  one entry, with `rid` `rad:z3gqcJUoA1n9HaHKufZs5FCSGazv5` and `scope`
+  `followed`
 
 #### Scenario: Embedded seeds its own node
 

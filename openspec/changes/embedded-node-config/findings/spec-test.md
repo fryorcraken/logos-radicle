@@ -85,7 +85,7 @@ showed a clean tree after each and after the run overall.
       one failure being this new test. So the implementation you describe no
       longer passes every test in the suite.
 
-- [ ] **`spec-writer`** — `test_radicle_impl.cpp:1537` (`the_node_configuration_is_readable_in_local_mode_but_not_writable`) and its seeding twin at 1573 — the read-half asserts only the absence of a phrase, not that the read reached real content
+- [x] **`spec-writer`** — `test_radicle_impl.cpp:1537` (`the_node_configuration_is_readable_in_local_mode_but_not_writable`) and its seeding twin at 1573 — the read-half asserts only the absence of a phrase, not that the read reached real content
       **Scenario:** `node-config/spec.md`'s "Local is readable but not writable" scenario requires `getNodeConfig` to "report that home's configuration rather than an error" in `local` mode. The C++ test's scratch home has no `config.json` (`makeStorage()` only creates `storage/`), so the backend legitimately returns its own error, and the test's own comment says so. Its assertion is `error.find("you run yourself") == npos` — true whether the mode gate correctly passed the call to a backend that legitimately has nothing to read, **or** whether the gate is broken and returns some other generic refusal that also happens not to contain that phrase. No test anywhere (C++ or Rust) exercises `RadicleImpl::getNodeConfig()` in `local` mode against a home that actually holds a `config.json`, so the positive half of the read/write asymmetry — the one thing this file exists to test, per its own header comment at line 1531 ("the READ/WRITE asymmetry in `local`") — is unproven for the case that matters (a real config present). The seeding twin (`seeding_is_listable_in_local_mode_but_not_changeable`) has the identical shape for `listSeeded`.
       **Measured:** read-only (dev-writer independently flagged this as its lowest-confidence area; reading confirms the shape — no positive assertion exists to contradict). This is reported to `spec-writer` rather than `tester` because the fix most likely requires deciding what fixture setup (a config.json in place before the mode is set to `local`) the scenario should specify, which the current spec text does not make concrete enough to drive a stronger test from.
 
@@ -115,6 +115,43 @@ showed a clean tree after each and after the run overall.
       **What `spec-writer` needs to decide:** what `config.json` the `local`
       read-half scenario stands up, and what `getNodeConfig` must then report —
       after which this is a small test change.
+
+      **Fixed in the spec by `spec-writer`; the test change is `tester`'s.** Both
+      "Local is readable but not writable" scenarios now name their fixture and
+      the value that must come back, so a test can be written straight from
+      them:
+
+      - `node-config/spec.md`: the local home's `config.json` sets `alias` to
+        `local-node-alias` and `connect` to
+        `["z6MkrLMM@seed.example.test:8776"]`, and the home `embedded` would
+        resolve holds no `config.json`. `getNodeConfig` must not error and must
+        return both values. A refused `setNodeConfig` (`alias` → `renamed`) must
+        leave the file byte-for-byte unchanged, and a later read must still
+        report `local-node-alias`.
+      - `node-seeding/spec.md`: the local home's policy store seeds
+        `rad:z3gqcJUoA1n9HaHKufZs5FCSGazv5` with scope `followed` and nothing
+        else, and the home `embedded` would resolve holds no policy store.
+        `listSeeded` must return exactly that one entry. A refused `seedRepo`
+        for `rad:z2rHiZ6dDxcRSeYB1nT3FMc4qFcDR` and a refused `unseedRepo` for
+        the seeded RID must leave `listSeeded` reporting the same single entry.
+        The old scenario only named `seedRepo`, though the requirement already
+        required `unseedRepo` to refuse too. The scenario now names both.
+
+      **Why these discriminate.** A refusal fails the "MUST NOT return an
+      error" line. A constant answer cannot produce a value the fixture chose.
+      A gate that sent `local` to the wrong home fails as well: the embedded
+      home is specified empty, so reading it is an error rather than the
+      expected value. A fallback to defaults fails too: the default `connect`
+      is empty and the default policy set is empty, and neither matches the
+      fixture. The after-refusal reads turn "unchanged" into
+      something observable, rather than leaving it as an absence.
+
+      **The fixture has to be laid down outside the mode gate**, because in
+      `local` the gate refuses the very writes that would create it. That is
+      for the tester to arrange. One way is to write `config.json` directly, as
+      the test file already does for the settings file, and to seed the policy
+      through the backend against the home path before the mode is set. The
+      spec names the state the home must be in, not how it gets there.
 
 ## Areas confirmed clean
 
