@@ -983,6 +983,59 @@ fn a_configuration_change_while_a_node_runs_asks_for_a_restart_and_a_restart_cle
 }
 
 #[test]
+fn a_seeding_change_while_a_node_runs_is_visible_at_once_and_asks_for_no_restart() {
+    // node-seeding: "A policy written while a node runs is visible at once".
+    // The node holds its policy database open while it runs, so this is the case
+    // where "visible without a restart" could genuinely fail — a second handle
+    // that could not see, or could not write, beside the node's own.
+    //
+    // The control is the sibling test above: the same running node, with a
+    // *configuration* change, DOES ask for a restart. So `restartRequired: false`
+    // here is a statement about seeding rather than a constant the field happens
+    // to hold.
+    const RID: &str = "rad:z3gqcJUoA1n9HaHKufZs5FCSGazv5";
+
+    with_socket("seed-while-running", |socket| {
+        let fx = init_profile("node-seed-while-running");
+        let home = fx.home();
+
+        let started = parse(&node::start(&home, socket, ""));
+        assert_eq!(started["started"], serde_json::json!(true), "{started}");
+
+        let before = parse(&radicle_local_ffi::seeding::list(&home));
+        assert_eq!(
+            before["items"],
+            serde_json::json!([]),
+            "the control: nothing is seeded yet, so the entry below is the write's: {before}"
+        );
+
+        let seeded = parse(&radicle_local_ffi::seeding::seed(&home, RID, "followed"));
+        assert!(seeded.get("error").is_none(), "{seeded}");
+
+        // Visible at once, with the node still running and never restarted.
+        assert_eq!(
+            parse(&node::status())["running"],
+            serde_json::json!(true),
+            "the node must still be the one that was started"
+        );
+        let after = parse(&radicle_local_ffi::seeding::list(&home));
+        assert_eq!(
+            after["items"],
+            serde_json::json!([{ "rid": RID, "scope": "followed" }]),
+            "{after}"
+        );
+
+        // And it did not ask for a restart: seeding is not configuration.
+        assert_eq!(
+            parse(&radicle_local_ffi::nodeconfig::get(&home))["restartRequired"],
+            serde_json::json!(false)
+        );
+
+        stop_and_forget();
+    });
+}
+
+#[test]
 fn a_home_that_changes_its_signing_key_is_refused() {
     // The fingerprint guard, which `radicle-node`'s own `main.rs` performs and
     // its library does not — so an embedder that skipped it would silently drop
