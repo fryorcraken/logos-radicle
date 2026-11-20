@@ -165,9 +165,12 @@ The per-key rules are:
 
 - `mode` MUST be one of `explore`, `local` or `embedded`. The refusal message
   MUST name all three.
-- `gitPath` MUST, when non-empty, resolve to an executable that answers as
-  git. An empty value is always accepted, because it means "find git on
-  `PATH`". The refusal message MUST name the value that was tried.
+- `gitPath` MUST, when non-empty, be an absolute path to an executable that
+  answers as git. An empty value is always accepted, because it means "find git
+  on `PATH`". The refusal message MUST name the value that was tried. The
+  requirement "A configured git path is proved to be git, and never falls back"
+  below owns the full rule, including the cases a positive test alone cannot
+  distinguish.
 - `radSocket` MUST, when non-empty, be short enough for a Unix domain socket
   path — at most 107 bytes, one less than the 108-byte `sun_path` capacity
   that holds its terminator. The refusal message MUST name the limit. The
@@ -404,3 +407,97 @@ subsequent successful write MUST clear a previously displayed refusal.
 - **WHEN** the panel is displaying a refusal message
 - **AND** a subsequent write is accepted
 - **THEN** the panel MUST no longer report an error
+
+### Requirement: A configured git path is proved to be git, and never falls back
+
+A non-empty `gitPath` MUST be accepted only when the path it names both runs
+and identifies itself as git. Each of the following MUST be refused, and each
+refusal MUST name the value that was tried and say what was wrong with it:
+
+- A path that does not exist.
+- An executable that runs and exits zero but whose `--version` output does not
+  identify it as git.
+- An executable whose `--version` exits non-zero.
+- A path that is not absolute.
+
+A configured path that fails any of these MUST NOT fall back to a git found on
+`PATH`. A silent fallback makes a typo in the setting look like a Radicle
+defect rather than a wrong path, and makes the reported path differ from the
+binary that would actually run.
+
+These four cases are required together rather than as one: no positive check
+distinguishes them, since a test configuring a working git and observing success
+passes equally against a resolver that ignores the setting. Only a refusal
+naming the configured value shows the setting was consulted.
+
+#### Scenario: A real-but-not-git executable is refused
+
+- **WHEN** `gitPath` is set to an absolute path to an executable that exits
+  zero and prints something other than a git version
+- **THEN** the reply MUST be `{"error":"..."}`
+- **AND** the message MUST say that the binary does not look like git
+- **AND** a subsequent read of `gitPath` MUST give the value stored before the
+  call
+
+#### Scenario: An executable that exits non-zero is refused
+
+- **WHEN** `gitPath` is set to an absolute path to an executable that exits
+  non-zero when asked for its version
+- **THEN** the reply MUST be `{"error":"..."}`
+- **AND** the message MUST name that path
+
+#### Scenario: A relative path is refused even when it names a working git
+
+- **WHEN** `gitPath` is set to a relative path
+- **THEN** the reply MUST be `{"error":"..."}`
+- **AND** the message MUST say the path must be absolute
+- **AND** the refusal MUST hold for a relative path that names a real, working
+  git, so that refusing relative paths is distinguishable from refusing
+  everything
+
+#### Scenario: The same binary is accepted by its absolute path
+
+- **WHEN** `gitPath` is set to a relative path naming a real, working git, and
+  then to that same binary's absolute path
+- **THEN** the first call MUST be refused
+- **AND** the second MUST NOT be an error
+- **AND** the reported resolved path MUST be that absolute path
+
+#### Scenario: A refused configured path does not silently use PATH
+
+- **WHEN** a working git exists on `PATH`
+- **AND** `gitPath` is set to an absolute path that does not exist
+- **THEN** the reply MUST be `{"error":"..."}`
+- **AND** the message MUST name the path that was tried rather than the one on
+  `PATH`
+- **AND** `getCapabilities().gitFound` MUST NOT be reported as true on the
+  strength of the `PATH` git for that configured value
+
+### Requirement: The reported git path distinguishes configured from detected
+
+`getCapabilities()` MUST report `gitConfigured` as true exactly when a non-empty
+`gitPath` setting is in force, and false when git was found on `PATH`.
+
+It MUST report `gitConfigured` as true for a configured path that was refused,
+because the user did set something: reporting "found automatically" there would
+describe a state the module is not in.
+
+`gitPath` MUST report the resolved absolute path when git was found, and the
+empty string when it was not. `gitProblem` MUST be empty exactly when `gitFound`
+is true.
+
+#### Scenario: A detected git is not reported as configured
+
+- **WHEN** the `gitPath` setting is empty and a working git is found on `PATH`
+- **THEN** `getCapabilities().gitFound` MUST be true
+- **AND** `gitConfigured` MUST be false
+- **AND** `gitPath` MUST be a non-empty absolute path
+- **AND** `gitProblem` MUST be empty
+
+#### Scenario: A refused configured path is still reported as configured
+
+- **WHEN** a non-empty `gitPath` is in force that does not resolve to a usable
+  git
+- **THEN** `getCapabilities().gitFound` MUST be false
+- **AND** `gitConfigured` MUST be true
+- **AND** `gitProblem` MUST be non-empty

@@ -11,9 +11,17 @@
 - [x] review: architecture — `code-reviewer`
 - [x] review: spec-test — `spec-test-reviewer`
 - [x] review: design — `design-reviewer`
-- [ ] findings all ticked, `findings/` deleted — `closer`
-- [ ] `openspec validate --strict`, then `archive` — `closer`
-- [ ] CI green, title/body checked, PR merged — `closer`
+- [x] findings all ticked, `findings/` deleted — `closer`
+- [x] `openspec validate --strict`, then `archive` — `closer`
+- [x] CI green, title/body checked, PR merged — `closer`
+
+Note on the strict row: with CLI 1.14.1, `openspec validate embedded-node-config
+--strict` exits 1, and every warning is "Requirement text is very long (>500
+characters)". The same check fails on every live spec on `main`, so the user
+accepted this for this piece: the row is satisfied by a passing non-strict
+validate plus a strict run whose only warnings are that length warning (both
+checked at archive time). Splitting the long requirements is deferred to a
+separate change across all specs.
 
 ## Implementation
 
