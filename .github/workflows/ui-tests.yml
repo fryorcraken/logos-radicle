@@ -444,15 +444,33 @@ jobs:
       # `setup`'s profile seeding. The rev comes from BASECAMP_REV, which the
       # resolve step read from `[repos.basecamp].pin` — still the one place it
       # is written.
+      #
+      # ─── Evaluate, THEN build, in two processes ────────────────────────────
+      #
+      # One `nix build <flake>#app` ran the runner out of memory on every job
+      # once the pin reached Basecamp 0.3.0. The runner (4 CPUs, 16 GB, 3 GB
+      # swap) was shut down mid-build, which GitHub reports only as "The
+      # operation was canceled" or exit 143, with nothing from nix. Measured
+      # with the sampler below, run 44902411911:
+      #
+      #   evaluation alone   mem-avail 14.9 GB -> 4.4 GB   (before any build)
+      #   building           mem-avail < 1 GB, swap full, runner shut down
+      #
+      # Evaluating 0.3.0's flake costs ~10 GB, and one `nix build` holds that
+      # heap until it exits, i.e. through the whole compile. The compile is
+      # also bigger than it looks: the logos cache's signatures on most of
+      # 0.3.0's Logos libraries do not verify against the key below (nix logs
+      # "ignoring substitute … not signed by any of the keys"), so they are
+      # built from source, several C++ builds at once.
+      #
+      # `nix path-info --derivation` evaluates and exits, handing back the
+      # .drv. Building `<drv>^*` evaluates nothing, so the compile gets the
+      # whole machine. The out-link is the same `result-basecamp`.
+      #
+      # The sampler stays: a runner that dies of memory says nothing else.
       - name: Build Basecamp (dev, inspector included)
         run: |
           set -eu
-          # Resource sampler, so a runner that dies of memory or disk mid-build
-          # says so in this log. See "Runner resources after the Basecamp
-          # build" below for why it is here.
-          echo "nproc=$(nproc)"
-          free -m
-          df -h /
           ( while sleep 20; do
               printf '[resources] %s mem-avail=%sMiB swap-used=%sMiB disk-avail=%s\n' \
                 "$(date -u +%T)" \
@@ -462,22 +480,13 @@ jobs:
             done ) &
           sampler=$!
           trap 'kill "$sampler" 2>/dev/null || true' EXIT
-          nix build "github:logos-co/logos-basecamp/$BASECAMP_REV#app" \
-            -o result-basecamp --accept-flake-config
+          drv=$(nix path-info --derivation --accept-flake-config \
+            "github:logos-co/logos-basecamp/$BASECAMP_REV#app")
+          echo "evaluated: $drv"
+          nix build "$drv^*" -o result-basecamp
           bin="$PWD/result-basecamp/bin/LogosBasecamp"
           test -x "$bin"
           echo "BASECAMP_BIN=$bin" >> "$GITHUB_ENV"
-
-      # `always()`, so it runs when the build above is cancelled too. That is
-      # the case it exists for: a cancelled step prints nothing about why, and
-      # the kernel log is the only record of an OOM kill.
-      - name: Runner resources after the Basecamp build
-        if: always()
-        run: |
-          free -m
-          df -h /
-          sudo dmesg | grep -i -E 'out of memory|oom-kill|killed process' \
-            || echo "no OOM kill in the kernel log"
 
       # The inspector must actually be in there. Without this the failure is
       # sitometres refusing the binary several steps later with "no Basecamp

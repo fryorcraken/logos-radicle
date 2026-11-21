@@ -316,6 +316,66 @@ the pinned release instead.
 bbe5da0e038e / lgpm d3af2972f51d — scaffold defaults`, which is Decision 2's
 check from the other side.
 
+### 8. The e2e Basecamp is evaluated and built in two processes
+
+On this change's first two `ui-tests.yml` runs (44899483064, 44901668963)
+every job died inside "Build Basecamp", 3 to 18 minutes in. The annotations said
+only "The operation was canceled", nix printed no error, and one runner hung
+in its post-checkout step afterwards. It was not the job timeout and not
+`cancel-in-progress`. A memory and disk sampler added to the step (run
+44902411911) showed the cause on a 4-CPU, 16 GB runner with 3 GB of swap:
+
+| phase | `MemAvailable` | swap used | disk free |
+|---|---|---|---|
+| step start | 14.9 GB | 0 | 87 GB |
+| evaluation done, nothing built yet | 4.4 GB | 0 | 86 GB |
+| ~1 min into building | 0.6 to 0.9 GB | 1.3 to 2.2 GB | 82 GB |
+| end | runner logs "received a shutdown signal", exit 143 | | |
+
+Two things are new with Basecamp 0.3.0, and together they exceed the machine:
+
+- **Evaluating its flake costs about 10 GB**, and a single `nix build
+  <flake>#app` keeps that heap for as long as it runs, compile included.
+  Scaffold's own dogfooding notes measure the evaluation peak at 4.8 GB or
+  more, so this is the flake, not this repo.
+- **Most of the Logos libraries are compiled here, not fetched.** The logos
+  public cache has them, but its signatures do not verify against the key every
+  logos flake publishes (`public:l4Hr…`). Nix logged "ignoring substitute … not
+  signed by any of the keys in 'trusted-public-keys'" 117 times, against 4 on
+  `main`'s last 0.2.3 run. `nix store verify --store
+  https://cache.nix.logos.co/public --trusted-public-keys public:l4Hr…` calls
+  `logos-cpp-sdk` "untrusted", while the same probe against cache.nixos.org's
+  key verifies a nixpkgs path, so the probe can tell the two apart.
+
+The fix is `nix path-info --derivation <flake>#app`, which evaluates and exits,
+followed by `nix build '<drv>^*'`, which evaluates nothing. The compile gets
+back the 10 GB. The `.drv` is the same one the single command built
+(`7jv1c04m…-logos-basecamp-0.3.0.drv`), and its one output is
+`yf8mbqrx…-logos-basecamp-0.3.0`, which is the path scaffold's notes give for
+basecamp's own CI build. Checked locally. **Removing it** puts every
+`ui-tests.yml` job back to a runner shut down mid-build. No other gate builds
+this Basecamp, so nothing else would go red.
+
+The sampler stays in the step. A runner that dies of memory leaves nothing
+else in the log, and the 20-second lines cost nothing on a green run.
+
+Rejected:
+
+- **`require-sigs = false`, or adding `cache.nix.logos.co/ci` the way
+  scaffold's notes do for a small host.** That would bring back the fetched
+  libraries and most of the build time. It is also a security boundary: it
+  turns off signature checking for every substituter, cache.nixos.org
+  included, in a job that then runs the result against a live seed. A key
+  mismatch is upstream's to fix, and the gain is speed, not correctness.
+- **Lowering `max-jobs` or `cores`.** That shrinks the compile's share but
+  leaves the 10 GB evaluator heap in place for the whole build, and it slows
+  every cold run to buy back memory the split gets for free.
+- **More swap.** A swapfile on the 87 GB disk would most likely avoid the
+  shutdown by paging the idle evaluator heap out. That is the same 10 GB, kept
+  and paged, where the split releases it. Not tried.
+- **Freeing disk.** The usual nix-on-Actions fix, but disk never dropped
+  below 82 GB free, so it does nothing here.
+
 ## Risks / Trade-offs
 
 - **[The first `ui-tests.yml` run after this change is cold]** The store
@@ -323,6 +383,13 @@ check from the other side.
   cache (`nix path-info --store https://cache.nix.logos.co/public` on the
   built output reports "path is not valid"). → Expected and one-off; the
   header of `ui-tests.yml` records the re-check.
+- **[A cold run compiles the Logos libraries, because the logos cache's
+  signatures do not verify]** Decision 8. It costs time on every cold run and
+  in every one of the six jobs at once, since they start together and none can
+  restore a store another has not yet saved. → Accepted for now. Each cold run
+  is once per Basecamp pin and flake change. The mismatch is worth reporting
+  to the logos cache's owners (not filed from here), and when it is fixed the
+  "ignoring substitute" lines disappear from the build log.
 - **[`source` and `sync` depended on which repository the live seed lists
   first]** Both failed the same step on the new stack and on the old one, run
   side by side on this machine against the same seed, so the toolchain was not
