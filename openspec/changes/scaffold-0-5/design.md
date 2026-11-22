@@ -352,7 +352,10 @@ followed by `nix build '<drv>^*'`, which evaluates nothing. The compile gets
 back the 10 GB. The `.drv` is the same one the single command built
 (`7jv1c04m…-logos-basecamp-0.3.0.drv`), and its one output is
 `yf8mbqrx…-logos-basecamp-0.3.0`, which is the path scaffold's notes give for
-basecamp's own CI build. Checked locally. **Removing it** puts every
+basecamp's own CI build. Checked locally. On the next run (44963625950) all six
+jobs passed. The build step's lowest sample once compiling was 8.2 GB available
+with no swap used. The 4.3 GB low now falls during evaluation, with nothing
+compiling beside it. **Removing it** puts every
 `ui-tests.yml` job back to a runner shut down mid-build. No other gate builds
 this Basecamp, so nothing else would go red.
 

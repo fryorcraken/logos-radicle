@@ -104,5 +104,9 @@
 
 ## 5. Hand over
 
-- [ ] 5.1 Push to `refs/heads/piece/scaffold-0-5` and open the PR; verify CI
-      starts both workflows on it.
+- [x] 5.1 Push to `refs/heads/piece/scaffold-0-5` and open the PR; verify CI
+      starts both workflows on it. PR #50; both workflows run on it.
+- [x] 5.2 Get `ui-tests.yml` past the Basecamp build. Every job's runner ran
+      out of memory and was shut down mid-build. Evaluating and building in
+      two processes fixed it (design Decision 8). Run 44963625950: all six
+      specs green, including `source` 21/21 and `sync` 19/19.

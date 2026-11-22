@@ -22,6 +22,10 @@ name: UI tests
 # outright — the warm run downloaded nothing at all. 3m14s is comfortably
 # PR-affordable, and the fast layers in ci.yml already cost a couple of minutes.
 #
+# Those numbers are Basecamp 0.2.3's. On 0.3.0 a cold job took 24–39 minutes
+# (run 44963625950), the build step alone about 24, because most of the Logos
+# libraries are compiled rather than fetched. See "Evaluate, THEN build" below.
+#
 # Two caveats before anyone moves this to `pull_request`. Cache scoping: a PR
 # branch can read main's cache, but a PR from a FORK gets its own isolated
 # scope and would always run cold, i.e. ~9m. And the first run after any
