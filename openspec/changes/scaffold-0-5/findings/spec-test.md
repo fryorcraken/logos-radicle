@@ -53,13 +53,17 @@ the three QML/Rust suites do not execute these files. Every "cannot fail" or
       `entryNames` (the first non-directory entry) and drop the dependence.
       **Severity:** medium.
 
-- [ ] **`dev-writer`** — `docs/e2e.md:44-46` — now false: it says "no spec here
+- [x] **`dev-writer`** — `docs/e2e.md:44-46` — now false: it says "no spec here
       has yet relied on a `calls:` assertion"
       **Scenario:** `sync.yaml:123-125` (`expect: calls:
       ["radicle.remoteListBranches"]`, added in `bc24ded`) is exactly such an
       assertion. CLAUDE.md's rule is to prune a claim the same change
       falsifies, and task 4.3 edited this very paragraph.
       **Severity:** low, but it is a stale claim a later reader will trust.
+      **Fixed** in the commit that ticks this box: the sentence now names `sync.yaml`'s staleness
+      step as the first spec to assert `calls:`, and says its power to fail on its own has not been
+      shown. When the tester answers the `calls:` box below, that sentence is the one to update with
+      the result.
 
 - [ ] **`tester`** — `radicle-ui/tests/ui/sync.yaml:123-125` — the first
       `calls:` assertion in the repo has not been shown able to fail

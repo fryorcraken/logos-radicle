@@ -373,26 +373,45 @@ can see it.
 `lgs` reads `[basecamp.env]` and `[basecamp.profiles.<name>]` from
 `scaffold.toml` and exports them to the Basecamp process itself. That is
 already where `QT_LOGGING_RULES` and `QT_FORCE_STDERR_LOGGING` live — which is
-why QML import failures are visible at all — and where the absolute
-`WAYLAND_DISPLAY` lives that lets a profile's private runtime dir still reach
-the compositor. If you need a variable set for a run, add it there; then every
-future launch has it too, and the reason can be written down beside it.
-
-**There is no `runtime_dir` on the profiles, on purpose.** Scaffold v0.5.0's
-default runtime dir is short, private and per profile, which is everything the
-old `/run/user/1000` pin was for, without sharing one directory between `alice`
-and `bob`. Do not add one back to fix a launch that will not open a window:
-the cause is the Wayland socket, and the comment above `[basecamp.env]` in
-`scaffold.toml` says what to change. That includes deleting `WAYLAND_DISPLAY`
-on an X11 session.
+why QML import failures are visible at all. If you need a variable set for a
+run, add it there; then every future launch has it too, and the reason can be
+written down beside it.
 
 The same principle covers the test scripts: `run-qml-tests.sh` and
 `check-qml-syntax.sh` take no arguments and set their own environment
 deliberately. Extend that when adding a script rather than inventing flags.
 
-**The one exception is a value that belongs to one developer, not to the
-project.** `scaffold.toml` is tracked, so a path into your own home directory
-does not go there.
+**Except a value that belongs to one developer or one session, not to the
+project.** `scaffold.toml` is tracked, so your home directory, your uid and
+your desktop session do not go there. Such a value goes in the environment of
+the shell that runs `lgs`, from your shell profile (still not a `VAR=value`
+prefix). `launch` adds its own names on top of the environment it inherits and
+clears nothing, so a name scaffold does not write reaches Basecamp unchanged
+(`launch_env` and `apply_launch_env_overrides` in v0.5.0's
+`src/commands/basecamp.rs`; observed for `DISPLAY` in a launched instance's
+`/proc/<pid>/environ`). There are two such values here: `RAD_HOME` (next
+section) and the Wayland socket (below).
+
+**There is no `runtime_dir` on the profiles, on purpose.** Scaffold v0.5.0's
+default runtime dir is short, private and per profile, which is everything the
+old `/run/user/1000` pin was for, without sharing one directory between `alice`
+and `bob`. Do not add one back to fix a launch that exits at once with "Failed
+to create wl_display". The cause is the Wayland socket: libwayland resolves the
+session's relative `WAYLAND_DISPLAY` (`wayland-0`) against `XDG_RUNTIME_DIR`,
+which `launch` points at the private dir, where there is no compositor; and
+Basecamp's launcher forces Qt onto Wayland whenever `WAYLAND_DISPLAY` is set.
+Make the value absolute in your shell profile:
+
+```sh
+case "$WAYLAND_DISPLAY" in ''|/*) ;; *) export WAYLAND_DISPLAY="$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ;; esac
+```
+
+It does nothing on an X11 session, where `WAYLAND_DISPLAY` is unset, and it
+needs no uid written down. That absolute value is the configuration measured
+working for `alice` and `bob` side by side; delivering it from the shell rather
+than from `scaffold.toml` follows from the inheritance above and has not itself
+been launched. Why it lives in your shell is Decision 5 of the `scaffold-0-5`
+design (`openspec/changes/archive/`).
 
 ### Local mode under `lgs basecamp launch`
 
@@ -403,14 +422,23 @@ profile** — the Local segment annotates itself as unavailable, exactly as it
 does under sitometres. Nothing is broken; the module is reading the home it
 was given.
 
-To browse your own node from an interactive launch, have `RAD_HOME` in the
-environment of the shell that runs `lgs` (your shell profile, not a
-`VAR=value` prefix). `launch` builds Basecamp's environment on top of its own
-and clears nothing, and `RAD_HOME` is not a name it writes, so the value
-reaches the module. It does not go in `scaffold.toml`: the value is one
-developer's path, and the file is tracked. Pointing an interactive instance at
-your real profile brings back the two-Basecamps contention `local.yaml`'s
-step 9 is sensitive to; see [`docs/e2e.md`](docs/e2e.md).
+To browse a node from an interactive launch, export `RAD_HOME` from your shell
+profile, per the exception above. **That this reaches the module is inferred,
+not yet run:** it follows from the inheritance, but no launch has been driven
+into Local mode with `RAD_HOME` exported. If Local mode still finds no profile,
+read `RAD_HOME` back from the launched Basecamp's `/proc/<pid>/environ` before
+suspecting the module.
+
+**The export also makes writes real, in every instance.** It reaches `alice`
+and `bob` alike, and Local mode is where the compose boxes write: with the key
+unlocked, `canWriteLocal` is true, and a comment or issue posted from either is
+signed with that profile's identity and stored in it. Before scaffold v0.5.0
+that was the default; now this export is the only thing that opts into it. To
+try a write, point `RAD_HOME` at a throwaway profile, seeded the way
+`write.yaml`'s is ([`docs/writes.md`](docs/writes.md)), not at your own.
+Pointing an interactive instance at your real profile also brings back the
+two-Basecamps contention `local.yaml`'s step 9 is sensitive to; see
+[`docs/e2e.md`](docs/e2e.md).
 
 ### `basecamp setup` strips the comments from `scaffold.toml`
 
@@ -420,8 +448,8 @@ the way it is, and the record of the `sun_path` and Wayland bugs that each cost
 a debugging session. Losing them once re-opened one of those bugs.
 
 **Still true on v0.5.0, measured rather than read off release notes:** a
-`setup` run there changed no value and deleted all 29 comment lines
-(`git diff --stat scaffold.toml`). The source agrees. `cmd_basecamp_setup`
+`setup` run there changed no value and deleted every comment line
+(`git diff scaffold.toml` shows it). The source agrees. `cmd_basecamp_setup`
 ends in an unconditional `save_project_config`, which v0.5.0's
 `src/project.rs` documents as "a destructive serialization", and the only
 comment-preserving writer is `init`'s.

@@ -144,11 +144,15 @@ lgs basecamp launch alice
 This builds and launches its own Basecamp from source, so it does not need the
 release download or the catalog from the previous section.
 
+On a Wayland desktop, `launch` needs an absolute `WAYLAND_DISPLAY` in your
+shell, or Basecamp exits at once with "Failed to create wl_display". CLAUDE.md,
+"Environment goes in `scaffold.toml`", has the one line to add to your shell
+profile and says why it is not in `scaffold.toml`.
+
 > **After any `lgs basecamp setup`, run `git diff scaffold.toml`.** `setup`
 > rewrites the file and drops every comment, including the block explaining the
-> launch environment (why there is no `runtime_dir`, and why `WAYLAND_DISPLAY`
-> is set). Losing that block once re-opened a bug that made every module
-> segfault. Restore what it removed.
+> launch environment (why there is no `runtime_dir`). Losing that block once
+> re-opened a bug that made every module segfault. Restore what it removed.
 
 Basecamp does not hot-reload plugins; after a rebuild, kill it, remove the
 installed modules, then reinstall and relaunch.

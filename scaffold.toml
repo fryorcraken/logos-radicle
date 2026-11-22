@@ -47,7 +47,7 @@ risc0_dev_mode = true
 [circuits]
 version = "0.4.1"
 
-# Why there is no `runtime_dir` on the profiles, and why WAYLAND_DISPLAY is set.
+# Why there is no `runtime_dir` on the profiles.
 #
 # `launch` exports each profile's runtime dir as both XDG_RUNTIME_DIR and
 # TMPDIR, and the QtRO module sockets (`logos_token_<module>`) are created in
@@ -60,27 +60,20 @@ version = "0.4.1"
 # does both. This file used to pin `runtime_dir = "/run/user/1000"` on alice
 # AND bob, which fixed the length and overrode the separation.
 #
-# That pin had one other effect, and it is the reason for WAYLAND_DISPLAY
-# below. libwayland resolves a relative WAYLAND_DISPLAY (the session's
-# `wayland-0`) against XDG_RUNTIME_DIR, and the compositor's socket is not in
-# a private /tmp dir. An ABSOLUTE WAYLAND_DISPLAY is used as-is. There is no
-# X11 fallback to hide the difference: Basecamp's launcher sets
-# QT_QPA_PLATFORM=wayland whenever WAYLAND_DISPLAY is set. Measured: without
-# the line below Basecamp exits at startup ("Failed to create wl_display",
-# then "no Qt platform plugin could be initialized"); with it, alice and bob
-# run side by side, each in its own runtime dir.
-#
-# The uid in the path is per machine, as it was in the pin this replaces. If
-# yours differs, `echo $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY` in your desktop
-# session prints the value to use. On an X11 session with no Wayland
-# compositor, DELETE the line instead: setting it is what makes the launcher
-# force Wayland, and there is nothing there to connect to.
+# If `launch` exits at once with "Failed to create wl_display", do NOT add the
+# pin back. The private runtime dir holds no compositor socket, so a RELATIVE
+# WAYLAND_DISPLAY (the session's `wayland-0`) resolves to nothing there, and
+# Basecamp's launcher forces Qt onto Wayland whenever WAYLAND_DISPLAY is set.
+# Make it absolute in your own shell profile; CLAUDE.md, "Environment goes in
+# `scaffold.toml`", has the line. It is not set here because the right value
+# is per machine and per session (a uid, and nothing at all on X11), and this
+# file is tracked.
 #
 # WARNING: `lgs basecamp setup` DESTROYS every comment in this file, and still
-# does on v0.5.0: a run there deleted all 29 comment lines and changed no
-# value. So run `git diff scaffold.toml` after any `setup` and restore what it
-# took (`git restore scaffold.toml`). Only `install` and `launch` need `setup`;
-# no CI job runs it, so this bites during interactive work.
+# does on v0.5.0: a run there deleted every comment line and changed no value.
+# So run `git diff scaffold.toml` after any `setup` and restore what it took
+# (`git restore scaffold.toml`). Only `install` and `launch` need `setup`; no
+# CI job runs it, so this bites during interactive work.
 [basecamp.env]
 # Qt's own logging otherwise vanishes into the platform log sink, so neither
 # `lgs basecamp launch` nor the profile log captures it.
@@ -88,5 +81,3 @@ QT_FORCE_STDERR_LOGGING = "1"
 # Surface QML errors. Basecamp does not log them itself, so a ui_qml plugin
 # that fails to load looks exactly like one that was never clicked.
 QT_LOGGING_RULES = "qt.qml.import.debug=true"
-# See the block above: the runtime dir is private now, so name the socket.
-WAYLAND_DISPLAY = "/run/user/1000/wayland-0"

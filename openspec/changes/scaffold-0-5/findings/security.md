@@ -3,7 +3,7 @@
 Dimension: **security** only (one `code-reviewer` instance; correctness,
 readability and architecture are other instances').
 
-- [ ] **`dev-writer`** — `scaffold.toml` (removed `runtime_dir`), `design.md`
+- [x] **`dev-writer`** — `scaffold.toml` (removed `runtime_dir`), `design.md`
       Decision 5 — the move to `/tmp/lgs-<hash>-<profile>` trades a user-owned
       directory for a predictable name in world-writable `/tmp`, and the design
       records the 0700 creation but not the ownership gap.
@@ -29,8 +29,15 @@ readability and architecture are other instances').
       `meta.uid()` with `geteuid()`. No code change is asked of this repo, since
       the design already rejected putting `runtime_dir` back.
       **Measured:** not mutated; there is no test layer here that launches.
+      **Fixed** in the commit that ticks this box, as asked (prose only): Decision 5 now has a
+      paragraph on the default's cost. Re-read at v0.5.0 to confirm: the function's own doc comment
+      claims "Someone else's: `set_permissions` fails with `EPERM`", but that call is reached only
+      when `mode & 0o077 != 0`, so a foreign 0700 dir passes, exactly as described here. The
+      paragraph gives the symptom (`ls -ld /tmp/lgs-*` shows another owner), says it is denial of
+      launch and not exposure, and names the `meta.uid()` vs `geteuid()` comparison as an upstream
+      ask, not filed from this change.
 
-- [ ] **`dev-writer`** — `CLAUDE.md` "Local mode under `lgs basecamp launch`"
+- [x] **`dev-writer`** — `CLAUDE.md` "Local mode under `lgs basecamp launch`"
       (and `docs/e2e.md` step-9 paragraph) — the documented route back to
       Local mode is "put `RAD_HOME` in your shell profile", which is
       persistent and applies to **every** `lgs`-launched instance, alice and bob
@@ -49,6 +56,13 @@ readability and architecture are other instances').
       also makes writes real, and that a throwaway profile (the way
       `write.yaml` seeds one) is the safe value for `RAD_HOME` when trying a
       write.
+      **Fixed** in the commit that ticks this box: CLAUDE.md's Local-mode section has a bold
+      paragraph, "The export also makes writes real, in every instance": it reaches alice and bob
+      alike, with the key unlocked `canWriteLocal` is true and a post is signed with that profile's
+      identity, and to try a write point `RAD_HOME` at a throwaway profile seeded the way
+      `write.yaml`'s is (`docs/writes.md`). `docs/e2e.md`'s step-9 paragraph says "It also makes that
+      instance's writes real" and points there. Decision 4 records why the warning sits beside the
+      recipe.
 
 ## Areas checked and clean
 

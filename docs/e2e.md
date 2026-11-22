@@ -11,6 +11,12 @@ is the one you repeat.
 # 1. The Basecamp with the QML inspector. That is the DEV `#app` — the
 #    inspector is off in the shipping outputs, not in the dev build. The rev
 #    is [repos.basecamp].pin in scaffold.toml, the one place it is written.
+#    Evaluating Basecamp 0.3.0's flake alone takes about 10 GB, and this one
+#    command holds that through the whole compile. On a machine that runs
+#    out of memory, evaluate and build in two processes instead, the way
+#    ui-tests.yml's "Build Basecamp" step does:
+#      drv=$(nix path-info --derivation --accept-flake-config "<flake>#app")
+#      nix build "$drv^*" -o result-basecamp
 nix build "github:logos-co/logos-basecamp/$(tomlq -r '.repos.basecamp.pin' scaffold.toml)#app" \
   -o result-basecamp --accept-flake-config
 
@@ -42,8 +48,11 @@ sitometres 0.1.x against Basecamp 0.2.3: QML dispatches through the
 invocation, so sitometres reported "no backend calls at all" while the data
 plainly arrived. Assert the effect with `state:` instead. sitometres 0.2.0
 against Basecamp 0.3.0 does list those calls per step (`calls:
-radicle.remoteGetTree, …`), but no spec here has yet relied on a `calls:`
-assertion, so treat that as observed output rather than a proven gate.
+radicle.remoteGetTree, …`). `sync.yaml`'s staleness step is the first spec here
+to assert one (`calls: ["radicle.remoteListBranches"]`), beside a `state:` that
+cannot hold without that call. Whether the `calls:` line can fail on its own has
+not been shown, so keep the `state:` assertion beside any `calls:` you add, and
+do not count a `calls:` line as a gate until someone has watched it go red.
 
 **`objectName` must sit on the clickable element**, not its parent. Naming a
 Repeater delegate matched one element instead of four, because the delegate
@@ -62,13 +71,12 @@ dead handler. `source.yaml` scrolls the row into view first, by index, with an
 row is absent, so the failure names itself. The click that follows is still the
 real one.
 
-**Cancelling a sync does not cancel its requests.** `cancelSync()` only orphans
-the replies; every `GetTree`/`GetBlob` already dispatched is still served, in
-turn, by the core module. Any call made after a cancel queues behind that
-backlog: against a 33-entry repository a `ListBranches` took 116s to come back.
-`sync.yaml` therefore runs the staleness poll before it starts and cancels the
-sync, and a spec that needs a backend answer after a cancel has to size its
-wait for a repository nobody chose.
+**Cancelling a sync does not cancel its requests**, so a backend call made
+after a cancel queues behind the cancelled sync's backlog, minutes on a large
+repository. A spec that needs an answer after a cancel would have to size its
+wait for a repository nobody chose, which is why `sync.yaml` polls before it
+cancels. The defect and its measurement are in `docs/PLAN.md`, "Known defects
+in shipped behaviour".
 
 **Add new specs to the `ui-tests.yml` matrix.** It runs one job per spec;
 `SPEC` was once hardcoded to `browse.yaml` and three specs sat in the tree
@@ -346,8 +354,9 @@ was pointed at that profile. `launch` gives each profile its own `HOME`
 (`.scaffold/basecamp/profiles/<name>/home`), so Local mode there finds no
 `~/.radicle` at all unless `RAD_HOME` is set in the environment `lgs` was
 started from. That is the only way to reach your own node from an
-`lgs`-launched instance, and it brings the contention back. See CLAUDE.md
-"Local mode under `lgs basecamp launch`".
+`lgs`-launched instance (inferred from `launch`'s environment inheritance, not
+yet run), and it brings the contention back. It also makes that instance's
+writes real. See CLAUDE.md "Local mode under `lgs basecamp launch`".
 
 ## The app starts in Explore, and every spec depends on that
 

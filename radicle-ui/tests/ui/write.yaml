@@ -60,11 +60,13 @@
 # WHY THE ASSERTIONS LOOK LIKE THIS
 # ---------------------------------------------------------------------------
 #
-# No `calls:` anywhere, on purpose. QML dispatches through the radicle_ui QtRO
-# replica and that hop is not logged as a LogosAPIClient invocation, so
-# sitometres reports "no backend calls at all" while the write plainly lands.
-# The effect is asserted with `state:` instead — which is the stronger
-# assertion anyway: a call being made is not the same as a comment existing.
+# No `calls:` anywhere, on purpose. Written on sitometres 0.1.x against
+# Basecamp 0.2.3, where QML's hop through the radicle_ui QtRO replica was not
+# logged as a LogosAPIClient invocation, so sitometres reported "no backend
+# calls at all" while the write plainly landed. 0.2.0 on Basecamp 0.3.0 does
+# log them (docs/e2e.md "Writing specs"), and the reason below still holds:
+# the effect is asserted with `state:`, which is the stronger assertion
+# anyway, because a call being made is not the same as a comment existing.
 #
 # `root.threadCommentCount` is the load-bearing one, and it is load-bearing
 # *because of how CommentComposer is built*. A successful post does not append

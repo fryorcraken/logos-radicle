@@ -5,7 +5,7 @@ Dimension: readability only. Material reviewed is prose, workflow comments,
 change has no module source diff. The other three dimensions are other
 instances' work.
 
-- [ ] **`dev-writer`** — `.github/workflows/ui-tests.yml:22-32,60-62,79-87` — a
+- [x] **`dev-writer`** — `.github/workflows/ui-tests.yml:22-32,60-62,79-87` — a
       new paragraph was inserted into a header whose surrounding claims it
       contradicts, so the header now argues with itself.
       **Scenario:** a reader reaches line 22, "3m14s is comfortably
@@ -19,8 +19,12 @@ instances' work.
       is the shape that rule was written against.
       **Severity:** medium (comprehension; a reader sizing a PR-trigger or
       timeout decision from this header gets the wrong number).
+      **Fixed** in the commit that ticks this box, together with the architecture box on the same
+      lines: the header no longer carries any duration, so there is nothing left to contradict. It
+      states the shape of the cost (warm nearly free; cold mostly compiling on 0.3.0; which runs
+      are cold), and the `timeout-minutes`, `on:` and `BASECAMP_REV` notes point at that.
 
-- [ ] **`dev-writer`** — `CLAUDE.md:423`, `scaffold.toml:80`,
+- [x] **`dev-writer`** — `CLAUDE.md:423`, `scaffold.toml:80`,
       `openspec/changes/scaffold-0-5/design.md` Decision 7 — "deleted all 29
       comment lines" is a count, and it does not match the file it describes.
       **Scenario:** `git grep -c -E "^\s*#" -- scaffold.toml` on this branch
@@ -31,8 +35,11 @@ instances' work.
       survives without one ("deleted every comment line and changed no value").
       **Severity:** low-medium; a concrete, checkable inconsistency in a section
       whose whole point is "measured rather than read off release notes".
+      **Fixed** in the commit that ticks this box: the count is gone from all four places
+      (CLAUDE.md, `scaffold.toml`, Decision 7, task 3.1), each now "deleted every comment line and
+      changed no value".
 
-- [ ] **`dev-writer`** — `CLAUDE.md:393-395` — the "one exception" paragraph is
+- [x] **`dev-writer`** — `CLAUDE.md:393-395` — the "one exception" paragraph is
       orphaned from the rule it excepts, and says the same thing as the next
       section.
       **Scenario:** the rule is "put environment in `scaffold.toml`"
@@ -44,8 +51,12 @@ instances' work.
       tracked"). Move the exception up beside line 378-379 (or fold it into
       the Local-mode section and delete it here).
       **Severity:** low; stylistic.
+      **Fixed** in the commit that ticks this box: the exception now follows the rule directly
+      ("**Except a value that belongs to one developer or one session**"), says where such a value
+      goes and why it reaches Basecamp, and names its two instances. The Local-mode section's
+      restatement is gone; it says "per the exception above".
 
-- [ ] **`dev-writer`** — `docs/e2e.md:36-46`, `radicle-ui/tests/ui/browse.yaml:60`,
+- [x] **`dev-writer`** — `docs/e2e.md:36-46`, `radicle-ui/tests/ui/browse.yaml:60`,
       `radicle-ui/tests/ui/write.yaml:63`, `radicle-ui/tests/ui/sync.yaml:125` —
       three documents disagree about whether this suite asserts on `calls:`.
       **Scenario:** `e2e.md` now says "no spec here has yet relied on a
@@ -59,6 +70,12 @@ instances' work.
       evidence), and say in the two older comments that they predate 0.2.0.
       **Severity:** medium (contradictory guidance in the docs a spec author is
       told to read first).
+      **Fixed** in the commit that ticks this box: `e2e.md` names `sync.yaml`'s staleness step as
+      the first `calls:` assertion, says it sits beside a `state:` that cannot hold without the call,
+      and that it has not been shown failing on its own, so not to count a `calls:` line as a gate
+      until someone has. `browse.yaml` and `write.yaml` now say their reasoning was measured on
+      sitometres 0.1.x / Basecamp 0.2.3 and point at `e2e.md`. Whether the `calls:` line
+      discriminates is the tester's open spec-test box, not answered here.
 
 - [ ] **`tester`** — `radicle-ui/tests/ui/source.yaml:124-142` — the new scroll
       step was inserted between a comment and the step it describes.
@@ -72,7 +89,7 @@ instances' work.
       or give the click step its own comment again.
       **Severity:** low; stylistic.
 
-- [ ] **`dev-writer`** — `docs/e2e.md:56-71`, `docs/PLAN.md` "Known defects in
+- [x] **`dev-writer`** — `docs/e2e.md:56-71`, `docs/PLAN.md` "Known defects in
       shipped behaviour", `radicle-ui/tests/ui/sync.yaml:25-33`, design.md
       Risks — the cancelled-sync story (33-entry repository, 116 s
       `ListBranches`, why the spec polls first) is told in full in four places.
@@ -83,8 +100,12 @@ instances' work.
       constraint; `e2e.md` and `sync.yaml` can say one sentence and point there.
       **Severity:** low; stylistic, but this is the exact drift the repo's
       CLAUDE.md "Keeping this file true" section describes.
+      **Fixed** in the commit that ticks this box: `docs/PLAN.md` is the one full telling.
+      `e2e.md` and `sync.yaml` each keep one sentence (why the spec polls before it cancels) and
+      point at PLAN; `sync.yaml` also says the order can revert once the defect is fixed, which is
+      the edit PLAN already names. `design.md`'s Risks entry is trimmed to the same plus a pointer.
 
-- [ ] **`dev-writer`** — `docs/M3-phase0-findings.md:425,457` and
+- [x] **`dev-writer`** — `docs/M3-phase0-findings.md:425,457` and
       `docs/M3-phase0-probe_node_runtime.rs.txt:82` — present-tense claims that
       `scaffold.toml` pins `runtime_dir`, which this change removes.
       **Scenario:** the change corrected the same claim in
@@ -95,8 +116,12 @@ instances' work.
       is not there. If the document is deliberately a dated record, one line at
       its top saying so settles it; otherwise fix the two sentences.
       **Severity:** low.
+      **Fixed** in the commit that ticks this box: the probe comment is corrected to the past
+      tense; the findings document, which is a dated spike record, keeps its sentences and gains an
+      italic "Dated:" note at each, pointing at Decision 5. A note at each passage rather than one
+      at the top, because a reader grepping `runtime_dir` lands on the passage, not the header.
 
-- [ ] **`dev-writer`** — `docs/e2e.md:20` — the sitometres version is now a
+- [x] **`dev-writer`** — `docs/e2e.md:20` — the sitometres version is now a
       literal in three places (`ui-tests.yml:199`, `e2e-env.sh:28`, and the
       example command here), kept in step by comments that say "keep in step".
       **Scenario:** the next bump edits two and the third keeps telling
@@ -105,6 +130,13 @@ instances' work.
       exports `SITOMETRES`; the docs example can use `"$SITOMETRES"` (or say
       "the version `e2e-env.sh` pins") instead of a fourth copy of the number.
       **Severity:** low; stylistic.
+      **Fixed** differently from the suggestion, in the commit that ticks this box: the literal
+      stays and is now checked. `ci.yml`'s lint runs `.github/scripts/check-stack-pins.py`, which
+      requires a sitometres copy in `ui-tests.yml`, `e2e-env.sh` and `docs/e2e.md` and fails if any
+      two differ (seen failing with `e2e-env.sh` at `0.2.1`). Rejected the `"$SITOMETRES"` form
+      because the doc's command is the one a newcomer pastes into a shell that has not sourced
+      `e2e-env.sh`, where it would expand to nothing; a checked literal keeps it runnable and
+      cannot drift unseen. The "keep in step" comments now point at the lint. `design.md` Decision 9.
 
 ## Areas that read well
 

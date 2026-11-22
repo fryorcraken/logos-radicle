@@ -24,13 +24,12 @@
 #
 # ORDER MATTERS, and it is not the order the label goes through in life. The
 # staleness poll runs BEFORE the sync is started and cancelled, because
-# cancelling does not cancel anything: cancelSync() only orphans the replies,
-# and every GetTree/GetBlob already dispatched is still served, one after
-# another, by the core module. A poll issued after a cancel queues behind that
-# backlog. Against a 33-entry repository that measured 116s before the poll's
-# ListBranches was answered, so a 60s wait failed on a healthy module — and
-# the wait would have to be sized for whichever repository the seed lists
-# first, which nobody chose. Polling first has no backlog to wait behind.
+# cancelling does not cancel the sync's requests, and a poll issued after a
+# cancel queues behind them: minutes on a large repository, so a fixed wait
+# failed on a healthy module and would have to be sized for whichever
+# repository the seed lists first. Polling first has no backlog to wait
+# behind. The defect is in docs/PLAN.md, "Known defects in shipped behaviour";
+# when it is fixed, this order can go back to the label's order in life.
 
 app: radicle_ui
 with: [radicle]

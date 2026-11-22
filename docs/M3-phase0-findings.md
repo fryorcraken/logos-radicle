@@ -424,7 +424,10 @@ afternoon. Measured, in this worktree:
 108-byte `sun_path` limit that made *every* Basecamp module segfault over QtRO
 sockets, and is why `runtime_dir` is pinned in `scaffold.toml` with a
 load-bearing comment. It arrives here from the opposite direction: not the
-socket Basecamp creates, but the one an embedded node would.
+socket Basecamp creates, but the one an embedded node would. *(Dated: the pin
+was removed in `scaffold-0-5`, because scaffold v0.5.0's default runtime dir is
+short and per profile by construction. See that change's design, Decision 5,
+under `openspec/changes/archive/`.)*
 
 ### The measurement has been taken, and the plan's layout fails it
 
@@ -459,7 +462,11 @@ So this is a settled constraint on Phase 1, not a caution:
   constraint on *where* it lives — only that both ends agree — so something
   like `$XDG_RUNTIME_DIR/radicle-<profile>.sock` is short, correctly scoped
   per user session, and cleaned up on logout. Phase 1 should probably just do
-  that; naming it here saves rediscovering it.
+  that; naming it here saves rediscovering it. *(Dated: the pin is gone since
+  `scaffold-0-5`, so under `lgs basecamp launch` `$XDG_RUNTIME_DIR` is now
+  scaffold's `/tmp/lgs-<hash>-<profile>`, not the session dir measured here.
+  The rule still gives a short, per-profile socket; that change's design,
+  Decision 5, follows it through.)*
 - **Whatever is chosen still needs a length check with a real error message**,
   since the crate's own names neither the path nor the limit. That holds
   regardless of which directory wins. The probe's guard (measure, compare to

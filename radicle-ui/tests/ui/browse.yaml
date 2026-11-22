@@ -57,12 +57,14 @@ steps:
       # Catches a hung or timed-out call. It cannot see an error the module
       # returns inside its payload — `root.navError` below covers that.
       #
-      # NOTE: `calls:` assertions are deliberately absent throughout. QML
-      # dispatches through the radicle_ui QtRO replica, and that hop is not
-      # logged as a LogosAPIClient invocation, so sitometres reports "no
-      # backend calls at all" even while the data plainly arrives. The state
-      # assertions prove the round trip happened, which is the part that
-      # matters.
+      # NOTE: `calls:` assertions are deliberately absent throughout. This
+      # was written on sitometres 0.1.x against Basecamp 0.2.3, where QML's
+      # hop through the radicle_ui QtRO replica was not logged as a
+      # LogosAPIClient invocation, so sitometres reported "no backend calls at
+      # all" even while the data plainly arrived. 0.2.0 on Basecamp 0.3.0 does
+      # log them; see docs/e2e.md "Writing specs" for where that stands. The
+      # state assertions prove the round trip happened, which is the part
+      # that matters.
       calls_succeed: true
 
   - name: no error surfaced while listing

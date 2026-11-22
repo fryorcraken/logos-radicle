@@ -60,24 +60,27 @@
 
 - [x] 3.1 Run `lgs basecamp setup`, then `git diff scaffold.toml`; record
       whether v0.5.0 still strips comments, and restore the file. It does:
-      29 comment lines deleted and no value changed. `basecamp doctor` then
-      reports the pin set as "scaffold defaults" (design Decision 6).
-- [x] 3.2 Remove both `runtime_dir` lines and name the Wayland socket
-      absolutely in `[basecamp.env]` (design Decision 5); verify with a real
-      `lgs basecamp launch alice` that comes up on the forced `wayland`
-      platform, with a control run proving the forced platform fails without
-      the setting, and with alice and bob running at once. All three were
-      run; the table is in Decision 5. "A window opened" is inferred from the
-      process staying up on a forced Wayland backend with no `wl_display`
-      error, not from looking at the screen. No automated gate can see any of
-      this.
-- [ ] 3.3 Verify Local mode under `lgs basecamp launch` sees no `~/.radicle`
-      by default and sees the profile `RAD_HOME` names when it is exported
-      before `lgs` runs (design Decision 4). Partly done, so left unticked:
-      the launched environment was read back (`HOME` is the profile's own,
-      no `RAD_HOME`, shell variables inherited). No launch was driven into
-      Local mode, and none was run with `RAD_HOME` exported, which would need
-      a `VAR=value` prefix or an edit to the developer's real shell profile.
+      every comment line deleted and no value changed. `basecamp doctor` then
+      reports the pin set as "scaffold defaults" (design Decision 7).
+- [x] 3.2 Remove both `runtime_dir` lines, and have the developer's shell name
+      the Wayland socket absolutely (design Decision 5). The absolute value was
+      verified with real `lgs basecamp launch alice` runs while it was set in
+      `[basecamp.env]`: up on the forced `wayland` platform, a control run
+      failing without it, and alice and bob running at once; the table is in
+      Decision 5. "A window opened" is inferred from the process staying up on
+      a forced Wayland backend with no `wl_display` error, not from looking at
+      the screen. Moving the value to the shell profile was NOT launched: it
+      rests on `launch`'s pass-through, read from scaffold v0.5.0's source and
+      observed for `DISPLAY`. No automated gate can see any of this.
+- [x] 3.3 Read back what an `lgs`-launched Basecamp's environment holds, and
+      say in every document that recommends exporting `RAD_HOME` that the
+      route is inferred rather than run (design Decision 4). Read back from
+      `/proc/<pid>/environ`: `HOME` is the profile's own, no `RAD_HOME`, shell
+      variables such as `DISPLAY` inherited. NOT done: no launch was driven
+      into Local mode, and none was run with `RAD_HOME` exported, which would
+      need a `VAR=value` prefix or an edit to the developer's real shell
+      profile. CLAUDE.md "Local mode under `lgs basecamp launch`" and
+      `docs/e2e.md`'s step-9 paragraph both say so, and say how to check.
 
 ## 4. Make the documents true again
 
@@ -101,6 +104,15 @@
 - [x] 4.5 `proposal.md` scope gains the `runtime_dir` removal and the
       sitometres bump; `docs/PLAN.md` "The Logos stack" points at Decision 1
       and holds the constraint, not the reasoning.
+- [x] 4.6 Check that every copy of `LGS_VERSION`, the module-builder tag and
+      the sitometres version agrees (design Decision 9):
+      `.github/scripts/check-stack-pins.py`, in `ci.yml`'s lint job. Seen
+      failing on a diverged sitometres and builder copy, and on a copy
+      reworded out of its pattern; passes on this tree.
+- [x] 4.7 Run the release job's `lgx merge` by hand over this PR's three
+      per-platform CI packages (design Risks). Both modules merged with all
+      three variants and the UI package's `assets/icon.png`; the release job
+      now asserts that entry after merging.
 
 ## 5. Hand over
 

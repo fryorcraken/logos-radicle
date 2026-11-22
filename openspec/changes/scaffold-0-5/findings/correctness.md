@@ -6,7 +6,7 @@ local clone exists, and re-derived the lock claims by parsing both
 `radicle/flake.lock` versions. `gh pr checks 50` shows all 13 checks green
 (Release skipped, as on any non-tag run).
 
-- [ ] **`dev-writer`** — `openspec/changes/scaffold-0-5/tasks.md:74` (task 3.3), `design.md` Decision 4 — the
+- [x] **`dev-writer`** — `openspec/changes/scaffold-0-5/tasks.md:74` (task 3.3), `design.md` Decision 4 — the
       claim that exporting `RAD_HOME` before `lgs` restores Local mode under `launch` was never run
       **Scenario:** a developer follows the new CLAUDE.md / `docs/e2e.md` advice, exports `RAD_HOME`,
       runs `lgs basecamp launch alice`, and Local mode still finds no profile (for example if
@@ -18,8 +18,15 @@ local clone exists, and re-derived the lock claims by parsing both
       fact ("restores", "sees the profile `RAD_HOME` names") to say it is inferred.
       **Severity:** medium (documents a workflow nobody ran; the box is open).
       **Measured:** not run by me either — it needs a compositor and a launched Basecamp.
+      **Fixed** in the commit that ticks this box, by the reword route, not by running it (it needs
+      `setup` in this worktree, a compositor, and an export into a real shell profile). CLAUDE.md
+      "Local mode under `lgs basecamp launch`" now says the route is "inferred, not yet run" and
+      how to check it from `/proc/<pid>/environ`; `docs/e2e.md`'s step-9 paragraph says
+      "inferred ... not yet run". `design.md` Decision 4 already said so. Task 3.3 is rewritten to
+      what was done (environment read back; the docs say inferred) and ticked, with the unrun part
+      stated in it.
 
-- [ ] **`dev-writer`** — `ci.yml` `release` job (`lgx merge` step, ~line 666) — the one packaging change
+- [x] **`dev-writer`** — `ci.yml` `release` job (`lgx merge` step, ~line 666) — the one packaging change
       0.3.x introduces is never exercised by any gate on this PR
       **Scenario:** module-builder 0.3.0 adds an `assets/` root entry to the package (design Decision 6,
       Risks). `build` jobs pass, but they only `tar xzf` the manifest and grep `variants/<v>/`. The
@@ -32,8 +39,17 @@ local clone exists, and re-derived the lock claims by parsing both
       `tar tzf … | grep -c '^assets/'` check to the `stage` step so a lost entry fails the PR.
       **Severity:** low-medium (failure is loud, but late and on the release path).
       **Measured:** could not run — `~/src/logos-co/logos-package` is not cloned here.
+      **Fixed** in the commit that ticks this box, both ways. Run by hand: the three per-platform
+      artifacts from this PR's CI run 45011529504 (`gh run download`), merged with `lgx` built the way
+      the release job builds it (`nix build github:logos-co/logos-package#lgx`, resolved to
+      `4bdd904`). Both modules merged ("Merged 3 packages … (darwin-arm64, linux-amd64,
+      linux-arm64)"); the merged `logos-radicle_ui-module.lgx` lists `assets/` and
+      `assets/icon.png` beside all three variants, and the core package has no `assets/` in its
+      inputs or output. Recorded as task 4.7 and in `design.md` Risks. And the release job now
+      asserts `assets/icon.png` in the merged UI package, since `lgx` comes from a moving master and
+      today's pass says nothing about the next tag's.
 
-- [ ] **`dev-writer`** — `docs/M3-phase0-probe_node_runtime.rs.txt:82` — present-tense claim the
+- [x] **`dev-writer`** — `docs/M3-phase0-probe_node_runtime.rs.txt:82` — present-tense claim the
       change made false
       **Scenario:** the probe's doc comment says the 166-byte path "is why `scaffold.toml` pins
       `runtime_dir`". `scaffold.toml` no longer pins it (this diff removes both lines). A reader
@@ -42,6 +58,10 @@ local clone exists, and re-derived the lock claims by parsing both
       history; only the probe comment reads as current. `radicle/src/settings_store.h` and
       `docs/M3-embedded-node-plan.md` were updated, so this was a missed instance of the same sweep.
       **Severity:** low (documentation).
+      **Fixed** in the commit that ticks this box: the probe comment now says `scaffold.toml`
+      "pinned `runtime_dir` until scaffold v0.5.0's short per-profile default made the pin
+      redundant". The two `M3-phase0-findings.md` passages keep their dated text and gain an
+      italic "Dated:" note each, pointing at Decision 5.
 
 ## Checked and clean
 
