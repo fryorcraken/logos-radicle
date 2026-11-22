@@ -5,7 +5,7 @@
       written; a behaviour change Basecamp 0.3.0 forces comes back here.
 - [x] design + code — `dev-writer`
 - [x] tests — `tester`
-- [ ] review: correctness — `code-reviewer`
+- [x] review: correctness — `code-reviewer`
 - [ ] review: security — `code-reviewer`
 - [ ] review: readability — `code-reviewer`
 - [ ] review: architecture — `code-reviewer`
