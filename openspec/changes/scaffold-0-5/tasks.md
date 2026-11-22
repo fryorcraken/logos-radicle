@@ -8,7 +8,7 @@
 - [x] review: correctness — `code-reviewer`
 - [x] review: security — `code-reviewer`
 - [x] review: readability — `code-reviewer`
-- [ ] review: architecture — `code-reviewer`
+- [x] review: architecture — `code-reviewer`
 - [ ] review: spec-test — `spec-test-reviewer`
 - [ ] review: design — `design-reviewer`
 - [ ] findings all ticked, `findings/` deleted — `closer`
