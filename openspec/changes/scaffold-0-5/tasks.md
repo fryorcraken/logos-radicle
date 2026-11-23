@@ -122,3 +122,10 @@
       out of memory and was shut down mid-build. Evaluating and building in
       two processes fixed it (design Decision 8). Run 44963625950: all six
       specs green, including `source` 21/21 and `sync` 19/19.
+- [x] 5.3 Show the `calls:` assertion in `sync.yaml` can fail, locally on
+      sitometres 0.2.0 / Basecamp 0.3.0 `#app`. Name changed to a method never
+      called: FAIL, `x calls radicle.remoteListBranchesMUTANT / saw instead:
+      radicle.remoteListBranches`, with the `state:` line beside it passing.
+      Name changed to `radicle.remoteGetTree` (called by an earlier step, not
+      this one): FAIL, so the check is scoped to the step. Both restored;
+      unmutated `sync` is 20/20 (was 19; the step added for the cancel timing).

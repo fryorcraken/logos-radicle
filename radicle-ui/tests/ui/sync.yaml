@@ -134,9 +134,11 @@ steps:
   - name: forget the stand-in's claim that a sync completed
     eval: "root.sourceTabItem.syncedOnce = false"
 
-  # The explicit requirement behind this feature: "Update" is a colour and a
-  # label, never a gate. Re-syncing is never wrong, just sometimes unnecessary,
-  # so the button must stay exactly as clickable in this state as in any other.
+  # NO SPEC: "Update" is a colour and a label, never a gate. Re-syncing is never
+  # wrong, just sometimes unnecessary, so the button must stay exactly as
+  # clickable in this state as in any other. That was the stated intent of the
+  # feature, but no requirement in openspec/specs says it; the spec-writer
+  # decides whether it should.
   # Clicking it here is the assertion — a disabled control would fail to
   # resolve as clickable, and a guarded onClicked would leave syncing false.
   - name: the Update state does not stop the button being clicked
@@ -146,6 +148,12 @@ steps:
   # because fresh data is about to arrive, and the button switched to its
   # in-progress rendering. The label becomes a percentage, so asserting it is
   # no longer any of the three idle words proves the Text swapped over.
+  #
+  # The last line is the positive half. The three `!==` lines alone also hold
+  # for an empty or undefined label, so a Text that lost its percentage binding
+  # and rendered nothing would pass them; a label that is digits and a percent
+  # sign cannot be that. (The format is RepoView.qml's `Math.round(progress *
+  # 100) + "%"`.)
   - name: clicking it starts a real sync and clears the stale flag
     wait_for:
       state:
@@ -154,6 +162,7 @@ steps:
         - "root.syncLabel !== 'Download All'"
         - "root.syncLabel !== 'Re-sync'"
         - "root.syncLabel !== 'Update'"
+        - "/^[0-9]+%$/.test(root.syncLabel)"
     timeout: 30s
 
   # Sync walks the whole tree breadth-first, so syncQueued can jump ahead of
@@ -185,6 +194,19 @@ steps:
   # values rather than just the endpoint. What only a real run can prove, and
   # what is proved above and below, is that the button is wired to syncAll()
   # and cancelSync() at all, and that real requests go out.
+  #
+  # THIS SPEC NEEDS A REPOSITORY WHOSE SYNC OUTLASTS THE STEPS ABOVE. The upper
+  # bound is argued above; the lower one is this: between starting the sync and
+  # the cancel click below there are two more steps, and a first repository so
+  # small that its sync finishes in that window would complete, set syncedOnce
+  # and read "Re-sync" — so the "cancel" click would start a SECOND sync and the
+  # assertions after it would fail for a reason that is not a defect. The step
+  # below makes that dependence checkable: it fails HERE, naming itself, rather
+  # than three steps later as a cancel that claimed completion.
+  - name: the sync is still running when the cancel lands
+    expect:
+      state: "root.syncing === true"
+
   - name: click the button again to cancel
     click: { objectName: "syncButton" }
 
@@ -195,11 +217,17 @@ steps:
       state: "root.syncing === false"
     timeout: 30s
 
-  # An interrupted sync must NOT claim completion: syncedOnce is set in
-  # finishSyncIfDone(), never in cancelSync(), precisely so the button does
+  # NO SPEC: an interrupted sync must NOT claim completion. syncedOnce is set
+  # in finishSyncIfDone(), never in cancelSync(), precisely so the button does
   # not offer "Re-sync" for a repository that was never fully downloaded.
-  # lastSyncedCommit is recorded only there too, so it still holds the
-  # stand-in's value rather than the head this sync captured.
+  # That is the design's intent, not a requirement in openspec/specs.
+  #
+  # NO SPEC: neither syncAll() nor cancelSync() touches lastSyncedCommit, which
+  # is recorded only in finishSyncIfDone(), so it still holds the stand-in's
+  # value rather than the head this sync captured. The stand-in is this spec's
+  # own, independent of the implementation, so the line can fail — but an
+  # implementation that cleared the commit on a sync start would break it for a
+  # defensible reason, which is the question for the spec-writer.
   - name: a cancelled sync does not claim to have completed
     expect:
       state:

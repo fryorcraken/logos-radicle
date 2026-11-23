@@ -77,7 +77,7 @@ instances' work.
       sitometres 0.1.x / Basecamp 0.2.3 and point at `e2e.md`. Whether the `calls:` line
       discriminates is the tester's open spec-test box, not answered here.
 
-- [ ] **`tester`** — `radicle-ui/tests/ui/source.yaml:124-142` — the new scroll
+- [x] **`tester`** — `radicle-ui/tests/ui/source.yaml:124-142` — the new scroll
       step was inserted between a comment and the step it describes.
       **Scenario:** lines 124-126 ("Using `text:` to SELECT is fine …") explain
       the `text: "README.md"` selector on the click step. After this change the
@@ -88,6 +88,10 @@ instances' work.
       Put the scroll block before the "A file row addressed by NAME…" comment,
       or give the click step its own comment again.
       **Severity:** low; stylistic.
+      **Fixed** (tester): the scroll comment and step come first, and the
+      "A file row addressed by NAME…" / "Using `text:` to SELECT is fine"
+      comment now sits directly above the click step it explains. No step
+      changed; `source.yaml` 21/21 after the move.
 
 - [x] **`dev-writer`** — `docs/e2e.md:56-71`, `docs/PLAN.md` "Known defects in
       shipped behaviour", `radicle-ui/tests/ui/sync.yaml:25-33`, design.md

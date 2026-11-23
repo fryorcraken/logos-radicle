@@ -117,14 +117,6 @@ steps:
 
   # ---- the blob viewer ----------------------------------------------------
   #
-  # A file row addressed by NAME as well as objectName, so it is a file for
-  # certain AND is the tree row rather than the viewer's title bar, which
-  # carries the same text once a README has loaded.
-  #
-  # Using `text:` to SELECT is fine; CLAUDE.md's preference for `state:` is
-  # about what to ASSERT on, where a label can match an item that is loaded
-  # but hidden.
-  #
   # Scroll the row into view first. The window is a fixed 900px and the
   # repository the seed lists first is not this spec's to choose: one with
   # thirty-odd root entries puts README.md below the fold. The click is then
@@ -132,7 +124,14 @@ steps:
   # still reports "clicked" — so the failure shows up one step later as a
   # viewer that never opened, which reads as a dead handler and is not. The
   # list is scrolled by index, taken from the entry names the pane itself
-  # reports, so this holds for any repository and any window height.
+  # reports, so this holds for any window height.
+  #
+  # THIS SPEC NEEDS THE FIRST REPOSITORY TO HAVE A ROOT `README.md`. The README
+  # section above tolerates a repository without one; this step and the click
+  # after it do not, and throw `no README.md in <names>` when it is absent. The
+  # file to open cannot be picked from the entry names instead, because a
+  # step's click selector is static YAML: it can name a file but not compute
+  # one from the listing.
   #
   # The click that follows is still a real one on the real row. Only the
   # viewport is moved, from outside, which is what a user's scroll wheel does.
@@ -160,6 +159,13 @@ steps:
         return "scrolled to " + i;
       })()
 
+  # A file row addressed by NAME as well as objectName, so it is a file for
+  # certain AND is the tree row rather than the viewer's title bar, which
+  # carries the same text once a README has loaded.
+  #
+  # Using `text:` to SELECT is fine; CLAUDE.md's preference for `state:` is
+  # about what to ASSERT on, where a label can match an item that is loaded
+  # but hidden.
   - name: click the README row in the file tree
     click: { objectName: "fileRowName", text: "README.md", match: "contains" }
 

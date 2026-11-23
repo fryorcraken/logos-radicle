@@ -50,9 +50,13 @@ plainly arrived. Assert the effect with `state:` instead. sitometres 0.2.0
 against Basecamp 0.3.0 does list those calls per step (`calls:
 radicle.remoteGetTree, …`). `sync.yaml`'s staleness step is the first spec here
 to assert one (`calls: ["radicle.remoteListBranches"]`), beside a `state:` that
-cannot hold without that call. Whether the `calls:` line can fail on its own has
-not been shown, so keep the `state:` assertion beside any `calls:` you add, and
-do not count a `calls:` line as a gate until someone has watched it go red.
+cannot hold without that call, and there `calls:` is a real gate on 0.2.0 /
+Basecamp 0.3.0: with a method name that is never called it failed while the
+`state:` beside it passed ("saw instead: radicle.remoteListBranches"), and with
+a name that WAS called, but by an earlier step (`radicle.remoteGetTree`), it
+failed too, so the list is checked against the calls that step's own wait made,
+not the whole run's. Keep a `state:` beside it anyway: `calls:` says a call was
+made, not that its reply was used.
 
 **`objectName` must sit on the clickable element**, not its parent. Naming a
 Repeater delegate matched one element instead of four, because the delegate
@@ -69,14 +73,19 @@ failure surfaces a step later, as a pane that never opened, which reads as a
 dead handler. `source.yaml` scrolls the row into view first, by index, with an
 `eval:` that finds the tree's ListView by its entry count and throws when the
 row is absent, so the failure names itself. The click that follows is still the
-real one.
+real one. The scroll fixes the geometry, not the dependence on the repository:
+`source.yaml` still needs the first repository to have a root `README.md`, since
+a click selector is static and cannot choose a file from the listing.
 
 **Cancelling a sync does not cancel its requests**, so a backend call made
 after a cancel queues behind the cancelled sync's backlog, minutes on a large
 repository. A spec that needs an answer after a cancel would have to size its
 wait for a repository nobody chose, which is why `sync.yaml` polls before it
 cancels. The defect and its measurement are in `docs/PLAN.md`, "Known defects
-in shipped behaviour".
+in shipped behaviour". The opposite bound is `sync.yaml`'s too: its cancel half
+needs a first repository whose sync outlasts the steps before the cancel click,
+and a step asserting `syncing === true` immediately before it makes a repository
+too small fail there, by name.
 
 **Add new specs to the `ui-tests.yml` matrix.** It runs one job per spec;
 `SPEC` was once hardcoded to `browse.yaml` and three specs sat in the tree
