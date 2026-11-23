@@ -117,6 +117,48 @@ steps:
 
   # ---- the blob viewer ----------------------------------------------------
   #
+  # Scroll the row into view first. The window is a fixed 900px and the
+  # repository the seed lists first is not this spec's to choose: one with
+  # thirty-odd root entries puts README.md below the fold. The click is then
+  # posted at coordinates outside the ListView's clip, lands on nothing, and
+  # still reports "clicked" — so the failure shows up one step later as a
+  # viewer that never opened, which reads as a dead handler and is not. The
+  # list is scrolled by index, taken from the entry names the pane itself
+  # reports, so this holds for any window height.
+  #
+  # THIS SPEC NEEDS THE FIRST REPOSITORY TO HAVE A ROOT `README.md`. The README
+  # section above tolerates a repository without one; this step and the click
+  # after it do not, and throw `no README.md in <names>` when it is absent. The
+  # file to open cannot be picked from the entry names instead, because a
+  # step's click selector is static YAML: it can name a file but not compute
+  # one from the listing.
+  #
+  # The click that follows is still a real one on the real row. Only the
+  # viewport is moved, from outside, which is what a user's scroll wheel does.
+  # The ListView is found by its model's size rather than by an id, which a
+  # spec cannot reach; it is the only descendant whose count equals the
+  # tree's entry count AND that can scroll to an index.
+  - name: scroll the README row into view
+    eval: >-
+      (function () {
+        var s = root.sourceTabItem;
+        var i = s.entryNames.split(",").indexOf("README.md");
+        function find(o) {
+          if (o.positionViewAtIndex && o.count === s.entryCount) return o;
+          var ch = o.children;
+          for (var k = 0; k < ch.length; k++) {
+            var r = find(ch[k]);
+            if (r) return r;
+          }
+          return null;
+        }
+        var list = find(s);
+        if (i < 0) throw new Error("no README.md in " + s.entryNames);
+        if (!list) throw new Error("no ListView holding the tree");
+        list.positionViewAtIndex(i, 1);
+        return "scrolled to " + i;
+      })()
+
   # A file row addressed by NAME as well as objectName, so it is a file for
   # certain AND is the tree row rather than the viewer's title bar, which
   # carries the same text once a README has loaded.

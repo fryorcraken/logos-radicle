@@ -11,13 +11,19 @@ is the one you repeat.
 # 1. The Basecamp with the QML inspector. That is the DEV `#app` — the
 #    inspector is off in the shipping outputs, not in the dev build. The rev
 #    is [repos.basecamp].pin in scaffold.toml, the one place it is written.
+#    Evaluating Basecamp 0.3.0's flake alone takes about 10 GB, and this one
+#    command holds that through the whole compile. On a machine that runs
+#    out of memory, evaluate and build in two processes instead, the way
+#    ui-tests.yml's "Build Basecamp" step does:
+#      drv=$(nix path-info --derivation --accept-flake-config "<flake>#app")
+#      nix build "$drv^*" -o result-basecamp
 nix build "github:logos-co/logos-basecamp/$(tomlq -r '.repos.basecamp.pin' scaffold.toml)#app" \
   -o result-basecamp --accept-flake-config
 
 # 2. Build the modules — the DEV variant, matching the dev Basecamp — and run
 #    the spec.
 lgs basecamp build --variant lgx
-npx --yes '@paradoxcomputer/sitometres@0.1.2' \
+npx --yes '@paradoxcomputer/sitometres@0.2.0' \
   run radicle-ui/tests/ui/browse.yaml \
   --app radicle_ui \
   --app-dir .scaffold/basecamp/lgx \
@@ -36,10 +42,21 @@ asks the app what it believes is true.
 
 Assert on `calls:` when the point of the change is that a call happens. A step
 that only checks what is on screen will pass against a view rendering stale
-cached data. **But note `calls:` does not work for QML→backend hops here**: QML
-dispatches through the `radicle_ui` QtRO replica and that hop is not logged as
-a LogosAPIClient invocation, so sitometres reports "no backend calls at all"
-while the data plainly arrives. Assert the effect with `state:` instead.
+cached data. **But note `calls:` did not work for QML→backend hops here** on
+sitometres 0.1.x against Basecamp 0.2.3: QML dispatches through the
+`radicle_ui` QtRO replica and that hop was not logged as a LogosAPIClient
+invocation, so sitometres reported "no backend calls at all" while the data
+plainly arrived. Assert the effect with `state:` instead. sitometres 0.2.0
+against Basecamp 0.3.0 does list those calls per step (`calls:
+radicle.remoteGetTree, …`). `sync.yaml`'s staleness step is the first spec here
+to assert one (`calls: ["radicle.remoteListBranches"]`), beside a `state:` that
+cannot hold without that call, and there `calls:` is a real gate on 0.2.0 /
+Basecamp 0.3.0: with a method name that is never called it failed while the
+`state:` beside it passed ("saw instead: radicle.remoteListBranches"), and with
+a name that WAS called, but by an earlier step (`radicle.remoteGetTree`), it
+failed too, so the list is checked against the calls that step's own wait made,
+not the whole run's. Keep a `state:` beside it anyway: `calls:` says a call was
+made, not that its reply was used.
 
 **`objectName` must sit on the clickable element**, not its parent. Naming a
 Repeater delegate matched one element instead of four, because the delegate
@@ -48,6 +65,27 @@ Item is not clickable — its MouseArea is.
 Give anything a spec needs to click a stable `objectName`. Specs select by
 `objectName`, not by label, so renaming a button must not break a test — and
 changing an `objectName` is an interface change.
+
+**A click on a row below the fold lands on nothing and still reports
+"clicked".** The offscreen window is fixed at 900px and the seed's first
+repository is not yours to choose, so a row's position depends on both. The
+failure surfaces a step later, as a pane that never opened, which reads as a
+dead handler. `source.yaml` scrolls the row into view first, by index, with an
+`eval:` that finds the tree's ListView by its entry count and throws when the
+row is absent, so the failure names itself. The click that follows is still the
+real one. The scroll fixes the geometry, not the dependence on the repository:
+`source.yaml` still needs the first repository to have a root `README.md`, since
+a click selector is static and cannot choose a file from the listing.
+
+**Cancelling a sync does not cancel its requests**, so a backend call made
+after a cancel queues behind the cancelled sync's backlog, minutes on a large
+repository. A spec that needs an answer after a cancel would have to size its
+wait for a repository nobody chose, which is why `sync.yaml` polls before it
+cancels. The defect and its measurement are in `docs/PLAN.md`, "Known defects
+in shipped behaviour". The opposite bound is `sync.yaml`'s too: its cancel half
+needs a first repository whose sync outlasts the steps before the cancel click,
+and a step asserting `syncing === true` immediately before it makes a repository
+too small fail there, by name.
 
 **Add new specs to the `ui-tests.yml` matrix.** It runs one job per spec;
 `SPEC` was once hardcoded to `browse.yaml` and three specs sat in the tree
@@ -132,12 +170,12 @@ The specs need a Basecamp built **with the QML inspector**, a compile-time
 feature. For a long time this file said that meant
 `#bin-bundle-dir-inspector`, and the job built it through
 `lgs basecamp setup --inspector`. **That was wrong, and cost a great deal of
-incidental complexity.** Reading logos-basecamp's `flake.nix` at the pinned
-rev:
+incidental complexity.** Reading logos-basecamp's `flake.nix`, first at 0.2.3
+and again at 0.3.0 (`bbe5da0`), where the three rows still read the same:
 
 | attr | inspector | feeds |
 |---|---|---|
-| `app` | **on** (`inherit logosQtMcp`, no `enableInspector` flag) | the dev build |
+| `app` | **on** (`inherit logosQtMcp`; `nix/app.nix` defaults `enableInspector ? true`) | the dev build |
 | `appDistributed` | off (`enableInspector = false`) | `#bin-bundle-dir`, appimage, macos |
 | `appDistributedWithInspector` | on | `#bin-bundle-dir-inspector` |
 
@@ -193,6 +231,16 @@ before the switch.
 
 **Pin the version, never a range or `latest`.** A moving ref would silently
 change the tool that gates every spec.
+
+**The sitometres version moves with the Basecamp pin.** 0.1.2 cannot drive
+Basecamp 0.3.0. It stages the core module so that 0.3.0 reads it as the
+`linux-amd64` variant, which a dev Basecamp refuses ("supported variants
+[linux-x86_64-dev, linux-amd64-dev]"). `radicle` then never loads, and every
+spec times out at `open`. 0.2.0 against the same build passes browse,
+branches, write and local. When the Basecamp pin moves, re-run a spec on the
+current sitometres before assuming the app broke. The only sign of this
+failure is the module-load line in Basecamp's log, which `--user-dir <dir>`
+keeps on disk after the run.
 
 **Do not point `--basecamp` at the `.LogosBasecamp` ELF directly** — that
 clears the probe and then fails to spawn with `ENOENT`, because the wrapper is
@@ -309,6 +357,15 @@ two processes contending on the same git storage. Five consecutive clean runs
 with no other instance up; two failures while an interactive `lgs basecamp
 launch alice` was being driven by hand. Close the interactive instance first,
 and do not read a lone step-9 failure as a code defect until you have.
+
+Since scaffold v0.5.0 an interactive `lgs basecamp launch` only contends if it
+was pointed at that profile. `launch` gives each profile its own `HOME`
+(`.scaffold/basecamp/profiles/<name>/home`), so Local mode there finds no
+`~/.radicle` at all unless `RAD_HOME` is set in the environment `lgs` was
+started from. That is the only way to reach your own node from an
+`lgs`-launched instance (inferred from `launch`'s environment inheritance, not
+yet run), and it brings the contention back. It also makes that instance's
+writes real. See CLAUDE.md "Local mode under `lgs basecamp launch`".
 
 ## The app starts in Explore, and every spec depends on that
 

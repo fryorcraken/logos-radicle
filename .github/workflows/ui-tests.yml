@@ -6,26 +6,20 @@ name: UI tests
 #
 # Kept out of ci.yml on purpose: it builds Basecamp from source (see below) and
 # needs the network for every step, where every job in ci.yml is seconds to a
-# few minutes. So it runs on pushes to main (post-merge) and on demand.
+# few minutes. It runs on pull requests, on pushes to main and on demand.
 #
-# Whether it could also run on `pull_request` is now a live question rather
-# than a settled one, because the "tens of minutes" this comment used to claim
-# was never true. Measured end to end, all 18 spec steps passing in both:
-#
-#                          cold (33712429609)   warm (33714298503)
-#   whole job                        8m43s              3m14s
-#   build Basecamp                   6m00s              1m21s
-#   paths from substituters            676                  0
-#
-# The cold cost is dominated by pulling the closure (~4.5m of that 6m; only
-# ~1.5m is Basecamp actually compiling), and a restored store removes it
-# outright — the warm run downloaded nothing at all. 3m14s is comfortably
-# PR-affordable, and the fast layers in ci.yml already cost a couple of minutes.
-#
-# Two caveats before anyone moves this to `pull_request`. Cache scoping: a PR
-# branch can read main's cache, but a PR from a FORK gets its own isolated
-# scope and would always run cold, i.e. ~9m. And the first run after any
-# Basecamp pin bump is cold by construction, since the rev is in the key.
+# What a run costs is a `gh run view` answer, so no duration is written here;
+# it moves with every Basecamp pin. The shape of the cost is what lasts:
+#   * WARM, a restored store makes the Basecamp build nearly free, because
+#     nothing is fetched or compiled.
+#   * COLD, the job pays for everything Basecamp needs that no cache serves.
+#     On 0.2.3 that was mostly downloading the closure. On 0.3.0 it is mostly
+#     COMPILING the Logos libraries, because the logos cache's signatures do
+#     not verify (see "Evaluate, THEN build" below), so a cold run is several
+#     times a warm one.
+#   * A run is cold when the store cache cannot be read: a PR from a FORK gets
+#     its own isolated cache scope, and the first run after any Basecamp pin
+#     bump misses by construction, since the rev is in the key.
 #
 # ─── why Basecamp is BUILT and not fetched ──────────────────────────────────
 # sitometres attaches to Basecamp's QML inspector. That is a compile-time
@@ -48,15 +42,18 @@ name: UI tests
 # (non-inspector) `#bin-bundle-dir` and `#app` are absent too, so this is not
 # an inspector-only gap — nothing for 0.2.3 at that rev is published.
 #
+# Re-checked for the 0.3.0 pin (bbe5da0) with the same `nix path-info --store`
+# probe against the `#app` output (…-logos-basecamp-0.3.0): "path is not
+# valid", so 0.3.0 is not published either and the reasoning below still holds.
+#
 # Consequences, and why the job is shaped the way it is:
-#   * timeout-minutes is 120, matching Basecamp's own doctests. That is far
-#     above the 8m21s actually observed, and deliberately so: it is a backstop
-#     against a pathological cold run, not an estimate.
+#   * timeout-minutes is 120, matching Basecamp's own doctests. It is a
+#     backstop against a pathological cold run, not an estimate; compare it
+#     with the slowest cold job of the latest run, not with a number here.
 #   * the store is cached across runs with cache-nix-action, which is what
 #     actually makes repeat runs fast here. The substituter alone cannot: it
-#     does not hold the artefact. It is still configured, because the
-#     dependencies AROUND Basecamp do come from it — 676 paths were substituted
-#     on the run above, for a resulting store of 5.15 GB.
+#     does not hold the artefact. It is still configured, because whatever it
+#     can verify AROUND Basecamp is fetched rather than built.
 #   * the rev is pinned, in `[repos.basecamp].pin` in scaffold.toml — the one
 #     place it is written. The build step below reads that pin, and the store
 #     cache key is derived from it. An unpinned build would recompile on every
@@ -69,14 +66,9 @@ on:
   push:
     branches: [main]
   # Also on PRs. This was originally push-only on the assumption that the job
-  # was too slow for the PR path — measured, that was wrong: ~3m14s warm, and
-  # the cold cost is mostly fetching the closure rather than compiling
-  # Basecamp. Two cases still pay the ~9m cold price and are worth knowing
-  # about rather than being surprised by:
-  #   - a PR from a fork gets its own isolated cache scope, so it never hits
-  #     this repo's cache;
-  #   - the first run after `[repos.basecamp].pin` changes in scaffold.toml,
-  #     since the rev it names is in the cache key.
+  # was too slow for the PR path; measured on a warm store, it was not. The
+  # cold cases (a fork PR, the first run after a pin bump) are described in
+  # the header and are worth knowing about rather than being surprised by.
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -127,8 +119,8 @@ jobs:
       # silently keys on the old rev: it restores a store full of the previous
       # Basecamp, the build finds nothing useful in it and recompiles from
       # scratch on every run, forever. Nothing errors; the specs still pass;
-      # the job just quietly costs ~9 minutes instead of ~3, and CI slowness
-      # gets blamed on the runners.
+      # every run just quietly pays the cold price, and CI slowness gets
+      # blamed on the runners.
       SPEC: radicle-ui/tests/ui/${{ matrix.spec }}.yaml
       # Where `lgs basecamp build --variant lgx` collects both modules.
       # sitometres takes ONE --app-dir search root and browse.yaml declares
@@ -136,7 +128,8 @@ jobs:
       #
       # The DEV directory, not portable — see "Why the dev #app" below.
       APP_DIR: .scaffold/basecamp/lgx
-      # Keep in step with ci.yml's build job.
+      # The same version as ci.yml's build job; ci.yml's lint fails when the
+      # two disagree.
       #
       # A released version, from crates.io. This was pinned to a commit on the
       # unmerged logos-co/scaffold#266 for two flags, and needs neither now:
@@ -154,7 +147,10 @@ jobs:
       # `fix/preserve-scaffold-toml-comments`), so bumping the pin silently
       # reintroduced `scaffold.toml` comment stripping. A released version
       # cannot do that.
-      LGS_VERSION: "0.3.1"
+      #
+      # Moves as a set with the scaffold.toml pins and `logos-module-builder`
+      # — see the same note in ci.yml.
+      LGS_VERSION: "0.5.0"
 
       # The `--print-output` equivalent — see the note in ci.yml. Streams nix
       # output into the step log instead of a `.scaffold/logs/` file on a
@@ -177,7 +173,15 @@ jobs:
       #
       # Pin the VERSION, not a range or `latest`: a moving ref would silently
       # change the tool that gates every spec here.
-      SITOMETRES: "@paradoxcomputer/sitometres@0.1.2"
+      #
+      # 0.2.0, not 0.1.2, since the move to Basecamp 0.3.0. 0.1.2 cannot drive
+      # it at all: it stages the core module so that Basecamp 0.3.0 reads it as
+      # variant `linux-amd64` ("not supported on this platform … supported
+      # variants [linux-x86_64-dev, linux-amd64-dev]"), the dependency never
+      # loads, and every spec fails at `open`. 0.2.0 against the same build
+      # passes every spec in the matrix. Copied in radicle-ui/tests/e2e-env.sh
+      # and docs/e2e.md; ci.yml's lint fails when the copies disagree.
+      SITOMETRES: "@paradoxcomputer/sitometres@0.2.0"
 
     steps:
       # Action majors are the Node-24 ones. GitHub retired the Node 20 runtime,
@@ -429,11 +433,46 @@ jobs:
       # `setup`'s profile seeding. The rev comes from BASECAMP_REV, which the
       # resolve step read from `[repos.basecamp].pin` — still the one place it
       # is written.
+      #
+      # ─── Evaluate, THEN build, in two processes ────────────────────────────
+      #
+      # One `nix build <flake>#app` ran the runner out of memory on every job
+      # once the pin reached Basecamp 0.3.0. The runner (4 CPUs, 16 GB, 3 GB
+      # swap) was shut down mid-build, which GitHub reports only as "The
+      # operation was canceled" or exit 143, with nothing from nix. Measured
+      # with the sampler below, run 44902411911:
+      #
+      #   evaluation alone   mem-avail 14.9 GB -> 4.4 GB   (before any build)
+      #   building           mem-avail < 1 GB, swap full, runner shut down
+      #
+      # Evaluating 0.3.0's flake costs ~10 GB, and one `nix build` holds that
+      # heap until it exits, i.e. through the whole compile. The compile is
+      # also bigger than it looks: the logos cache's signatures on most of
+      # 0.3.0's Logos libraries do not verify against the key below (nix logs
+      # "ignoring substitute … not signed by any of the keys"), so they are
+      # built from source, several C++ builds at once.
+      #
+      # `nix path-info --derivation` evaluates and exits, handing back the
+      # .drv. Building `<drv>^*` evaluates nothing, so the compile gets the
+      # whole machine. The out-link is the same `result-basecamp`.
+      #
+      # The sampler stays: a runner that dies of memory says nothing else.
       - name: Build Basecamp (dev, inspector included)
         run: |
           set -eu
-          nix build "github:logos-co/logos-basecamp/$BASECAMP_REV#app" \
-            -o result-basecamp --accept-flake-config
+          ( while sleep 20; do
+              printf '[resources] %s mem-avail=%sMiB swap-used=%sMiB disk-avail=%s\n' \
+                "$(date -u +%T)" \
+                "$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)" \
+                "$(free -m | awk '/^Swap/ {print $3}')" \
+                "$(df -h --output=avail / | tail -n 1 | tr -d ' ')"
+            done ) &
+          sampler=$!
+          trap 'kill "$sampler" 2>/dev/null || true' EXIT
+          drv=$(nix path-info --derivation --accept-flake-config \
+            "github:logos-co/logos-basecamp/$BASECAMP_REV#app")
+          echo "evaluated: $drv"
+          nix build "$drv^*" -o result-basecamp
           bin="$PWD/result-basecamp/bin/LogosBasecamp"
           test -x "$bin"
           echo "BASECAMP_BIN=$bin" >> "$GITHUB_ENV"

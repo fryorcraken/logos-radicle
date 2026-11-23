@@ -15,14 +15,18 @@
 #   root  - the repository root
 #   label - a short name for messages, e.g. "local e2e"
 
-# Keep in step with ui-tests.yml's SITOMETRES.
+# The same version as ui-tests.yml's SITOMETRES; ci.yml's lint fails when the
+# two disagree (.github/scripts/check-stack-pins.py).
 #
 # A published release. This was pinned to a fork commit for the inspector-probe
 # bug, which only ever affected the BUNDLE: the released probe looks for
 # `bin/.LogosBasecamp`, and a nix dirBundler bundle ships
 # `bin/.LogosBasecamp.elf`. The dev `#app` these scripts use ships the former,
 # so a published version works again.
-SITOMETRES="@paradoxcomputer/sitometres@0.1.2"
+#
+# 0.2.0 since Basecamp 0.3.0: 0.1.2 stages the core module under a variant
+# 0.3.0 refuses, so nothing opens. See the note on SITOMETRES in ui-tests.yml.
+SITOMETRES="@paradoxcomputer/sitometres@0.2.0"
 
 # The dev Basecamp — the QML inspector is ON in `#app` and off in the shipping
 # bundles; see docs/e2e.md. Built to a local out-link rather than through
@@ -34,7 +38,8 @@ if [ ! -x "$basecamp_bin" ]; then
     echo "        Build it first — the expensive one-time step:" >&2
     echo "          nix build \"github:logos-co/logos-basecamp/\$(tomlq -r '.repos.basecamp.pin' scaffold.toml)#app\" \\" >&2
     echo "            -o result-basecamp --accept-flake-config" >&2
-    echo "        See docs/e2e.md." >&2
+    echo "        Evaluation alone takes ~10 GB; if that runs out of memory," >&2
+    echo "        docs/e2e.md step 1 gives the two-process form." >&2
     exit 1
 fi
 

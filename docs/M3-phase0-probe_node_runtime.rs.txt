@@ -79,8 +79,9 @@ use radicle_node::runtime::Runtime;
 /// SUN_LEN", naming neither the path nor the limit.
 ///
 /// This is the same 108-byte cap that once made *every* Basecamp module
-/// segfault and is why `scaffold.toml` pins `runtime_dir` — arriving here from
-/// a different direction. An embedded node inherits the problem: see the
+/// segfault, and why `scaffold.toml` pinned `runtime_dir` until scaffold
+/// v0.5.0's short per-profile default made the pin redundant — arriving here
+/// from a different direction. An embedded node inherits the problem: see the
 /// findings doc, because it constrains where `RAD_HOME` may live.
 ///
 /// An optional first argument overrides the base directory, for running this
