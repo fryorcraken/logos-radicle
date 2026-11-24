@@ -18,7 +18,7 @@ documented alias behaviour, not on a run. None of the permission-matcher
 behaviour below was measured against Claude Code's matcher. No mutation tool
 applies to prose and config.
 
-- [ ] **`dev-writer`** — `.claude/settings.json:18` — `Bash(git *)` is an unbounded shell-execution and push primitive, so the `gh api` deny list protects nothing
+- [x] **`dev-writer`** — `.claude/settings.json:18` — `Bash(git *)` is an unbounded shell-execution and push primitive, so the `gh api` deny list protects nothing
       **Scenario:** git runs arbitrary commands through its own configuration:
       `git -c alias.x='!<any shell command>' x`, `git config alias.x '!…'` followed
       by `git x`, `-c core.sshCommand=…`, `-c credential.helper=!…`. An agent (or
@@ -41,8 +41,9 @@ applies to prose and config.
       described as a guard against mistakes, not a boundary, wherever it is
       documented.
       **Awaiting owner decision** (`dev-writer`): `.claude/settings.json` is the owner's, and the runner reserved this choice. Context, read for this: the entry is `/specflow:init`'s own allow list verbatim (its step 1 says "`Bash(git *)` is broad: it covers `git push` and `git reset`" and names branch protection as the backstop), so a narrowing here is also a departure from the plugin that a re-run of init would not undo but would not repeat either. Options: (a) keep `Bash(git *)` and say in `CLAUDE.md`, beside the allow-list paragraph, that the `gh api` deny list is a guard against mistakes, not a boundary; (b) narrow to the subcommands the flow runs (`status`, `diff`, `log`, `show`, `rev-parse`, `config --get-regexp`, `add`, `commit`, `worktree`, `cherry-pick`, `check-ignore`, `grep`, `ls-files`) and let `git push` prompt, one click per piece; (c) raise it upstream on `fryorcraken/agent-spec-flow`, since the list is the plugin's. design.md Context records the list's origin.
+      **Rejected**, by the owner (option (a)): `Bash(git *)` stays. It is `/specflow:init`'s own entry, and narrowing it to the flow's subcommands was considered and declined. The finding's fallback is done instead: `CLAUDE.md`, beside the allow-list paragraph, now says the `gh api` deny list guards against mistakes and is not a boundary, names the alias escape, the any-remote push and the out-of-tree `grep` as what that means, and names branch protection on `main` as the only backstop. design.md Decision 7 records the decision, the alternative and what keeping it accepts. `.claude/settings.json` not edited for this entry.
 
-- [ ] **`dev-writer`** — `.claude/settings.json:19-36` — the allow list composes into a prompt-free read-then-exfiltrate chain
+- [x] **`dev-writer`** — `.claude/settings.json:19-36` — the allow list composes into a prompt-free read-then-exfiltrate chain
       **Scenario:** `Bash(grep *)` reads any file the user can read, including
       outside the working directory, where the `Read` tool would stop and ask:
       `grep -r . ~/.radicle/keys`, `grep -r . ~/.ssh`. `CLAUDE.md` tells
@@ -63,8 +64,9 @@ applies to prose and config.
       risk and why, next to the paragraph about what is allow-listed (lines
       128-131).
       **Awaiting owner decision** (`dev-writer`): reserved by the runner with the `git *` entry above; `.claude/settings.json` is the owner's. `Bash(grep *)` is also in `/specflow:init`'s list. Options: (a) drop `Bash(grep *)`, leaving the `Grep` tool (and `git grep`, under `git *`) for searches; (b) keep it and record the accepted residual risk in `CLAUDE.md` beside the allow-list paragraph, as suggested; (c) raise it upstream, since the entry is the plugin's.
+      **Rejected**, by the owner (option (b)): `Bash(grep *)` stays, as `/specflow:init`'s entry; dropping it for the `Grep` tool was considered and declined. The accepted residual risk is recorded where the finding asked: `CLAUDE.md`'s new bullet beside the allow-list paragraph says `grep` reads outside the working directory and that the allow list describes what a well-behaved agent may do unprompted, not what a steered one cannot do; design.md Decision 7 carries the reasoning. `.claude/settings.json` not edited for this entry.
 
-- [ ] **`dev-writer`** — `.claude/settings.json:43` — `Bash(sh radicle-ui/tests/*)` matches a path that leaves the directory
+- [x] **`dev-writer`** — `.claude/settings.json:43` — `Bash(sh radicle-ui/tests/*)` matches a path that leaves the directory
       **Scenario:** the trailing `*` matches `../`, so
       `sh radicle-ui/tests/../../tmp/x.sh` is inside the pattern. `Write` is free
       and `./tmp/` is the sanctioned scratch space, so an agent can author a
@@ -78,8 +80,9 @@ applies to prose and config.
       (`check-qml-syntax.sh`, `lint-qml.sh`, `run-qml-tests.sh`), which matches
       the "take no arguments" rationale exactly.
       **Awaiting owner decision** (`dev-writer`): the fix is an edit to `.claude/settings.json`, which is the owner's and which I was told not to edit, so I cannot make it; this entry was not on the runner's list of reserved decisions and is flagged to it as such. Not measured: whether Claude Code normalises `../` before matching (a probe would cost the owner a prompt or run the escape). Options: (a) replace the entry with one per script, by name (`run-local-e2e.sh` is also in `radicle-ui/tests/` and would need its own if wanted); (b) keep it and accept the residual risk. `CLAUDE.md`'s allow-list paragraph was reworded for the readability finding on the same lines and no longer states more than the rule does.
+      **Fixed** in this commit, on the owner's authorisation (option (a)): the entry is replaced by three exact matches, `Bash(sh radicle-ui/tests/check-qml-syntax.sh)`, `…/lint-qml.sh)` and `…/run-qml-tests.sh)`, the scripts the overlay's `## Test layers` names, with no wildcard and so no `../` to normalise. `run-local-e2e.sh` and `run-write-e2e.sh` now prompt, which suits two scripts driven against a Radicle profile. `CLAUDE.md`'s allow-list paragraph names the three and why they are named. No gate observes permission matching, so no test can fail without this; the only check run is `python3 -m json.tool .claude/settings.json`, which parses. design.md Decision 7.
 
-- [ ] **`dev-writer`** — `.claude/settings.json:5-12` — the plugin marketplace is tracked from a moving ref
+- [x] **`dev-writer`** — `.claude/settings.json:5-12` — the plugin marketplace is tracked from a moving ref
       **Scenario:** `extraKnownMarketplaces.agent-spec-flow` names
       `fryorcraken/agent-spec-flow` with no `ref`, and `enabledPlugins` names no
       version. Whatever that repository's default branch holds is what every
@@ -98,6 +101,7 @@ applies to prose and config.
       the settings schema takes a `ref`, and write the pin's reason where the
       other pins are written. I did not check the schema.
       **Awaiting owner decision** (`dev-writer`): an edit to `.claude/settings.json`, which is the owner's; not on the runner's reserved list, flagged to it. The unpinned shape is what `/specflow:init` writes (`{ "source": "github", "repo": "<its repo>" }`, no `ref`). I did not check whether the settings schema takes a `ref`. Options: (a) pin the marketplace source to a tag or commit, if the schema takes one, and record why beside the other pins in `CLAUDE.md`; (b) keep tracking the default branch, accepted because the source is the owner's own repository; (c) raise it upstream so init writes a pinned source.
+      **Fixed** in this commit, on the owner's authorisation (option (a)): the source now carries `"ref": "specflow--v0.1.1"`. Schema checked before writing: Claude Code's marketplace reference lists `repo`, `ref`, `path`, `sparsePaths` for a `github` marketplace source, `ref` being "Branch, tag, or the full lowercase SHA of a commit"; the plugin's own `DECISIONS.md` row 29 prescribes this exact `ref` for consumers; and `gh api repos/fryorcraken/agent-spec-flow/git/refs/tags` shows the tag exists on the remote. The tag, not the SHA, because a SHA `ref` needs Claude Code v2.1.324 or later and older versions cannot load the marketplace at all, on every machine that loads this tracked file; the residual risk is a re-pointed tag in the owner's own repository. The pin's reason is written beside the allow-list paragraph in `CLAUDE.md`, alongside the comparison with the catalog's `@v1.3`. Not observable by any gate here; `python3 -m json.tool` parses the file. design.md Decision 7.
 
 - [x] **`dev-writer`** — `.gitignore:41-44` — four recursive directory re-admits contradict the comment above them, and two of them are directories this repo never tracks
       **Scenario:** the comment at lines 19-31 argues that `!.claude/<dir>/`

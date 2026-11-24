@@ -86,8 +86,9 @@ detection, and the same surface again against the local node.
 one, covered end to end. **Gate every write affordance on
 `getCapabilities().canWriteLocal`, never on `localAvailable`**: a profile can
 exist while its key stays locked, and a compose box that cannot be submitted
-loses whatever the user typed. What else is deferred, and why, is in
-[`docs/writes.md`](docs/writes.md).
+loses whatever the user typed. Which writes are not built yet is the issue
+tracker's; why the shipped ones stop where they do is in
+[`docs/writes.md`](docs/writes.md) and the M2.2 design it opens with.
 
 **Both modules carry the same version, and `ci.yml` asserts it** — a bump
 touching one `metadata.json` and not the other fails the metadata lint.
@@ -125,13 +126,29 @@ costs"**, at the end of this file: which shapes prompt, why never to chain, why
 `Edit` beats `sed -i`, why `gh` is free until filtered. Its rules are not
 repeated here. What this repo adds:
 
-- **`lgs …`, `nix build …` and `sh radicle-ui/tests/…` are allow-listed** in
-  `.claude/settings.json`. That rule is why the specflow block's generic
-  "`sh <relative-path>` costs a click" does not apply to the test scripts: a
-  plain call matches it as written (whether the checker then skips the prompt
-  has not been observed separately from the rule). Reading a path under
-  `/nix/store` still costs a click, and so does any of them behind a
-  `cd … &&`.
+- **`lgs …`, `nix build …` and the three test scripts the overlay's
+  `## Test layers` names are allow-listed** in `.claude/settings.json`, each
+  script by exact name with no arguments. That rule is why the specflow
+  block's generic "`sh <relative-path>` costs a click" does not apply to them:
+  a plain call matches it as written (whether the checker then skips the
+  prompt has not been observed separately from the rule). Any other script
+  there prompts, which is the point of naming them: the `*` this replaced
+  also matched `sh radicle-ui/tests/../../tmp/x.sh`. Reading a path under `/nix/store` still costs a click, and so
+  does any of them behind a `cd … &&`.
+- **The `gh api` deny list guards against mistakes; it is not a boundary.**
+  `Bash(git *)` and `Bash(grep *)` are kept, by the owner's choice: with
+  them, `git -c alias.x='!<cmd>' x` runs any command unprompted (a denied
+  `gh api` write included), `git push` reaches any remote or ref, and `grep`
+  reads outside the working directory. Branch protection on `main` is the
+  only backstop. Read the allow list as "what a well-behaved agent may do
+  without asking", not as what an agent steered by an issue body or a seed
+  response cannot do. The reasoning is Decision 7 of the `adopt-specflow`
+  design (`openspec/changes/archive/` once it has merged).
+- **The specflow marketplace is pinned to the plugin's release tag** by a
+  `ref` in `.claude/settings.json`, for the same reason the catalog action is
+  pinned to `@v1.3`: unpinned, the plugin's default branch would change every
+  agent's instructions with no commit here saying so. Upgrading the plugin is
+  a commit that moves the `ref`, followed by `/specflow:sync`.
 - **Agents get their tree from `isolation: "worktree"`, which depends on
   `.claude/settings.json` carrying `{"worktree": {"baseRef": "head"}}`.** That
   file is tracked; `.gitignore` says why beside the rule. Why a dispatched
@@ -146,8 +163,8 @@ repeated here. What this repo adds:
   `cargo install <crate> --version X` answers the same question by succeeding
   or failing, and leaves you with the tool installed.
 - **The test scripts take no arguments and set their own environment**, so
-  `sh radicle-ui/tests/<script>` is one plain call that the rule above
-  matches. Extend a script rather than inventing a flag or a `VAR=value`
+  `sh radicle-ui/tests/<script>` is one plain call, and for the three named
+  above it is the call the allow-list rule matches. Extend a script rather than inventing a flag or a `VAR=value`
   prefix.
 
 Scratch files go in `./tmp/`, as the specflow block says; `.gitignore` already

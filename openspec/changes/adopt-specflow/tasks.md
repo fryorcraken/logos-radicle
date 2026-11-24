@@ -70,8 +70,9 @@ it, run against this tree.
 
 - [x] 5.1 Act on every `dev-writer` box under `findings/`, recording each
   outcome under its box and each decision it changed in design.md; verified by
-  `grep -rc "^- \[ \]" openspec/changes/adopt-specflow/findings/`, whose
-  remaining boxes are the owner's (settings and the two untracked deferrals)
+  `grep -rc "^- \[ \]" openspec/changes/adopt-specflow/findings/` reporting 0
+  for every file, once the owner had decided the settings entries and the two
+  PLAN.md deferrals
 - [x] 5.2 Re-ignore the generated names inside the specflow `.gitignore`
   re-admits; verified by `git check-ignore -v --no-index
   .claude/skills/basecamp/SKILL.md .claude/skills/settings.local.json`
@@ -79,8 +80,21 @@ it, run against this tree.
 - [x] 5.3 Run the overlay's cd-free core unit-test form; it builds and runs
   the suite, with two socket-path failures from the pod's long Nix build dir
   (recorded in the overlay's row)
+- [x] 5.4 Name issues #96 and #97 in design.md Decision 1 and restore the
+  unqualified Goal; correct PR #94's body to match; verified by
+  `gh pr view 94` and by `git grep -n "no issue" -- openspec/changes/adopt-specflow/design.md`
+  returning nothing
+- [x] 5.5 Make the two `.claude/settings.json` edits the owner authorised, per
+  design.md Decision 7: the three test scripts by exact name, and the
+  marketplace `ref` pinned to `specflow--v0.1.1`. No gate observes permission
+  matching or plugin loading; the only check run is `python3 -m json.tool
+  .claude/settings.json` parsing the file
+- [x] 5.6 Say beside `CLAUDE.md`'s allow-list paragraph that the deny list
+  guards against mistakes and is not a boundary, and why the marketplace is
+  pinned
 
 ## Deferred
 
 - `openspec validate --specs` in `ci.yml` is not in this piece. It is issue
-  #93; design.md Decision 6 records why.
+  #93's, added without `--strict` in PR #95, with `--strict` left to a later
+  follow-up; design.md Decision 6 records why.

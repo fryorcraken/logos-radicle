@@ -9,16 +9,8 @@ for `.claude/specflow/`. What it does not yet do is remove the second copy of
 everything those now say: the nine files under `.claude/agents/`, the
 restatements in `CLAUDE.md` above the specflow block, and `docs/PLAN.md`.
 
-**The settings permissions are recorded here, not decided here.** The allow
-list's first twenty entries and the nine `gh api` deny patterns are
-`/specflow:init`'s list verbatim (its step 1, which itself notes that
-`Bash(git *)` covers `git push` and `git reset` and names branch protection on
-the default branch as the backstop); the remaining entries (`lgs`, `nix build`,
-the Qt 6 runners, the test scripts, `cargo`) are the stack commands init's
-report asks the owner to add. Review raised narrowing `git *`, dropping
-`grep *` in favour of the `Grep` tool, naming the test scripts instead of
-`sh radicle-ui/tests/*`, and pinning the marketplace source. The file is the
-owner's, so each is left with the owner, and the findings record the options.
+The settings permissions and the marketplace source are the owner's file;
+what the owner decided about them in review is Decision 7.
 
 Two constraints shape every step:
 
@@ -37,8 +29,7 @@ Two constraints shape every step:
 - One copy of each flow rule: the plugin's. The overlay carries only what is
   specific to this repository.
 - No live document names `docs/PLAN.md` or a file under `.claude/agents/`.
-- Every PLAN.md passage with a future either has an issue or a durable home,
-  except the two deferrals Decision 1 marks as awaiting the owner.
+- Every PLAN.md passage with a future either has an issue or a durable home.
 
 **Non-Goals:**
 
@@ -47,7 +38,8 @@ Two constraints shape every step:
 - **Rewriting the archived changes.** `openspec/changes/archive/` keeps its
   references to PLAN.md and the agent files: an archived change records what
   was true when it shipped, and rewriting it would make that record false.
-- **The CI validation step.** Deferred; see Decision 6.
+- **The CI validation step.** It is issue #93's, landing without `--strict` in
+  PR #95; see Decision 6.
 - **Editing the specflow block in `CLAUDE.md`.** It is written by
   `/specflow:sync`. Its one mention of `.claude/agents/` is a generic statement
   that stays true.
@@ -79,7 +71,7 @@ into two places.
 | Whether `git` is in a shipped bundle | issue #80 |
 | The unscoped control socket (the paragraph that ends mid-sentence) | issue #79 |
 | Embedded e2e as a spec to write | issue #77 |
-| "Deferred, deliberately: patch open/update … and delegate/identity management" | **no issue; awaiting the owner**, who decides whether each gets an issue or stays recorded only in `docs/M3-embedded-node-plan.md`'s "Deferred" line under Phase 3, which carries the same deferral and its reason (the `git` push path must be proven first). Issue #86 names delegate management as out of its scope; no issue tracks either item |
+| "Deferred, deliberately: patch open/update … and delegate/identity management" | issue #96 (patch open/update) and issue #97 (delegate/identity management), filed by the owner in review. The reason (the `git` push path must be proven first) is in #96 and also survives in `docs/M3-embedded-node-plan.md`'s Phase 3 "Deferred" line, and for patches in `docs/M2.2-write-actions-design.md`'s "Deferred, with reasons" |
 | "What exists today", the struck-through shipped items | dropped: the specs and the archived `design.md`s they already pointed at hold them |
 
 **The platform wording is corrected, not moved verbatim.** PLAN.md said "this
@@ -259,7 +251,7 @@ repository's own measurements (the `node-paths` reference pair, the
 should shrink to its repo-specific half is reported to the owner, not decided
 here.
 
-### 6. `openspec validate --specs` in CI is deferred to issue #93
+### 6. `openspec validate --specs` in CI is issue #93's, without `--strict`
 
 The issue asked for `openspec validate --specs --strict` in `ci.yml`. Run
 against this tree with the pod's CLI (`openspec --version` reports 2.1.1),
@@ -269,16 +261,78 @@ very long (>500 characters)" warning to a failure, and every capability under
 passes all nine. So the step as written turns every pull request red, and the
 three ways out (drop `--strict`, split the long requirements across all nine
 specs, or pin an older CLI) are each a decision of their own. The owner moved
-the step out of this piece into issue #93; nothing in `ci.yml` changes here.
+the step out of this piece into issue #93, and chose the first way out: PR #95
+(`piece/ci-validate-specs`) adds the step to `Lint` **without `--strict`**,
+keeping the long-requirement warning advisory, and `--strict` comes back later
+as a follow-up. Nothing in `ci.yml` changes in this piece.
 
-**What the deferral costs, while #93 is open.** Nothing in CI validates a live
+**What the split costs until PR #95 merges.** Nothing in CI validates a live
 spec at all, so a structurally broken spec under `openspec/specs/` can merge
 with every required check green; the `closer`'s validation before archiving is
 a stage an agent runs, not a gate CI enforces. And the step as the
 issue worded it would not have closed the gap archived foundations task 4.22
 named either: `validate --specs` cannot see a declined promotion, a delta that
 never reached `openspec/specs/`. #93 records that only a check that every
-capability a proposal names has a live spec would.
+capability a proposal names has a live spec would, and PR #95 says it does not
+add one.
+
+### 7. `.claude/settings.json`: what the owner kept, narrowed and pinned
+
+The file is the owner's; every outcome here is the owner's decision in review,
+and the two edits made to it are the two the owner authorised. The allow list's
+first twenty entries and the nine `gh api` deny patterns are `/specflow:init`'s
+list verbatim (its step 1 itself notes that `Bash(git *)` covers `git push` and
+`git reset`, with branch protection on the default branch as the backstop). The
+rest are the stack commands init's report asks the owner to add.
+
+**`Bash(git *)` and `Bash(grep *)` stay.** Considered and rejected by the
+owner: narrowing `git *` to the subcommands the flow runs, with `git push`
+prompting once a piece, and dropping `grep *` for the `Grep` tool. What keeping
+them accepts, as review measured it: `git -c alias.x='!cmd' x` (or a
+`core.sshCommand` / `credential.helper`) runs any command without a prompt,
+including a `gh api` write the deny list refuses; `git *` also covers
+`git push` to any remote or ref, `git reset --hard` and `git clean`; and
+`grep -r` reads outside the working directory, where `Read` would ask. So the
+deny list is a guard against an agent's mistake, not a boundary against a
+steered one, and `CLAUDE.md` now says so beside its allow-list paragraph.
+Branch protection on `main` is the backstop for the one push that matters
+most; nothing backstops the rest.
+
+**`Bash(sh radicle-ui/tests/*)` is narrowed to the three scripts the overlay's
+`## Test layers` names**, each as an exact match with no arguments:
+`check-qml-syntax.sh`, `lint-qml.sh`, `run-qml-tests.sh`. The wildcard matched
+`sh radicle-ui/tests/../../tmp/x.sh`, a script an agent can write for free into
+the sanctioned scratch space, and the rationale for the entry ("the test
+scripts take no arguments") is the property an exact match enforces and a
+trailing `*` does not. Whether Claude Code normalises `../` before matching was
+not measured; with no wildcard it no longer matters. `run-local-e2e.sh` and
+`run-write-e2e.sh` now prompt, which suits them: both are driven against a
+Radicle profile and are not part of the agent-run layers.
+
+**The marketplace source is pinned with `"ref": "specflow--v0.1.1"`**, the
+plugin's release tag. Without a `ref`, every contributor who trusts this folder
+loads whatever the plugin repository's default branch holds, as agents with all
+tools under the permissions above, with no commit here saying it changed; this
+repo already pins the catalog action to `@v1.3` and sitometres to an exact
+version for that reason. Claude Code's marketplace reference lists `ref` for a
+`github` marketplace source ("Branch, tag, or the full lowercase SHA of a
+commit"), and the plugin's own `DECISIONS.md` (row 29) prescribes exactly this
+`ref` for consumers, since `/specflow:init` writes the source without one.
+**Considered: the commit SHA** the tag points at. It is immutable where a tag
+can be re-pointed, but the same reference says a SHA `ref` needs Claude Code
+v2.1.324 or later and older versions cannot load the marketplace at all, and
+this tracked file loads on every contributor's machine. The tag leaves the
+residual risk of a re-pointed tag in the owner's own repository, which is
+narrower than tracking a branch. Upgrading the plugin is now a commit: move the
+`ref`, then re-run `/specflow:sync`.
+
+**Not changed: the bare `Bash(qmltestrunner *)` entry**, which the overlay
+warns may be Qt 5. Review grouped it with these edits; it was not among the two
+the owner authorised, so it stays.
+
+No gate observes permission matching: no test layer here can show any of
+these entries working or failing, and `python3 -m json.tool` showing the file
+still parses is the only check run.
 
 ## Risks / Trade-offs
 
@@ -288,9 +342,6 @@ capability a proposal names has a live spec would.
 - [An agent still addresses an unqualified `spec-writer`] → with the project
   files gone there is no such agent; the dispatch fails visibly rather than
   reaching a stale copy. The runner skill already addresses `specflow:<role>`.
-- [Two PLAN.md deferrals have no issue] → reported to the owner in the
-  hand-back; they are scope, so they belong in the tracker or nowhere, and
-  creating them is the owner's call.
 - [Other worktrees still hold the deleted files] → they are on other branches;
   a reader citing one is the hazard the specflow block's "cite from the tree
   you are working in" already covers.

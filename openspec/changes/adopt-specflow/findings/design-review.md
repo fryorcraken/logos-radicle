@@ -53,7 +53,7 @@ What is wrong is the prose around Decision 6 and one decision-table row.
       down.
       **Fixed** in this commit: Decision 6 gains "What the deferral costs, while #93 is open", a sentence for each: nothing in CI validates a live spec, so a structurally broken one can merge with every required check green (the `closer`'s pre-archive validation is a stage, not a gate); and, from #93's last section (read fresh), `validate --specs` cannot see a declined promotion, which only a check that every capability a proposal names has a live spec would.
 
-- [ ] **`dev-writer`** — `design.md:70` and the Goals line "Every PLAN.md passage with a future either has an issue or a durable home" are contradicted by the table's own row
+- [x] **`dev-writer`** — `design.md:70` and the Goals line "Every PLAN.md passage with a future either has an issue or a durable home" are contradicted by the table's own row
       The "Deferred, deliberately: patch open/update ... and delegate/identity
       management" row says "no issue" and "nothing tracks either item". That
       is a PLAN.md passage with a future and, by the row, neither an issue nor a
@@ -66,6 +66,7 @@ What is wrong is the prose around Decision 6 and one decision-table row.
       written. This also needs the owner's call (the hand-back is supposed to
       carry it), so the runner should check it is reported.
       **Awaiting owner decision** (`dev-writer`, owner decision 1 as the runner reserved it; no issue created). Options: (a) the owner files issues for patch open/update and delegate/identity management, and the row names them; (b) `docs/M3-embedded-node-plan.md:677-678` is their durable home, and the row cites it as such. Done meanwhile, without choosing: the Goal now reads "…either has an issue or a durable home, except the two deferrals Decision 1 marks as awaiting the owner", which is true as written, and the row cites the M3 line as where the same deferral and its reason survive. Either option then needs only the row and that Goal clause edited. The runner has it in the hand-back.
+      **Fixed** in this commit, on the owner's option (a): the owner filed #96 (patch open/update) and #97 (delegate/identity management). Decision 1's row now names both, and still cites the M3 line (and the M2.2 design for patches) as where the reason also survives; the Goal is back to its unqualified form, which is now true as written; the Risks row about untracked deferrals is gone.
 
 No findings against the code: both source-file edits are comments and match the
 decisions that name them.

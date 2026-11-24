@@ -51,7 +51,9 @@ specflow block in `CLAUDE.md`, the plugin and permission entries in
 
 **Not in this change:** the issue also asks for `openspec validate --specs
 --strict` in `ci.yml`. The owner moved that step out of this piece into issue
-#93 (see the second open question), so `ci.yml` is not edited here.
+#93 (see the second open question), where PR #95 adds it **without
+`--strict`**; `--strict` comes back later as a follow-up. `ci.yml` is not
+edited here.
 
 ## Capabilities
 
@@ -83,8 +85,9 @@ change declares `skip_specs: true`.
    (a restructuring of all nine specs, well beyond this piece), or pin a CLI
    version whose strict mode passes.
    Answered by the owner: the step is moved out of this piece into issue #93,
-   which holds the choice between those options. This change does not edit
-   `ci.yml`; design.md Decision 6 records why.
+   and runs without `--strict` (PR #95, `piece/ci-validate-specs`), with
+   `--strict` left to a later follow-up. This change does not edit `ci.yml`;
+   design.md Decision 6 records why.
 
 ## Impact
 
@@ -94,7 +97,8 @@ change declares `skip_specs: true`.
   `docs/rust-ffi.md`, `docs/e2e.md`, `docs/M3-embedded-node-plan.md`,
   `docs/OPENSPEC-ARCHIVE.md`, `radicle-ui/tests/ui/sync.yaml` (a comment),
   `radicle/src/radicle_impl.h` (a comment).
-- **Not edited:** `.github/workflows/ci.yml`; its validation step is issue #93.
+- **Not edited:** `.github/workflows/ci.yml`; its validation step, without
+  `--strict`, is issue #93's, in PR #95.
 - **Agent selection:** with the project's role files gone, the plugin's
   `specflow:<role>` agents are the only ones of those names. The deleted
   `spec-writer.md`'s frontmatter is the harness's selection text for the

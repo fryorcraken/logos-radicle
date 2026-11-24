@@ -6,7 +6,8 @@
     "agent-spec-flow": {
       "source": {
         "source": "github",
-        "repo": "fryorcraken/agent-spec-flow"
+        "repo": "fryorcraken/agent-spec-flow",
+        "ref": "specflow--v0.1.1"
       }
     }
   },
@@ -40,7 +41,9 @@
       "Bash(qmltestrunner *)",
       "Bash(qmltestrunner6 *)",
       "Bash(/usr/lib64/qt6/bin/qmltestrunner *)",
-      "Bash(sh radicle-ui/tests/*)",
+      "Bash(sh radicle-ui/tests/check-qml-syntax.sh)",
+      "Bash(sh radicle-ui/tests/lint-qml.sh)",
+      "Bash(sh radicle-ui/tests/run-qml-tests.sh)",
       "Bash(cargo fmt *)",
       "Bash(cargo clippy *)",
       "Bash(cargo test *)",
