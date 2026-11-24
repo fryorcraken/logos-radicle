@@ -66,6 +66,20 @@ it, run against this tree.
   `git grep -n -E "PLAN\.md|\.claude/agents|RUNNER\.md" -- . ":!openspec/changes/archive" ":!openspec/changes/adopt-specflow"`
   returning only `CLAUDE.md`'s specflow block line
 
+## 5. Review findings
+
+- [x] 5.1 Act on every `dev-writer` box under `findings/`, recording each
+  outcome under its box and each decision it changed in design.md; verified by
+  `grep -rc "^- \[ \]" openspec/changes/adopt-specflow/findings/`, whose
+  remaining boxes are the owner's (settings and the two untracked deferrals)
+- [x] 5.2 Re-ignore the generated names inside the specflow `.gitignore`
+  re-admits; verified by `git check-ignore -v --no-index
+  .claude/skills/basecamp/SKILL.md .claude/skills/settings.local.json`
+  matching the new lines
+- [x] 5.3 Run the overlay's cd-free core unit-test form; it builds and runs
+  the suite, with two socket-path failures from the pod's long Nix build dir
+  (recorded in the overlay's row)
+
 ## Deferred
 
 - `openspec validate --specs` in `ci.yml` is not in this piece. It is issue

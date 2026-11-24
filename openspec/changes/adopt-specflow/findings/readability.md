@@ -51,7 +51,7 @@ application-code diff, so the mutation tool does not apply and was not run.
       `docs/OPENSPEC-ARCHIVE.md` among the edited files. What Changes also gains
       the `docs/OPENSPEC-ARCHIVE.md` repoint.
 
-- [ ] **`dev-writer`** — `.gitignore:62-66` — the new `# specflow` block re-admits whole directories with no explanation, and contradicts the comment 25 lines above it
+- [x] **`dev-writer`** — `.gitignore:62-66` — the new `# specflow` block re-admits whole directories with no explanation, and contradicts the comment 25 lines above it
       **Scenario:** the header comment (lines 16-37) says `.claude/*` holds
       "`lgs init`'s output, `openspec init`'s skills and commands" and advises
       "re-admit files by name where you can, and a directory only when
@@ -70,8 +70,9 @@ application-code diff, so the mutation tool does not apply and was not run.
       and the owner's), or to re-admit by name, and to reconcile the header
       comment. The block's position is forced (negations must follow `.claude/*`)
       but the comment can say so.
+      **Fixed** in this commit by the first route: the header comment now says the `# specflow` block is `/specflow:init`'s, why it re-admits whole directories (a project skill or hook must be tracked to reach a worktree cut from `HEAD`), that this is the exception to its own by-name advice, and that the block sits last because a negation must follow `.claude/*`. The header no longer claims `openspec init` writes there (2.1.1 writes to the user's `~/.claude`, measured). The generated skill is now kept out by intent: `git check-ignore -v --no-index .claude/skills/basecamp/SKILL.md` reports `.gitignore:84:.claude/skills/basecamp/`, not the `basecamp/` build rule. Decision 2 records it.
 
-- [ ] **`dev-writer`** — `.claude/specflow/PROJECT.md:169-172` (and `CLAUDE.md:547-559`) — the staleness-guard hazard counts four copies and says a fourth is the signal to reshape; #29 says there are nine sites and recommends against one abstraction
+- [x] **`dev-writer`** — `.claude/specflow/PROJECT.md:169-172` (and `CLAUDE.md:547-559`) — the staleness-guard hazard counts four copies and says a fourth is the signal to reshape; #29 says there are nine sites and recommends against one abstraction
       **Scenario:** the overlay is what every dispatched agent reads first. It
       says the guard "is hand-written in `CommitsTab`, `IssuesTab`, `PatchesTab`
       and `ThreadView`" and "A fourth variant is the signal to reshape, not to add
@@ -85,8 +86,9 @@ application-code diff, so the mutation tool does not apply and was not run.
       #29, which is also what the file's own "do not write down what a command can
       answer" rule asks for.
       **Severity:** genuine defect (a stale claim in a new file), low.
+      **Fixed** in this commit: the overlay hazard drops the four names and the "fourth variant" rule, tells a reviewer to check each copy captures what its reply depends on, and names #29 for the count and the case against a universal guard, to read before reporting a missed reshape. `CLAUDE.md`'s example is changed the same way. `git grep -n -i fourth -- CLAUDE.md .claude/specflow` returns only the specflow block's line.
 
-- [ ] **`dev-writer`** — `CLAUDE.md:446-448`, `docs/e2e.md:84`, `docs/e2e.md:243` — three paragraphs edited by this change were left badly wrapped
+- [x] **`dev-writer`** — `CLAUDE.md:446-448`, `docs/e2e.md:84`, `docs/e2e.md:243` — three paragraphs edited by this change were left badly wrapped
       **Scenario:** each is hard-wrapped prose where the edit changed line length
       without reflowing. `CLAUDE.md:446-448` reads "`lgs init` generates
       `.claude/skills/`, `.cursor/` and `AGENTS.md`, and none of\nit refreshes
@@ -96,8 +98,9 @@ application-code diff, so the mutation tool does not apply and was not run.
       wrapped at 80. `docs/e2e.md:243` leaves "The only sign of this" alone before
       a break. A later edit to any of them produces a diff of the whole paragraph.
       **Severity:** stylistic preference, low.
+      **Fixed** in this commit: all three paragraphs reflowed to 80 columns with no word changed.
 
-- [ ] **`dev-writer`** — `docs/rust-ffi.md:409-412` — "which is why there is no `target_os` gate" is a non sequitur
+- [x] **`dev-writer`** — `docs/rust-ffi.md:409-412` — "which is why there is no `target_os` gate" is a non sequitur
       **Scenario:** the sentence reads "A Unix-only assumption in this crate would
       be this repo's own, which is why there is no `target_os` gate or `cfg(unix)`
       branch here … and none should be added without a reason." The absence of a
@@ -108,8 +111,9 @@ application-code diff, so the mutation tool does not apply and was not run.
       branch today (see the Darwin paragraph); adding one is a decision") keeps
       the rule and drops the false causal link.
       **Severity:** stylistic, low.
+      **Fixed** in this commit, as suggested: the sentence now reads "…not Unix-only, and a Unix-only assumption in this crate would be this repo's own. There is no `target_os` gate or `cfg(unix)` branch here today (see the Darwin paragraph below); adding one is a decision to record, not a side effect."
 
-- [ ] **`dev-writer`** — `CLAUDE.md:145-147` — claims `sh radicle-ui/tests/<script>` is a free, allow-listed call, while the specflow block in the same file says `sh <relative-path>` costs a click
+- [x] **`dev-writer`** — `CLAUDE.md:145-147` — claims `sh radicle-ui/tests/<script>` is a free, allow-listed call, while the specflow block in the same file says `sh <relative-path>` costs a click
       **Scenario:** the block's table (`CLAUDE.md:875`) lists `sh <relative-path>`
       in the "Costs a click every time" column. The repo bullet and
       `.claude/specflow/PROJECT.md` Test layers both say the relative form is one
@@ -121,8 +125,9 @@ application-code diff, so the mutation tool does not apply and was not run.
       cannot tell which.
       **Severity:** unverified claim, low. Measure it once, then say which form to
       use, or hedge it ("allow-listed as written; not observed").
+      **Fixed** in this commit by the hedge: I cannot measure it from inside an agent, because a call the owner approved and one the checker skipped return the same output to me. `CLAUDE.md`'s allow-list bullet now says the `Bash(sh radicle-ui/tests/*)` rule is why the block's generic "`sh <relative-path>` costs a click" does not apply to the test scripts, and that whether the checker then skips the prompt has not been observed separately from the rule; the test-scripts bullet says the call is one "that the rule above matches" rather than "free". The security finding on the same rule's `../` reach is the owner's (see `security.md`).
 
-- [ ] **`dev-writer`** — `CLAUDE.md:663` — the test-layers table gives the core unit-test command as `cd radicle && nix build …` with no note, in a file whose block says never to chain
+- [x] **`dev-writer`** — `CLAUDE.md:663` — the test-layers table gives the core unit-test command as `cd radicle && nix build …` with no note, in a file whose block says never to chain
       **Scenario:** a reader copying the row gets a compound command that prompts,
       and the overlay (`PROJECT.md:30`) gives the cd-free `nix build
       ./radicle#checks…` for the same layer. `design.md` Decision 4 records why the
@@ -131,15 +136,17 @@ application-code diff, so the mutation tool does not apply and was not run.
       the page and agree only in the archived design.
       **Severity:** stylistic / consistency, low. One clause in the row, or a
       pointer to the overlay's row, closes it.
+      **Fixed** in this commit by the pointer, taken further for `architecture.md`'s duplication finding: `CLAUDE.md`'s test-layers and gates tables are removed, and "The test layers" now points at the overlay's `## Test layers` and `## CI gates` as the one copy, keeping only the reasoning. `git grep -n "cd radicle" -- CLAUDE.md` returns nothing. Decisions 3 and 4 record it.
 
-- [ ] **`dev-writer`** — `docs/OPENSPEC-ARCHIVE.md:141` — cites the allow rule as `Bash(openspec:*)`, which is not in `.claude/settings.json`
+- [x] **`dev-writer`** — `docs/OPENSPEC-ARCHIVE.md:141` — cites the allow rule as `Bash(openspec:*)`, which is not in `.claude/settings.json`
       **Scenario:** this change added `.claude/settings.json`'s allow list, which
       spells it `Bash(openspec *)`. The page, rewritten two lines above this one
       in the same commit, still quotes the older colon form, so a reader grepping
       the settings for the rule the page names finds nothing.
       **Severity:** stale reference, low.
+      **Fixed** in this commit: the page now says `Bash(openspec *)`, the spelling in `.claude/settings.json`. `git grep -n "openspec:\*" -- docs` returns nothing.
 
-- [ ] **`dev-writer`** — `.claude/specflow/PROJECT.md` `## code-reviewer` — a deleted reviewer rule was dropped without being moved or mentioned in `design.md` Decision 2
+- [x] **`dev-writer`** — `.claude/specflow/PROJECT.md` `## code-reviewer` — a deleted reviewer rule was dropped without being moved or mentioned in `design.md` Decision 2
       **Scenario:** `origin/main:.claude/agents/code-reviewer.md` carried "**An
       operation whose failure is legitimately not an error.** Anything with a
       'best effort' step deserves a look at whether its non-happening is
@@ -154,3 +161,4 @@ application-code diff, so the mutation tool does not apply and was not run.
       **Severity:** content loss, low. Either move the rule into
       `## code-reviewer` or add a row to Decision 2 saying it was judged
       the plugin's.
+      **Fixed** in this commit by moving both: `## code-reviewer` gains "An operation whose failure is legitimately not an error", tied to the overlay's silent-failure hazard, and `## tester` gains "A value that looks obviously invalid may not be. Probe it". Decision 2's table lists both rows. Read against `git show origin/main:.claude/agents/code-reviewer.md` and `tester.md`.

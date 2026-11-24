@@ -13,8 +13,10 @@ generated_code/
 .DS_Store
 .scaffold
 
-# AI tool directories. Generated or machine-local: `lgs init`'s output,
-# `openspec init`'s skills and commands, settings.local.json, worktrees.
+# AI tool directories. Generated or machine-local unless re-admitted below:
+# `lgs init`'s output, settings.local.json, worktrees. (Older `openspec init`
+# versions wrote project skills and commands here too; 2.1.1 with
+# `--tools claude` writes them to the user's own ~/.claude instead.)
 #
 # `.claude/*` rather than `.claude/` because git will not re-include a file
 # whose parent DIRECTORY is excluded — with a `.claude/` rule the negations
@@ -27,6 +29,15 @@ generated_code/
 # by name where you can, and a directory only when everything in it is meant
 # to be tracked. The role agents are the specflow plugin's; a project agent
 # added later is re-admitted as its one file.
+#
+# The `# specflow` block at the end of this file is the deliberate exception.
+# It is `/specflow:init`'s, and re-admits `.claude/specflow/`, `skills/`,
+# `commands/` and `hooks/` whole, so that a project skill or hook reaches every
+# worktree: a dispatched worktree is cut from HEAD, and an untracked one is
+# silently missing from it. That buys exactly the cost described above, so the
+# generated or machine-local names known to land in those directories are
+# re-ignored after the block, by name. It sits at the end because a negation
+# only works after the `.claude/*` it overrides.
 #
 # `settings.json` is not a preference file: it carries
 # `worktree.baseRef = "head"`, which is what makes `isolation: "worktree"`
@@ -64,3 +75,11 @@ tmp/
 !.claude/skills/
 !.claude/commands/
 !.claude/hooks/
+
+# Re-ignored inside the specflow re-admits above (see the comment on
+# `.claude/*`): `lgs init`'s bundled skill, which goes stale on every `lgs`
+# upgrade (CLAUDE.md, "The bundled `basecamp` skill"), and a
+# settings.local.json at any depth. Without these, the first is kept out only
+# by the unrelated `basecamp/` build-output rule above.
+.claude/skills/basecamp/
+.claude/**/settings.local.json

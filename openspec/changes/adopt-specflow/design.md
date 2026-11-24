@@ -9,6 +9,17 @@ for `.claude/specflow/`. What it does not yet do is remove the second copy of
 everything those now say: the nine files under `.claude/agents/`, the
 restatements in `CLAUDE.md` above the specflow block, and `docs/PLAN.md`.
 
+**The settings permissions are recorded here, not decided here.** The allow
+list's first twenty entries and the nine `gh api` deny patterns are
+`/specflow:init`'s list verbatim (its step 1, which itself notes that
+`Bash(git *)` covers `git push` and `git reset` and names branch protection on
+the default branch as the backstop); the remaining entries (`lgs`, `nix build`,
+the Qt 6 runners, the test scripts, `cargo`) are the stack commands init's
+report asks the owner to add. Review raised narrowing `git *`, dropping
+`grep *` in favour of the `Grep` tool, naming the test scripts instead of
+`sh radicle-ui/tests/*`, and pinning the marketplace source. The file is the
+owner's, so each is left with the owner, and the findings record the options.
+
 Two constraints shape every step:
 
 - **A file deleted here takes its links with it.** `git grep` over the tree,
@@ -26,7 +37,8 @@ Two constraints shape every step:
 - One copy of each flow rule: the plugin's. The overlay carries only what is
   specific to this repository.
 - No live document names `docs/PLAN.md` or a file under `.claude/agents/`.
-- Every PLAN.md passage with a future either has an issue or a durable home.
+- Every PLAN.md passage with a future either has an issue or a durable home,
+  except the two deferrals Decision 1 marks as awaiting the owner.
 
 **Non-Goals:**
 
@@ -67,7 +79,7 @@ into two places.
 | Whether `git` is in a shipped bundle | issue #80 |
 | The unscoped control socket (the paragraph that ends mid-sentence) | issue #79 |
 | Embedded e2e as a spec to write | issue #77 |
-| "Deferred, deliberately: patch open/update … and delegate/identity management" | **no issue**; reported to the owner rather than invented here. Issue #86 names delegate management as out of its scope; nothing tracks either item |
+| "Deferred, deliberately: patch open/update … and delegate/identity management" | **no issue; awaiting the owner**, who decides whether each gets an issue or stays recorded only in `docs/M3-embedded-node-plan.md`'s "Deferred" line under Phase 3, which carries the same deferral and its reason (the `git` push path must be proven first). Issue #86 names delegate management as out of its scope; no issue tracks either item |
 | "What exists today", the struck-through shipped items | dropped: the specs and the archived `design.md`s they already pointed at hold them |
 
 **The platform wording is corrected, not moved verbatim.** PLAN.md said "this
@@ -106,9 +118,11 @@ look (`## <role>`), and a rule addressed to every role belongs in `## Hazards`:
 | `dev-writer.md`: one failure shape, `{"error":"..."}` | `## dev-writer` |
 | `design-reviewer.md`: the triggers that make a `design.md` due here (the FFI boundary, the JSON contract, the write path) | `## dev-writer` and `## design-reviewer` |
 | `design-reviewer.md`: check against `docs/M3-*.md` where a change touches what they measured; a built subsystem's trap belongs in its trigger doc | `## design-reviewer` |
-| `tester.md`: `ETXTBSY` from a test that writes then runs a binary; a resolver test needs a nonexistent path | `## tester` |
-| `code-reviewer.md`: what input is untrusted, the boundaries, the write-gate check | `## code-reviewer` |
-| `code-reviewer.md`: the seed API's observed shapes; the lock and the `flake.nix` vendor hash move together; the licence | `## code-reviewer` |
+| `tester.md`: `ETXTBSY` from a test that writes then runs a binary; a resolver test needs a nonexistent path; a value that looks invalid may not be, so probe it | `## tester` |
+| `code-reviewer.md`: what input is untrusted, the boundaries | `## code-reviewer` |
+| `code-reviewer.md`: the write-gate check (`canWriteLocal`, never `localAvailable`) | `## Hazards`, which already carried it |
+| `code-reviewer.md`: the seed API's observed shapes; the lock and the `flake.nix` vendor hash move together; the licence; an operation whose failure is legitimately not an error | `## code-reviewer` |
+| `closer.md`: read `docs/OPENSPEC-ARCHIVE.md` before archiving | `## closer` |
 | the composer that must reload rather than trust its own copy (in `code-reviewer.md`, `tester.md`, `spec-test-reviewer.md`) | `## Hazards`, once |
 
 Rules already in the overlay were not repeated: the silent-QML-failure
@@ -122,11 +136,39 @@ same name; both are offered, the unqualified one wins by being shorter to
 address, and it then carries none of the plugin's rules. The overlay's last
 hazard line existed only to warn about that collision, and goes with the files.
 
+**The closer's route to `docs/OPENSPEC-ARCHIVE.md` is the overlay.** The
+deleted `closer.md` told the closer to read that page before archiving. The
+plugin's closer reads the overlay and its own `specflow:openspec-archive`
+skill; whether it also reads `CLAUDE.md`'s trigger table is up to the harness.
+So the pointer moves into a `## closer` section rather than relying on the
+table row.
+
 **`.gitignore`'s re-admits for `.claude/agents/` go too.** Left in, they would
 silently make any file dropped there trackable, which the comment above them
 argued against at length. The settings re-admit and its reasoning stay. A
 project that later adds a role agent (the plugin allows it, through the
-overlay's `## Extra stages`) re-admits that one file by name.
+overlay's `## Extra stages`) re-admits that one file by name. This departs from
+`/specflow:init`'s list, which includes `!.claude/agents/`: a later run of init
+appends that line again, and the departure is worth re-making then.
+
+**The specflow block's other directory re-admits stay, and the generated names
+are re-ignored after them.** `!.claude/skills/`, `!.claude/commands/` and
+`!.claude/hooks/` are init's, for a stated reason: a project skill or hook must
+be tracked to reach a worktree cut from `HEAD`. Narrowing them to files that
+exist today would undo that for the next project skill, and init would append
+them again. What they cost is the hazard the `.gitignore` comment describes:
+`lgs init`'s bundled skill under `.claude/skills/basecamp/` was kept out only by
+the unrelated `basecamp/` build-output rule, and a `settings.local.json` under
+any of them was trackable. Both are now re-ignored by name after the block, the
+comment says why the block is the exception to its own advice, and the
+overlay's `## Never commit` names what else may appear there. Verified with
+`git check-ignore -v --no-index`: `.claude/skills/basecamp/SKILL.md` and
+`.claude/{skills,specflow,hooks}/settings.local.json` match the new lines, and
+`.claude/specflow/PROJECT.md` and a project skill path match no ignore rule.
+`openspec init` 2.1.1 with `--tools claude` writes its skills to the user's
+own `~/.claude`, not the project's (measured: it failed creating
+`~/.claude/skills/openspec-update-change`), so there is no openspec name to
+re-ignore today.
 
 ### 3. `CLAUDE.md` keeps this repo's evidence, not the rules the block restates
 
@@ -143,7 +185,17 @@ hold it.
 | "Scratch files go in `./tmp/`" | removed: the block's section of the same name says the same |
 | "Working in a git worktree" | the measurements stay as evidence; the rules point at the block and at `specflow:worktree-discipline` |
 | "How to shape a change" | the worked examples stay (`NavState.qml`, the staleness guard, `syncAll()`, `guarded()`, the narrow interface); the rules point at the block |
-| "Tests are part of the change" | shortened to this repo's reading of the block's rule |
+| "Tests are part of the change" | shortened to this repo's reading of the block's rule, and retitled "What 'tests are part of the change' means here" so it no longer shares a heading with the block's section |
+| "Before anything else, make the failure visible" | kept, retitled "Basecamp swallows QML errors: read its log first" for the same reason, and names the block's section it instantiates |
+| "The gates, all on every PR" and "The test layers" tables | removed; "The test layers" keeps its title (`docs/e2e.md` cites it) and its reasoning, and points at the overlay's `## Test layers` and `## CI gates` as the one copy of each table. The two copies already disagreed on the core unit-test command and on what each gate cannot see |
+
+**`openspec/config.yaml`'s `context:` is left as it is.** It restates the module
+split, the JSON contract and the `canWriteLocal` gate, as the overlay's opening
+paragraph and `## Hazards` now also do. It reaches a different reader: it is
+injected into every `openspec instructions` artifact prompt, which an agent can
+receive without having read the overlay, and its own comment limits it to facts
+that change only when the architecture does and requires it to move in the
+same commit as `CLAUDE.md`. None of those facts changed here, so it stays.
 
 **Considered: leaving `CLAUDE.md` alone and only repointing links.** Ruled out
 by the issue, and by the reason it gives: two copies of one rule drift. The
@@ -166,11 +218,24 @@ claims in sections this change touches are fixed rather than carried forward:
 - **"`IssuesTab.qml` and `PatchesTab.qml` … are still not merged, because
   nothing has yet needed them to diverge"** now has issue #28 saying the
   threshold was met. The example is kept as history, with the issue named.
-- **The Rust FFI row of "The test layers" read `cd radicle/rust-ffi && cargo
-  test`**, a chained command the Bash rules forbid. It now reads
-  `cargo test --manifest-path radicle/rust-ffi/Cargo.toml`, the form `ci.yml`
-  runs. The core unit-test row keeps its `cd radicle &&` form, because the
-  overlay records the cd-free form as not yet run here.
+- **The rows of `CLAUDE.md`'s "The test layers" table read `cd radicle/rust-ffi
+  && cargo test` and `cd radicle && nix build …`**, chained commands the Bash
+  rules forbid, beside an overlay row giving the cd-free form. The table is
+  gone (Decision 3), so the overlay's forms are the only ones.
+- **The staleness-guard example counted four hand-written copies** and called
+  the fourth the signal to reshape, in `CLAUDE.md` and in the overlay's
+  `## Hazards`. Issue #29 counts more sites and records the reviewer's case
+  against one universal guard. Both now name #29 for the count and the
+  counter-argument instead of carrying a number.
+- **`docs/M3-embedded-node-plan.md` still said an embedded node "may finally
+  let local browsing into CI, closing the gap CLAUDE.md records"**, the clause
+  this change drops from the same lesson's new home. `local` is in
+  `ui-tests.yml`'s matrix and `CLAUDE.md` records no such gap, so the clause is
+  replaced with that fact and a pointer to `docs/e2e.md`.
+- **`docs/e2e.md`'s new embedded-home paragraph assumed a throwaway `$HOME`
+  isolates the embedded home.** `embeddedHomeFor()` reads `XDG_DATA_HOME`
+  first, so a shell exporting it defeats the isolation; the paragraph now says
+  so, and that whether sitometres overrides it is unmeasured.
 - **"Every bare `npx …` this repo has run went through unprompted"** no longer
   matches `.claude/settings.json`, which allow-lists no `npx`. Dropped rather
   than reworded: the rule it evidenced (never chain) is the block's now.
@@ -180,7 +245,8 @@ claims in sections this change touches are fixed rather than carried forward:
 - **`CLAUDE.md` said `.gitignore` excludes `.claude/*` with the role agents
   re-admitted.** The agents are gone, and the specflow ignore block re-admits
   `.claude/skills/`, which `lgs init` generates; the parenthesis is removed
-  rather than rewritten into a claim about a block this change does not own.
+  rather than rewritten, and the `.gitignore` comment now carries the reasoning
+  (Decision 2).
 
 ### 5. `docs/OPENSPEC-ARCHIVE.md` is repointed, not deleted
 
@@ -204,6 +270,15 @@ passes all nine. So the step as written turns every pull request red, and the
 three ways out (drop `--strict`, split the long requirements across all nine
 specs, or pin an older CLI) are each a decision of their own. The owner moved
 the step out of this piece into issue #93; nothing in `ci.yml` changes here.
+
+**What the deferral costs, while #93 is open.** Nothing in CI validates a live
+spec at all, so a structurally broken spec under `openspec/specs/` can merge
+with every required check green; the `closer`'s validation before archiving is
+a stage an agent runs, not a gate CI enforces. And the step as the
+issue worded it would not have closed the gap archived foundations task 4.22
+named either: `validate --specs` cannot see a declined promotion, a delta that
+never reached `openspec/specs/`. #93 records that only a check that every
+capability a proposal names has a live spec would.
 
 ## Risks / Trade-offs
 

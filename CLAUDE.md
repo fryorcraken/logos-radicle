@@ -126,8 +126,11 @@ costs"**, at the end of this file: which shapes prompt, why never to chain, why
 repeated here. What this repo adds:
 
 - **`lgs …`, `nix build …` and `sh radicle-ui/tests/…` are allow-listed** in
-  `.claude/settings.json`, so a plain call to any of them costs nothing;
-  reading a path under `/nix/store` does, and so does any of them behind a
+  `.claude/settings.json`. That rule is why the specflow block's generic
+  "`sh <relative-path>` costs a click" does not apply to the test scripts: a
+  plain call matches it as written (whether the checker then skips the prompt
+  has not been observed separately from the rule). Reading a path under
+  `/nix/store` still costs a click, and so does any of them behind a
   `cd … &&`.
 - **Agents get their tree from `isolation: "worktree"`, which depends on
   `.claude/settings.json` carrying `{"worktree": {"baseRef": "head"}}`.** That
@@ -143,8 +146,9 @@ repeated here. What this repo adds:
   `cargo install <crate> --version X` answers the same question by succeeding
   or failing, and leaves you with the tool installed.
 - **The test scripts take no arguments and set their own environment**, so
-  `sh radicle-ui/tests/<script>` is one plain, allow-listed call. Extend a
-  script rather than inventing a flag or a `VAR=value` prefix.
+  `sh radicle-ui/tests/<script>` is one plain call that the rule above
+  matches. Extend a script rather than inventing a flag or a `VAR=value`
+  prefix.
 
 Scratch files go in `./tmp/`, as the specflow block says; `.gitignore` already
 excludes it.
@@ -444,8 +448,8 @@ it is a different feature area from anything above.
 ### The bundled `basecamp` skill may document an older release
 
 `lgs init` generates `.claude/skills/`, `.cursor/` and `AGENTS.md`, and none of
-it refreshes when you upgrade `lgs`. So the
-copy on disk documents whichever release last ran `init` — which may predate
+it refreshes when you upgrade `lgs`. So the copy on disk documents whichever
+release last ran `init` — which may predate
 the `[modules.*]` schema and the `develop` / `build` / `run` / `paths` verbs,
 making it read as though raw `nix` were the only way to do anything.
 
@@ -545,18 +549,19 @@ A branch has to be got right at every call site and tested at each one; a data
 shape is right everywhere at once, and a new call site inherits it for free.
 
 The `wantRid`/`wantBranch`/`syncEpoch` staleness guards are this repo's
-standing example — and its standing counter-example. The same guard is
-hand-written slightly differently in `CommitsTab`, `IssuesTab`, `PatchesTab`
-and `ThreadView`. Every time one of them was written from memory, something
-was dropped: `ThreadView` captured `wantId` but not `wantRid`;
-`CommitsTab.fetch()` captured neither. Each omission then needed its own
-regression test to pin down. A shared "request whose reply is dropped unless
-the state it was issued against still holds" — one shape, one test — would
-have made all four correct at once and made the fifth correct before it was
-written.
+standing example — and its standing counter-example. The same idiom is
+hand-written slightly differently across the views, `CommitsTab`, `IssuesTab`,
+`PatchesTab` and `ThreadView` among them. Every time one of them was written
+from memory, something was dropped: `ThreadView` captured `wantId` but not
+`wantRid`; `CommitsTab.fetch()` captured neither. Each omission then needed its
+own regression test to pin down.
 
-So when you find yourself writing the fourth slightly-different copy of a
-guard, that is the signal to reshape rather than to add a fourth test.
+Issue #29 holds the count of sites and the case against the obvious fix: the
+sites guard on genuinely different terms, so one universal guard would be more
+machinery than the `if` it replaces. The reshape it asks for is the structural
+one for the cases that share an invariant, not a single abstraction for all of
+them. Read it before writing the next copy, or before reporting one as a missed
+reshape.
 
 ### One function, one job
 
@@ -584,7 +589,7 @@ crate's churn stays behind that wall — see `radicle_impl.h`. Widening an
 interface is a decision to make deliberately, not a side effect of needing
 one more field.
 
-## Tests are part of the change, not a follow-up
+## What "tests are part of the change" means here
 
 The rule is the specflow block's "Tests are part of the change". Here every
 test layer runs on **every pull request**, so an uncovered change is a change
@@ -619,9 +624,10 @@ refetch ran, both, or neither. **Make fakes return input-dependent data**, or
 the assertion is decoration. Deleting the entire `onBranchChanged` body left
 all 122 tests passing.
 
-## Before anything else, make the failure visible
+## Basecamp swallows QML errors: read its log first
 
-Basecamp swallows QML errors. A view that fails to compile, a plugin skipped for
+This is this repo's case of the specflow block's "Before anything else, make
+the failure visible". Basecamp swallows QML errors. A view that fails to compile, a plugin skipped for
 a missing manifest field, a binding that evaluates to `undefined` — all present
 identically as "clicking the app does nothing". Four separate bugs here wore
 that same face.
@@ -640,32 +646,20 @@ Note that `qmllint` does not catch syntax errors — it passed a file Qt then
 refused with "Unexpected token `}'". `radicle-ui/tests/check-qml-syntax.sh`
 covers that, and runs first in CI.
 
-## The gates, all on every PR
-
-| Gate | Runs on | Catches |
-|---|---|---|
-| QML syntax (`check-qml-syntax.sh`) | every PR | a file Qt cannot parse — `qmllint` does **not** catch this |
-| Core unit tests | every PR | logic: URLs, ref resolution, pagination, error shapes |
-| Rust backend (`fmt`, `clippy -D warnings`, `test`) | every PR | the `local*` read path; dead code that is a never-wired safety guard — see [`docs/rust-ffi.md`](docs/rust-ffi.md) |
-| QML component tests | every PR | one component's own behaviour |
-| End-to-end spec (sitometres) | every PR + push to main | the wiring: does the module load, does the replica connect, does data arrive |
-
-The end-to-end job is much slower on a cold Nix store cache — which is what a
-fork PR gets, and what every PR gets on the first run after `BASECAMP_REV`
-changes.
-
 ## The test layers
 
-Pick the cheapest layer that can actually see the behaviour you changed.
+Pick the cheapest layer that can actually see the behaviour you changed. **The
+tables live in the overlay, once:** each layer's command, what it sees and what
+it structurally cannot is `.claude/specflow/PROJECT.md`'s `## Test layers`, and
+each required check with what a green does not prove is its `## CI gates`.
+They are not repeated here, because a second copy of a command table is the
+copy that goes stale; what follows is the reasoning behind them.
 
-| Layer | Lives in | Run it with | Covers |
-|---|---|---|---|
-| Core module unit tests | `radicle/tests/` | `cd radicle && nix build '.#checks.x86_64-linux.unit-tests'` | URL building, ref resolution, pagination, error shapes, local-profile detection — no network |
-| Rust FFI tests | `radicle/rust-ffi/tests/` | `cargo test --manifest-path radicle/rust-ffi/Cargo.toml` | The `local*` read path against real fixture profiles; the panic guard at the `extern "C"` boundary |
-| QML component tests | `radicle-ui/tests/tst_*.qml` | `sh radicle-ui/tests/run-qml-tests.sh` | One component in isolation: selection state, layout invariants, load ordering |
-| End-to-end UI specs | `radicle-ui/tests/ui/*.yaml` | See [`docs/e2e.md`](docs/e2e.md) | Real clicks in a real Basecamp, real QtRO transport, real seed calls |
+Every layer runs on every pull request. The end-to-end job is much slower on a
+cold Nix store cache — which is what a fork PR gets, and what every PR gets on
+the first run after `BASECAMP_REV` changes.
 
-The unit-test row is raw `nix` on purpose — `lgs` has no verb for a flake's
+The core unit tests are raw `nix` on purpose — `lgs` has no verb for a flake's
 `checks` outputs. Everything *building* the modules goes through `lgs`, in CI
 as well as locally; see "This is a scaffold-managed project" at the top.
 

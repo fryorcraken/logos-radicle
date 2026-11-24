@@ -796,6 +796,7 @@ networked and slow. Concretely:
   real-but-not-git binary and assert `git --version` validation rejects it.
 - **e2e**: `run-local-e2e.sh` already passes `--env RAD_HOME=…`. An embedded
   node is *easier* to test than the current setup, because the spec can
-  create a throwaway home instead of depending on the developer's profile —
-  which may finally let local browsing into CI, closing the gap CLAUDE.md
-  records as the reason `local.yaml` is hand-run only.
+  create a throwaway home instead of depending on the developer's profile.
+  (`local.yaml` has since joined `ui-tests.yml`'s matrix against a seeded
+  profile; `docs/e2e.md` carries the embedded half of this lesson, with the
+  `XDG_DATA_HOME` precondition it needs.)

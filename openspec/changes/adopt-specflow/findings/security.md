@@ -40,6 +40,7 @@ applies to prose and config.
       is one click a piece. If the owner keeps `git *`, the deny list should be
       described as a guard against mistakes, not a boundary, wherever it is
       documented.
+      **Awaiting owner decision** (`dev-writer`): `.claude/settings.json` is the owner's, and the runner reserved this choice. Context, read for this: the entry is `/specflow:init`'s own allow list verbatim (its step 1 says "`Bash(git *)` is broad: it covers `git push` and `git reset`" and names branch protection as the backstop), so a narrowing here is also a departure from the plugin that a re-run of init would not undo but would not repeat either. Options: (a) keep `Bash(git *)` and say in `CLAUDE.md`, beside the allow-list paragraph, that the `gh api` deny list is a guard against mistakes, not a boundary; (b) narrow to the subcommands the flow runs (`status`, `diff`, `log`, `show`, `rev-parse`, `config --get-regexp`, `add`, `commit`, `worktree`, `cherry-pick`, `check-ignore`, `grep`, `ls-files`) and let `git push` prompt, one click per piece; (c) raise it upstream on `fryorcraken/agent-spec-flow`, since the list is the plugin's. design.md Context records the list's origin.
 
 - [ ] **`dev-writer`** — `.claude/settings.json:19-36` — the allow list composes into a prompt-free read-then-exfiltrate chain
       **Scenario:** `Bash(grep *)` reads any file the user can read, including
@@ -61,6 +62,7 @@ applies to prose and config.
       so if those stay, say in `CLAUDE.md` that the owner accepted the residual
       risk and why, next to the paragraph about what is allow-listed (lines
       128-131).
+      **Awaiting owner decision** (`dev-writer`): reserved by the runner with the `git *` entry above; `.claude/settings.json` is the owner's. `Bash(grep *)` is also in `/specflow:init`'s list. Options: (a) drop `Bash(grep *)`, leaving the `Grep` tool (and `git grep`, under `git *`) for searches; (b) keep it and record the accepted residual risk in `CLAUDE.md` beside the allow-list paragraph, as suggested; (c) raise it upstream, since the entry is the plugin's.
 
 - [ ] **`dev-writer`** — `.claude/settings.json:43` — `Bash(sh radicle-ui/tests/*)` matches a path that leaves the directory
       **Scenario:** the trailing `*` matches `../`, so
@@ -75,6 +77,7 @@ applies to prose and config.
       **Suggested direction:** list the three scripts by name
       (`check-qml-syntax.sh`, `lint-qml.sh`, `run-qml-tests.sh`), which matches
       the "take no arguments" rationale exactly.
+      **Awaiting owner decision** (`dev-writer`): the fix is an edit to `.claude/settings.json`, which is the owner's and which I was told not to edit, so I cannot make it; this entry was not on the runner's list of reserved decisions and is flagged to it as such. Not measured: whether Claude Code normalises `../` before matching (a probe would cost the owner a prompt or run the escape). Options: (a) replace the entry with one per script, by name (`run-local-e2e.sh` is also in `radicle-ui/tests/` and would need its own if wanted); (b) keep it and accept the residual risk. `CLAUDE.md`'s allow-list paragraph was reworded for the readability finding on the same lines and no longer states more than the rule does.
 
 - [ ] **`dev-writer`** — `.claude/settings.json:5-12` — the plugin marketplace is tracked from a moving ref
       **Scenario:** `extraKnownMarketplaces.agent-spec-flow` names
@@ -94,8 +97,9 @@ applies to prose and config.
       **Suggested direction:** pin the marketplace source to a tag or commit if
       the settings schema takes a `ref`, and write the pin's reason where the
       other pins are written. I did not check the schema.
+      **Awaiting owner decision** (`dev-writer`): an edit to `.claude/settings.json`, which is the owner's; not on the runner's reserved list, flagged to it. The unpinned shape is what `/specflow:init` writes (`{ "source": "github", "repo": "<its repo>" }`, no `ref`). I did not check whether the settings schema takes a `ref`. Options: (a) pin the marketplace source to a tag or commit, if the schema takes one, and record why beside the other pins in `CLAUDE.md`; (b) keep tracking the default branch, accepted because the source is the owner's own repository; (c) raise it upstream so init writes a pinned source.
 
-- [ ] **`dev-writer`** — `.gitignore:41-44` — four recursive directory re-admits contradict the comment above them, and two of them are directories this repo never tracks
+- [x] **`dev-writer`** — `.gitignore:41-44` — four recursive directory re-admits contradict the comment above them, and two of them are directories this repo never tracks
       **Scenario:** the comment at lines 19-31 argues that `!.claude/<dir>/`
       makes everything beneath it trackable and says to re-admit by name unless
       "everything in it is meant to be tracked". The new block then re-admits
@@ -121,6 +125,7 @@ applies to prose and config.
       `skills`, `commands` and `hooks` lines until something tracked lives
       there. The block is written by the plugin's init, so this may belong
       upstream, in which case defer it with that destination.
+      **Fixed** in this commit, with the suggested narrowing rejected. Dropping `skills`, `commands` and `hooks` would undo `/specflow:init`'s stated reason for them (step 2: a project skill, command or hook must be tracked to reach a worktree cut from `HEAD`), and a re-run of init appends them again. Instead: the comment above `.claude/*` now says why the block is the exception and what it costs; `.claude/skills/basecamp/` (`lgs init`'s skill) and `.claude/**/settings.local.json` are re-ignored by name after the block; and the overlay's `## Never commit` names generated skills and commands under `.claude/`, and says a file under `.claude/hooks/` is committed only on the owner's request because it runs on tool calls for every clone. Check: `git check-ignore -v --no-index .claude/specflow/settings.local.json .claude/hooks/settings.local.json` now matches `.gitignore:85`; `.claude/hooks/pre.sh` remains trackable by design. `openspec init` 2.1.1 with `--tools claude` writes to the user's `~/.claude`, not the project's (measured in `./tmp/`), so there is no openspec name to re-ignore. Decision 2 records it.
 
 Clean areas, in prose: the `radicle_impl.h` and `sync.yaml` edits change comment
 text only, and the claims they now make (issue #92, the `seedRepo`

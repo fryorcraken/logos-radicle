@@ -138,7 +138,7 @@ for a dispatched agent** — it refuses a session at the repository root, and
 crossing between worktrees succeeds while leaving every Bash call refused;
 the plugin's `specflow:worktree-discipline` skill has the table of which route
 works. And **`cd <dir> && openspec …` costs an approval click** even though
-`Bash(openspec:*)` is allow-listed, because the checker cannot analyse a compound
+`Bash(openspec *)` is allow-listed, because the checker cannot analyse a compound
 command.
 
 If validation genuinely cannot run, **say in the report that it did not run, and

@@ -25,7 +25,7 @@ went and what was considered. I checked these against the tree and they hold:
 
 What is wrong is the prose around Decision 6 and one decision-table row.
 
-- [ ] **`dev-writer`** — `proposal.md:49-51,73-82,90` and `tasks.md:5` still describe the CI step as part of this change
+- [x] **`dev-writer`** — `proposal.md:49-51,73-82,90` and `tasks.md:5` still describe the CI step as part of this change
       Decision 6 and `tasks.md`'s Deferred section say `ci.yml` is untouched and
       the step is issue #93. Four other places say otherwise. `proposal.md`'s
       What Changes lists "Add `openspec validate --specs --strict` to `ci.yml`".
@@ -37,8 +37,9 @@ What is wrong is the prose around Decision 6 and one decision-table row.
       not. Open question 2 should record the owner's answer (deferred to #93),
       as question 1 records its answer. The Impact entry and the tests-row
       reason should be corrected to match.
+      **Fixed** by the `spec-writer` in `c95dc25`, checked against the tree: `proposal.md`'s What Changes has no CI bullet and a "Not in this change" paragraph naming #93 (lines 52-54); Open question 2 ends "Answered by the owner: the step is moved out of this piece into issue #93" (lines 85-87); Impact has "**Not edited:** `.github/workflows/ci.yml`" (line 97); `tasks.md:5`'s strike reason says `ci.yml` is not edited here and names #93. `git grep -n "ci.yml" -- openspec/changes/adopt-specflow/proposal.md openspec/changes/adopt-specflow/tasks.md` shows those statements, task 1.1's citation of the `build` matrix and the Deferred note, and nothing claiming an edit.
 
-- [ ] **`dev-writer`** — `design.md` Decision 6 omits what the deferral costs
+- [x] **`dev-writer`** — `design.md` Decision 6 omits what the deferral costs
       The entry has the constraint (strict fails all nine specs) and names the
       three ways out. It does not say what the deferral forecloses. The issue
       asked for the step as archived foundations task 4.22 (a declined
@@ -50,6 +51,7 @@ What is wrong is the prose around Decision 6 and one decision-table row.
       each, so the gap stays visible while #93 is open. Deferring is the
       owner's decision. This box asks only for what it costs to be written
       down.
+      **Fixed** in this commit: Decision 6 gains "What the deferral costs, while #93 is open", a sentence for each: nothing in CI validates a live spec, so a structurally broken one can merge with every required check green (the `closer`'s pre-archive validation is a stage, not a gate); and, from #93's last section (read fresh), `validate --specs` cannot see a declined promotion, which only a check that every capability a proposal names has a live spec would.
 
 - [ ] **`dev-writer`** — `design.md:70` and the Goals line "Every PLAN.md passage with a future either has an issue or a durable home" are contradicted by the table's own row
       The "Deferred, deliberately: patch open/update ... and delegate/identity
@@ -63,6 +65,7 @@ What is wrong is the prose around Decision 6 and one decision-table row.
       that two passages are not yet homed. Right now the goal is false as
       written. This also needs the owner's call (the hand-back is supposed to
       carry it), so the runner should check it is reported.
+      **Awaiting owner decision** (`dev-writer`, owner decision 1 as the runner reserved it; no issue created). Options: (a) the owner files issues for patch open/update and delegate/identity management, and the row names them; (b) `docs/M3-embedded-node-plan.md:677-678` is their durable home, and the row cites it as such. Done meanwhile, without choosing: the Goal now reads "…either has an issue or a durable home, except the two deferrals Decision 1 marks as awaiting the owner", which is true as written, and the row cites the M3 line as where the same deferral and its reason survive. Either option then needs only the row and that Goal clause edited. The runner has it in the hand-back.
 
 No findings against the code: both source-file edits are comments and match the
 decisions that name them.

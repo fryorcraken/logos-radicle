@@ -406,10 +406,10 @@ Darwin legs are compile gates, not test runs.
 **Windows is never built, and supporting it is out of scope — but do not
 hard-code against it.** `radicle-node` carries `uds_windows` and
 `radicle-windows` dependencies (both in `radicle/rust-ffi/Cargo.lock`), so the
-crate underneath is not Unix-only. A Unix-only assumption in this crate would be
-this repo's own, which is why there is no `target_os` gate or `cfg(unix)`
-branch here (see the Darwin paragraph below) and none should be added without a
-reason.
+crate underneath is not Unix-only, and a Unix-only assumption in this crate
+would be this repo's own. There is no `target_os` gate or `cfg(unix)` branch
+here today (see the Darwin paragraph below); adding one is a decision to record,
+not a side effect.
 
 ## Building it per-system — the arm64 regression
 
