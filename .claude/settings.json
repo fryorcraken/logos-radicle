@@ -38,6 +38,8 @@
       "Bash(lgs *)",
       "Bash(nix build *)",
       "Bash(qmltestrunner *)",
+      "Bash(qmltestrunner6 *)",
+      "Bash(/usr/lib64/qt6/bin/qmltestrunner *)",
       "Bash(sh radicle-ui/tests/*)",
       "Bash(cargo fmt *)",
       "Bash(cargo clippy *)",

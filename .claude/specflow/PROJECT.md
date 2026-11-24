@@ -26,7 +26,7 @@ runs on every PR.
 |---|---|---|---|
 | QML syntax | `sh radicle-ui/tests/check-qml-syntax.sh` | a file Qt cannot parse | anything else; `qmllint` does **not** catch syntax errors |
 | qmllint | `sh radicle-ui/tests/lint-qml.sh` | lint-category problems | runtime behaviour. Set `REQUIRE_QML_LINT=1` in CI only; locally it may skip when no binary is found |
-| QML component tests | `qmltestrunner -input radicle-ui/tests/tst_<name>.qml` for one file; `sh radicle-ui/tests/run-qml-tests.sh` for all | one component in isolation: selection state, layout invariants, load ordering | wiring between modules, a real backend, the real clipboard, window geometry of the real app |
+| QML component tests | `<qt6-runner> -input radicle-ui/tests/tst_<name>.qml -import radicle-ui/src/qml` for one file (see the runner note below); `sh radicle-ui/tests/run-qml-tests.sh` for all | one component in isolation: selection state, layout invariants, load ordering | wiring between modules, a real backend, the real clipboard, window geometry of the real app |
 | Core module unit tests | `nix build ./radicle#checks.x86_64-linux.unit-tests -L --out-link result-test` | URL building, ref resolution, pagination, error shapes, local-profile detection; no network | the Rust `local*` path, the QML. CI runs the `cd radicle` form with the system from `nix eval`; the `./radicle#` form from the root is the cd-free equivalent and has not been run in this repo |
 | Rust FFI tests | `cargo test --manifest-path radicle/rust-ffi/Cargo.toml` | the `local*` read path against real fixture profiles; the panic guard at the `extern "C"` boundary | the C++ side of the FFI; a changed `const` (see Mutation tool) |
 | Rust format and lint | `cargo fmt --manifest-path radicle/rust-ffi/Cargo.toml --check`, then `cargo clippy --manifest-path radicle/rust-ffi/Cargo.toml --all-targets -- -D warnings` | formatting; dead code that is a never-wired safety guard | behaviour |
@@ -40,8 +40,20 @@ runs on every PR.
   tool result.** A local pass is then a green you cannot read to the end, and a
   mutation was once recorded as survived because the output stopped before the
   mutated file. For an unambiguous answer about one file run
-  `qmltestrunner -input radicle-ui/tests/tst_<name>.qml` and read all of it.
-  Never `| tail`.
+  `<qt6-runner> -input radicle-ui/tests/tst_<name>.qml -import radicle-ui/src/qml`
+  and read all of it. Never `| tail`.
+- **`<qt6-runner>` is the Qt 6 `qmltestrunner`, and a bare `qmltestrunner` on
+  `PATH` may be Qt 5**, which fails against Qt 6 QML with an empty error and a
+  bare exit 1 that reads like "the tests are broken". `run-qml-tests.sh` tries
+  `qmltestrunner6`, then `/usr/lib64/qt6/bin/qmltestrunner` (Fedora),
+  `/usr/lib/qt6/bin/qmltestrunner` and the Debian multiarch path, honours a
+  `QMLTESTRUNNER` override, and proves the runner on a trivial test first. The
+  script also exports `QT_QPA_PLATFORM=offscreen`; a direct call needs that set
+  by the shell, since a `VAR=` prefix is not allowed. **It comes from the Qt 6
+  declarative tools** (CI installs `qt6-declarative-dev-tools` and
+  `qml6-module-qttest` from apt); it is not installed in the specflow pod, so a
+  run there reports "no qmltestrunner found" and skips unless
+  `REQUIRE_QML_TESTS=1`. A skip is not a pass.
 - **Make fakes return input-dependent data.** A fake that returns the same
   thing for every input cannot tell "reloaded" from "never reloaded"; deleting
   the whole `onBranchChanged` body once left every test passing.
@@ -85,7 +97,7 @@ runs on every PR.
   measured here — scope it per file, and run it in the foreground within a limit.
 - **QML and the C++ core: none.** The mutation is manual: delete the handler
   body, return a constant, change the condition, and see whether anything goes
-  red. Use `qmltestrunner -input radicle-ui/tests/tst_<name>.qml` on the one
+  red. Use the single-file form from Test layers on the one
   file, so the result is readable to the end. **Restore after every mutation**,
   and do it only in your own worktree.
 - **A mutation to a QML file will not fail the e2e layer** unless the e2e spec
