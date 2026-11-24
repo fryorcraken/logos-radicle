@@ -4,7 +4,7 @@
 - [x] design + code — `dev-writer`
 - [ ] ~~tests — `tester`~~ — no spec requirement to test; the new `ci.yml` step is exercised by the PR's own CI run
 - [ ] review: correctness — `code-reviewer`
-- [ ] review: security — `code-reviewer`
+- [x] review: security — `code-reviewer`
 - [ ] review: readability — `code-reviewer`
 - [ ] review: architecture — `code-reviewer`
 - [ ] ~~review: spec-test — `spec-test-reviewer`~~ — no spec delta and no tests for it to read
