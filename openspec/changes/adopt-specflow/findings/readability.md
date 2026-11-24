@@ -29,7 +29,7 @@ application-code diff, so the mutation tool does not apply and was not run.
 - CLAUDE.md's slimmed sections keep this repo's evidence and point at the block
   for the rules; no section was found that still restates a block rule at length.
 
-- [ ] **`spec-writer`** — `openspec/changes/adopt-specflow/proposal.md:49-51, 66-82, 87-90` — the proposal still describes a CI step that the change does not make
+- [x] **`spec-writer`** — `openspec/changes/adopt-specflow/proposal.md:49-51, 66-82, 87-90` — the proposal still describes a CI step that the change does not make
       **Scenario:** a reader who opens `proposal.md` first (it is the first file in
       the archive) is told "Add `openspec validate --specs --strict` to `ci.yml`"
       under What Changes, sees `ci.yml` in Impact's "Files edited", and sees open
@@ -43,6 +43,13 @@ application-code diff, so the mutation tool does not apply and was not run.
       **Severity:** genuine defect (documentation that contradicts the two files
       beside it), medium. The proposal is archived as the record of why; it will
       be wrong for every later reader.
+      **Outcome (`spec-writer`): fixed.** What Changes no longer lists the CI
+      step and says it is issue #93; Open question 2 records the owner's answer;
+      Impact lists `ci.yml` as not edited and now matches
+      `git diff origin/main...HEAD --name-status`: `.claude/specflow/PROJECT.md`
+      as added, and `.claude/settings.json`, `.gitignore` and
+      `docs/OPENSPEC-ARCHIVE.md` among the edited files. What Changes also gains
+      the `docs/OPENSPEC-ARCHIVE.md` repoint.
 
 - [ ] **`dev-writer`** — `.gitignore:62-66` — the new `# specflow` block re-admits whole directories with no explanation, and contradicts the comment 25 lines above it
       **Scenario:** the header comment (lines 16-37) says `.claude/*` holds

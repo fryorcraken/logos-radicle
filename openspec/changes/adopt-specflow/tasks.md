@@ -2,7 +2,7 @@
 
 - [ ] ~~spec — `spec-writer`~~ — no behaviour change in either module; the proposal is written and the change declares `skip_specs: true`
 - [x] design + code — `dev-writer`
-- [ ] ~~tests — `tester`~~ — no spec requirement to test; the new `ci.yml` step is exercised by the PR's own CI run
+- [ ] ~~tests — `tester`~~ — no spec requirement to test, and no test layer can see prose, agent-instruction or ignore-rule edits; `ci.yml` is not edited here, its `openspec validate --specs` step being issue #93
 - [x] review: correctness — `code-reviewer`
 - [x] review: security — `code-reviewer`
 - [x] review: readability — `code-reviewer`

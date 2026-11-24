@@ -10,10 +10,11 @@ only observable by dispatching them.
 
 Each finding below was checked against the tree at `HEAD` (`36389f7`).
 
-- [ ] **`spec-writer`** — `openspec/changes/adopt-specflow/proposal.md:49-50`, `:73-82`, `:90` — the proposal still says the CI step is added, and that it is undecided
+- [x] **`spec-writer`** — `openspec/changes/adopt-specflow/proposal.md:49-50`, `:73-82`, `:90` — the proposal still says the CI step is added, and that it is undecided
       **Scenario:** `What Changes` lists "Add `openspec validate --specs --strict` to `ci.yml`", `Impact` lists `.github/workflows/ci.yml` under "Files edited", and Open question 2 ends "Not decided here". `git diff origin/main...HEAD --stat` shows `ci.yml` untouched, `design.md` Decision 6 records the step as deferred to #93, and the PR body says the owner moved it. The proposal is archived as the record of what the change did, so a reader of the archive learns that a CI gate shipped which did not. It also contradicts its own `Capabilities` paragraph, which says the step is "recorded in the overlay's `## CI gates`"; the overlay's `## CI gates` names no such step.
       **Severity:** defect (a false statement in a document that is archived and never corrected afterwards).
       **Measured:** `git grep -n "ci.yml" -- openspec/changes/adopt-specflow` returns the three proposal lines above beside design Decision 6's "nothing in `ci.yml` changes here".
+      **Outcome (`spec-writer`): fixed.** What Changes drops the CI bullet and gains a "Not in this change" paragraph naming issue #93; the Capabilities paragraph no longer claims the step is recorded in the overlay's `## CI gates`; Open question 2 records the owner's answer (moved to #93) as question 1 records its; Impact moves `ci.yml` to a "Not edited" line. No test layer applies to prose.
 
 - [ ] **`dev-writer`** — `openspec/changes/adopt-specflow/tasks.md:5` — the struck `tests` row justifies itself with a CI step that does not exist
       **Scenario:** the row reads "no spec requirement to test; the new `ci.yml` step is exercised by the PR's own CI run". There is no new `ci.yml` step (`tasks.md:69-72` and design Decision 6 say so). The reason given for striking the stage is therefore false, and a closer reading the stage block alone concludes a CI gate was added and passed.

@@ -46,9 +46,12 @@ specflow block in `CLAUDE.md`, the plugin and permission entries in
   `radicle-ui/tests/ui/sync.yaml`, `radicle/src/radicle_impl.h`, and the
   overlay's Hazards line. Archived changes under `openspec/changes/archive/`
   keep their references: they record what was true when they shipped.
-- **Add `openspec validate --specs --strict` to `ci.yml`**, so a live spec that
-  does not validate fails a pull request rather than passing unseen. See the
-  second open question: the command as written fails on the live specs today.
+- **Repoint `docs/OPENSPEC-ARCHIVE.md`'s links to `.claude/agents/README.md`**
+  at the plugin's skills.
+
+**Not in this change:** the issue also asks for `openspec validate --specs
+--strict` in `ci.yml`. The owner moved that step out of this piece into issue
+#93 (see the second open question), so `ci.yml` is not edited here.
 
 ## Capabilities
 
@@ -58,10 +61,9 @@ None.
 
 ### Modified Capabilities
 
-None. Nothing here changes what either module does. The CI step is repository
-tooling: it is recorded in the overlay's `## CI gates`, and the spec describes
-the system, not the gates that check the specs. The change declares
-`skip_specs: true`.
+None. Nothing here changes what either module does: the change edits prose,
+agent instructions, repository configuration and two source comments. The
+change declares `skip_specs: true`.
 
 ## Open questions for the owner
 
@@ -77,17 +79,22 @@ the system, not the gates that check the specs. The change declares
    requirements; the same command without `--strict` passes all nine. The
    archived foundations task this step comes from recorded the strict run as
    clean, on an older CLI. So the step as the issue words it turns CI red.
-   Which way to go is the owner's: run it without `--strict`, split the long
-   requirements (a restructuring of all nine specs, well beyond this piece),
-   or pin a CLI version whose strict mode passes. Not decided here.
+   The ways out are to run it without `--strict`, split the long requirements
+   (a restructuring of all nine specs, well beyond this piece), or pin a CLI
+   version whose strict mode passes.
+   Answered by the owner: the step is moved out of this piece into issue #93,
+   which holds the choice between those options. This change does not edit
+   `ci.yml`; design.md Decision 6 records why.
 
 ## Impact
 
 - **Files deleted:** `docs/PLAN.md`, `.claude/agents/*.md`.
-- **Files edited:** `CLAUDE.md`, `.claude/specflow/PROJECT.md`,
+- **Files added:** `.claude/specflow/PROJECT.md`.
+- **Files edited:** `CLAUDE.md`, `.claude/settings.json`, `.gitignore`,
   `docs/rust-ffi.md`, `docs/e2e.md`, `docs/M3-embedded-node-plan.md`,
-  `radicle-ui/tests/ui/sync.yaml` (a comment), `radicle/src/radicle_impl.h`
-  (a comment), `.github/workflows/ci.yml`.
+  `docs/OPENSPEC-ARCHIVE.md`, `radicle-ui/tests/ui/sync.yaml` (a comment),
+  `radicle/src/radicle_impl.h` (a comment).
+- **Not edited:** `.github/workflows/ci.yml`; its validation step is issue #93.
 - **Agent selection:** with the project's role files gone, the plugin's
   `specflow:<role>` agents are the only ones of those names. The deleted
   `spec-writer.md`'s frontmatter is the harness's selection text for the
