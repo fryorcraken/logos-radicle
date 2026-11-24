@@ -30,7 +30,10 @@ While a change is in flight it lives in `openspec/changes/<name>/`, and its
 
 1. **offers to merge the delta into `openspec/specs/`** — the live contract. It
    is a prompt, and declining it archives without promoting the spec, so take
-   the sync;
+   the sync. **CI will not catch a declined one**: `ci.yml`'s `Lint` job
+   validates every live spec, and a promotion that never happened leaves every
+   live spec valid. What that step does catch is a promotion that left a live
+   spec structurally broken;
 2. **moves the folder** to `openspec/changes/archive/<date>-<name>/`, dated
    today unless the name already carries a date, which is never stacked.
 

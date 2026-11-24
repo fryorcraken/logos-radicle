@@ -193,8 +193,10 @@ Three things to get right in the closing context specifically:
 - **Take the delta-merge prompt.** Declining it archives without promoting the
   spec, which leaves `main` carrying code whose contract never landed — the
   exact split that one-piece-one-PR exists to prevent, arriving one step later.
-  The exception is a change that declared `skip_specs: true`, which has no
-  delta to promote and archives with `--skip-specs`.
+  **Nothing downstream catches it**: CI validates the live specs, and a
+  promotion that never ran leaves them all valid. The exception is a change
+  that declared `skip_specs: true`, which has no delta to promote and archives
+  with `--skip-specs`.
 - **Diff the promoted file against the delta**, and read every changed line. The
   CLI does not report what it changed. **Do not check it against a remembered hunk
   count** — how many hunks git prints depends on how far apart the edits fall, so

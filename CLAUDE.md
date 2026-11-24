@@ -811,6 +811,7 @@ covers that, and runs first in CI.
 | Gate | Runs on | Catches |
 |---|---|---|
 | QML syntax (`check-qml-syntax.sh`) | every PR | a file Qt cannot parse — `qmllint` does **not** catch this |
+| OpenSpec live specs (`.github/scripts/validate-specs.py`, in `Lint`) | every PR | a spec in `openspec/specs/` with a structural error, or a capability directory the CLI skipped. **Blind to** a declined archive promotion (every live spec stays valid), an in-flight change's delta, a spec contradicting itself, and the over-long-requirement warning, which is advisory by decision — see the `ci-validate-specs` design |
 | Core unit tests | every PR | logic: URLs, ref resolution, pagination, error shapes |
 | Rust backend (`fmt`, `clippy -D warnings`, `test`) | every PR | the `local*` read path; dead code that is a never-wired safety guard — see [`docs/rust-ffi.md`](docs/rust-ffi.md) |
 | QML component tests | every PR | one component's own behaviour |
@@ -879,7 +880,9 @@ the latest `ui-tests.yml` run says — read that rather than a claim here.
 pushes to `main` and `v*` tags — **not on a push to a feature branch**, which
 gets no run at all until its PR is open:
 QML syntax, metadata lint, qmllint, the QML component tests and the LGX builds.
-It also validates that the sitometres specs parse.
+It also validates that the sitometres specs parse, and that every live OpenSpec
+spec validates — run `python3 .github/scripts/validate-specs.py` for the same
+check, by the same pinned CLI, locally.
 
 `.github/workflows/ui-tests.yml` runs the sitometres specs for real, on pushes
 to `main`, on pull requests, and on demand. It is a **matrix, one job per

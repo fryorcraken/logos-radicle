@@ -116,6 +116,28 @@ jobs:
           done
           [ "$fail" -eq 0 ] && echo "ok: layout imports present"
 
+      # The OpenSpec CLI the next step runs needs Node >= 22.20 (its
+      # `engines`), and the runner's preinstalled Node is not a version this
+      # repo chose. Same version as the ui-specs job.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      # The live contracts in openspec/specs/ are a structural input to every
+      # spec-driven change, and nothing else in CI reads them. This fails on a
+      # structural error (a requirement with no scenario, or no MUST) and on a
+      # capability directory the CLI skipped. It is NOT `--strict`: on the
+      # pinned CLI, strict fails every live spec on the "requirement text is
+      # very long" warning alone, and the owner chose to keep that advisory.
+      # It cannot see a declined archive promotion, which leaves every live
+      # spec valid. Both, and the pin, are in the ci-validate-specs design.md.
+      #
+      # In this job rather than a new one because "Lint" is already a required
+      # check on main; a new job would gate nothing until branch protection
+      # was edited to name it.
+      - name: every live OpenSpec spec validates
+        run: python3 .github/scripts/validate-specs.py
+
   qml:
     name: QML lint and component tests
     runs-on: ubuntu-latest
