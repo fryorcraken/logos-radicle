@@ -1,16 +1,17 @@
 # M3 — An embedded Radicle node, set up from inside Basecamp
 
 > **This is the milestone's working document, and it is still maintained** —
-> step 3 added its findings here. [`docs/PLAN.md`](PLAN.md) is the
-> *cross-milestone* forward-looking file the role agents read; this one carries
-> M3's depth, and every technical claim below names where it came from, so a
-> claim in PLAN.md can be re-verified here rather than re-derived.
+> step 3 added its findings here. It carries M3's evidence, not its scope:
+> what is not built yet is the GitHub issue tracker's, by milestone, and every
+> technical claim below names where it came from, so a claim made in an issue
+> or a change's `design.md` can be re-verified here rather than re-derived.
 >
 > An earlier draft of this banner declared the file frozen. That was wrong —
 > step 3 edited it two days later — and asserting "no longer edited" over a
 > document being actively edited is the exact false-but-plausible claim the
-> spec-driven flow exists to remove. Where the two files disagree, prefer the
-> one whose git history is more recent, and fix the other.
+> spec-driven flow exists to remove. Where this file and an issue disagree
+> about what is ahead, the issue wins; where they disagree about a measured
+> fact, re-measure and fix whichever is wrong.
 
 Status: **live.** Which phases have landed is a `git log` question, not a
 sentence to maintain here — this line used to claim "Phases 1-3 are not started"

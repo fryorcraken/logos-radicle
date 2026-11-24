@@ -28,8 +28,8 @@
 # cancel queues behind them: minutes on a large repository, so a fixed wait
 # failed on a healthy module and would have to be sized for whichever
 # repository the seed lists first. Polling first has no backlog to wait
-# behind. The defect is in docs/PLAN.md, "Known defects in shipped behaviour";
-# when it is fixed, this order can go back to the label's order in life.
+# behind. The defect is issue #92; when it is fixed, this order can go back to
+# the label's order in life.
 
 app: radicle_ui
 with: [radicle]

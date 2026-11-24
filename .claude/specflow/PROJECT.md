@@ -212,10 +212,92 @@ guess.
   literal.
 - **Read files from your own worktree, not from a copy in context.** A worktree
   branches from `origin/main`, or from the runner's HEAD under
-  `worktree.baseRef: "head"`; `docs/PLAN.md` should be read from `origin/main`.
+  `worktree.baseRef: "head"`, so a `CLAUDE.md` already in context can be a
+  different version from the one in your tree.
 - **`./tmp/` is the scratch space**, not `/tmp`; clean up after yourself.
-- **This repo's own role agents live in `.claude/agents/`** and share names with
-  the plugin's. Address the plugin's qualified, `specflow:<role>`.
+- **A composer that shows what it just posted proves nothing about the post.**
+  Appending a posted comment locally renders correctly whether or not the write
+  landed, which is why a successful post reloads the thread instead. An
+  assertion on what the composer put on screen is true under the null
+  implementation; assert on what came back.
+
+## spec-writer
+
+- **MUST / MUST NOT only.** No SHOULD or MAY: an optional requirement is either
+  a requirement or it is not one.
+- **A definition is not a requirement.** "Embedded mode is a Radicle home of its
+  own" is a plain statement; "an embedded home MUST resolve independently of
+  `RAD_HOME`" is something an implementation can fail.
+- **A JSON shape is specified for `remote*` and `local*` alike.** The two
+  returning identical shapes is what lets a view render either without
+  branching; a requirement that fixes one and is silent on the other leaves the
+  asymmetry to be found later.
+
+## dev-writer
+
+- **One failure shape.** Every method returns a JSON string, and every failure
+  is `{"error":"..."}`, never a partial success. `radicle/src/radicle_impl.h`
+  is the contract.
+- **A `design.md` is due here** when a change crosses the FFI boundary, changes
+  the JSON contract, or touches the write path, as well as for the general
+  triggers.
+
+## tester
+
+- **A test that writes a binary and then executes it can hit `ETXTBSY`**
+  ("Text file busy"), which reads as a logic bug and is not. If a failure looks
+  impossible, check for that shape before chasing the code.
+- **A resolver's success-path test passes against a resolver that ignores the
+  setting**, when the default gives the same answer. Pin it with a path that
+  does not exist and assert the error names that path.
+
+## code-reviewer
+
+- **Untrusted input:** everything from a seed over HTTP, and everything read
+  from on-disk repository state, including the user's own storage. Hunt
+  indexing, slicing, `unwrap`/`expect` and overflowing arithmetic on any path
+  those reach.
+- **The seed API has returned bare arrays where an object was expected,
+  40-character SHAs, `status` where `state` was assumed, and endpoints
+  sensitive to a trailing slash.** A field read is a place to check the shape
+  was verified, not assumed.
+- **The sandbox is the boundary.** A path crossing the FFI or QtRO boundary
+  that a sandboxed view could point somewhere it should not reach is the shape
+  to watch; a home accepted as an argument from the view is the standing
+  example. So is anything that could write into the user's real Radicle home
+  when it was meant to stay in the module's own directory, and an error message
+  that leaks a filesystem path or key material to a caller that should not
+  learn it.
+- **The interface stays narrow.** `std::string` in, `std::string` out, JSON,
+  per method, is what keeps the radicle crate's churn behind `radicle_impl.h`.
+  Widening it is a decision, not a side effect.
+- **A new dependency** must be licence-compatible: this repo is MIT or
+  Apache-2.0, at the user's option. On the Rust side, `Cargo.lock` and the
+  `flake.nix` vendor hash move together; a stale vendor hash breaks the Nix
+  build while `cargo build`, `clippy` and `test` all stay green.
+
+## design-reviewer
+
+- **A missing `design.md` is a finding** only when the change met a trigger:
+  the general ones, or crossing the FFI boundary, changing the JSON contract,
+  or touching the write path.
+- **Check a decision against `docs/M3-embedded-node-plan.md` and
+  `docs/M3-phase0-findings.md`** where the change touches what they measured.
+  They can be behind, so a disagreement is not automatically a defect, but a
+  change that silently assumes the opposite of a measurement there is worth
+  surfacing.
+- **A trap in a built subsystem belongs in its trigger doc** —
+  `docs/rust-ffi.md`, `docs/writes.md`, `docs/e2e.md` — or `CLAUDE.md`, not
+  only in an archived `design.md`. The archive answers "why was this decided";
+  those docs answer "what will bite me tomorrow".
+
+## spec-test-reviewer
+
+- **Check `remote*`/`local*` symmetry** in any requirement describing a JSON
+  shape (see `## spec-writer`).
+- **Spend the mutation budget on the cheap layers first**: the Rust FFI tests
+  run in seconds and the single-file QML runner is fast, while the C++ core
+  tests need a slow Nix build.
 
 ## Extra stages
 

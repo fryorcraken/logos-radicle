@@ -16,36 +16,26 @@ generated_code/
 # AI tool directories. Generated or machine-local: `lgs init`'s output,
 # `openspec init`'s skills and commands, settings.local.json, worktrees.
 #
-# The role agents are the exception: they are part of the process rather than
-# one machine's settings, so they belong in the repo.
-#
 # `.claude/*` rather than `.claude/` because git will not re-include a file
-# whose parent DIRECTORY is excluded — with a `.claude/` rule the negation
-# below is never consulted and `.claude/agents/` stays invisible.
+# whose parent DIRECTORY is excluded — with a `.claude/` rule the negations
+# below are never consulted.
 #
-# A directory negation is RECURSIVE, which is why it is narrowed again below.
-# `!.claude/agents/` alone stops `.claude/*` applying to anything beneath it,
-# so a nested scratch directory, a stray `settings.local.json`, or any build
-# leftover dropped in there becomes trackable — in the one namespace the
-# comment above admits is "generated or machine-local". The failure is a
-# generated file committed silently, which nobody notices, rather than a
-# tracked file going missing, which somebody does.
+# A directory negation is RECURSIVE: `!.claude/<dir>/` stops `.claude/*`
+# applying to anything beneath it, so a nested scratch directory or a stray
+# `settings.local.json` dropped in there becomes trackable. The failure is a
+# generated file committed silently, which nobody notices. So re-admit files
+# by name where you can, and a directory only when everything in it is meant
+# to be tracked. The role agents are the specflow plugin's; a project agent
+# added later is re-admitted as its one file.
 #
-# So: re-exclude everything under `agents/`, then re-admit only the role files
-# themselves. Verified with `git check-ignore`: `agents/code-reviewer.md` is
-# tracked, `agents/scratch/tmp.json` and `agents/settings.local.json` are not.
-#
-# `settings.json` is re-admitted for the same reason, and it is not a
-# preference file: it carries `worktree.baseRef = "head"`, which is what makes
-# `isolation: "worktree"` fork an agent from the runner's HEAD instead of
-# `origin/main`. Ignored, it reached no clone and no fresh checkout, and
+# `settings.json` is not a preference file: it carries
+# `worktree.baseRef = "head"`, which is what makes `isolation: "worktree"`
+# fork an agent from the runner's HEAD instead of `origin/main`, and it enables
+# the specflow plugin. Ignored, it reached no clone and no fresh checkout, and
 # **nothing failed when it was absent** — agents were silently cut from the
 # wrong base, which is the failure this repo keeps re-learning. Machine-local
 # settings belong in `settings.local.json`, which stays ignored.
 .claude/*
-!.claude/agents/
-.claude/agents/*
-!.claude/agents/*.md
 !.claude/settings.json
 .cursor/
 AGENTS.md
