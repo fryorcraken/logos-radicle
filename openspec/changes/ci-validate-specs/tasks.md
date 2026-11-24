@@ -45,10 +45,11 @@ wiring, which group 2 covers.
 
 ## 2. The CI step (design.md, Decision 4)
 
-- [ ] 2.1 Append `actions/setup-node` (Node 24) and a step running the script
+- [x] 2.1 Append `actions/setup-node` (Node 24) and a step running the script
       to the `lint` job in `.github/workflows/ci.yml`, with a comment naming
       what it cannot see. Verify: the PR's `Lint` job runs the step, and its
-      log ends in "all 9 live specs valid".
+      log ends in "all 9 live specs valid". Seen on PR #95's first run, at
+      `1d56605`.
 
 The step has **not** been seen red in CI. Tasks 1.2 to 1.4 show the script
 failing; the wiring is a plain `run:` whose exit status Actions propagates, and
