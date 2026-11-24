@@ -369,13 +369,47 @@ When adding coverage, verify it fails when it should: break `local.rs` on
 purpose and watch the assertion go red. That takes a minute and is the only
 thing separating a real test from a skip.
 
-**Two probe examples read this machine's real `~/.radicle`**, because a fixture
-built by the same code that reads it can agree with itself while both are wrong
-about what a real `rad`-created profile looks like: `probe_real_profile` (every
-read, one repo, empty sha) and `probe_ui_args` (every repo, with the
-`defaultBranch` the UI actually passes as the sha — a different input down a
-different path). Neither is a test: they depend on what is on this machine, so
-they can neither pass nor fail meaningfully in CI.
+**Never point a test at the developer's real Radicle home.** Every test builds
+its own homes in temporary directories. A test that reads `~/.radicle` passes
+or fails on what happens to be on the machine running it, and one that writes
+there can damage the identity it was meant to exercise.
+
+**`probe_*` examples may read this machine's real `~/.radicle` on purpose, and
+that is why they are examples and not tests.** A fixture built by the same code
+that reads it can agree with itself while both are wrong about what a real
+`rad`-created profile looks like. `probe_real_profile` (every read, one repo,
+empty sha) and `probe_ui_args` (every repo, with the `defaultBranch` the UI
+actually passes as the sha — a different input down a different path) are the
+two that check the read path that way. They depend on what is on this machine,
+so they can neither pass nor fail meaningfully in CI. Keep that line where it
+is: an example promoted to a test breaks the rule above.
+
+**An isolation test needs two homes, and two assertions.** Init two profiles in
+two temporary homes, then assert both that their node ids differ and that
+neither home was written by the other's init. A fixture with one home cannot
+tell isolation from its absence — the same trap as a fake returning identical
+data for every branch. The first half is what
+`two_homes_get_two_different_identities` checks (see "Creating an identity"
+above for why it can fail); whether a test checks the second half yet is issue
+#59's question.
+
+## Platform scope
+
+**Three platforms are built, and one is tested.** `ci.yml`'s `build` matrix
+builds `linux-amd64`, `linux-arm64` and `darwin-arm64`, each natively on its
+own runner, and the `release` job merges all three into one `.lgx` per module,
+failing rather than shipping a partial. Every test job runs on
+`ubuntu-latest`: the Rust backend job, the QML job, and the core unit tests,
+which run on the `build` matrix's `linux-amd64` leg only. So the arm64 and
+Darwin legs are compile gates, not test runs.
+
+**Windows is never built, and supporting it is out of scope — but do not
+hard-code against it.** `radicle-node` carries `uds_windows` and
+`radicle-windows` dependencies (both in `radicle/rust-ffi/Cargo.lock`), so the
+crate underneath is not Unix-only, and a Unix-only assumption in this crate
+would be this repo's own. There is no `target_os` gate or `cfg(unix)` branch
+here today (see the Darwin paragraph below); adding one is a decision to record,
+not a side effect.
 
 ## Building it per-system — the arm64 regression
 

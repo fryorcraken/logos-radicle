@@ -81,11 +81,10 @@ a click selector is static and cannot choose a file from the listing.
 after a cancel queues behind the cancelled sync's backlog, minutes on a large
 repository. A spec that needs an answer after a cancel would have to size its
 wait for a repository nobody chose, which is why `sync.yaml` polls before it
-cancels. The defect and its measurement are in `docs/PLAN.md`, "Known defects
-in shipped behaviour". The opposite bound is `sync.yaml`'s too: its cancel half
-needs a first repository whose sync outlasts the steps before the cancel click,
-and a step asserting `syncing === true` immediately before it makes a repository
-too small fail there, by name.
+cancels. The defect and its measurement are issue #92. The opposite bound is
+`sync.yaml`'s too: its cancel half needs a first repository whose sync outlasts
+the steps before the cancel click, and a step asserting `syncing === true`
+immediately before it makes a repository too small fail there, by name.
 
 **Add new specs to the `ui-tests.yml` matrix.** It runs one job per spec;
 `SPEC` was once hardcoded to `browse.yaml` and three specs sat in the tree
@@ -237,10 +236,12 @@ Basecamp 0.3.0. It stages the core module so that 0.3.0 reads it as the
 `linux-amd64` variant, which a dev Basecamp refuses ("supported variants
 [linux-x86_64-dev, linux-amd64-dev]"). `radicle` then never loads, and every
 spec times out at `open`. 0.2.0 against the same build passes browse,
-branches, write and local. When the Basecamp pin moves, re-run a spec on the
-current sitometres before assuming the app broke. The only sign of this
-failure is the module-load line in Basecamp's log, which `--user-dir <dir>`
-keeps on disk after the run.
+branches, write and local. **So at the next stack bump, re-run a spec on the
+current sitometres before assuming the app broke.** The Basecamp pin moves only
+as part of that set (CLAUDE.md, "This is a scaffold-managed project"), so the
+bump is the moment this bites, and the e2e layer is the first place it shows.
+The only sign of this failure is the module-load line in Basecamp's log, which
+`--user-dir <dir>` keeps on disk after the run.
 
 **Do not point `--basecamp` at the `.LogosBasecamp` ELF directly** — that
 clears the probe and then fails to spawn with `ENOENT`, because the wrapper is
@@ -366,6 +367,25 @@ started from. That is the only way to reach your own node from an
 `lgs`-launched instance (inferred from `launch`'s environment inheritance, not
 yet run), and it brings the contention back. It also makes that instance's
 writes real. See CLAUDE.md "Local mode under `lgs basecamp launch`".
+
+**Embedded mode needs none of this.** Local mode has to be handed a profile,
+from a seeder or from your own node, because the module reads a home it did not
+make. Embedded resolves a home of its own (the `node-paths` capability) and
+can create its identity there without `rad auth` (`embedded-identity`), so a
+spec can make a fresh embedded home as one of its steps. That removes both the
+dependency on a developer's profile and the two-Basecamps contention above,
+since no other instance knows that home. This is reasoning from the specs, not
+a run: whether a spec does it yet is a question for `ui-tests.yml`'s matrix.
+
+**A throwaway `$HOME` is not enough for that on its own.** The embedded home is
+derived from `XDG_DATA_HOME` first, and from `$HOME/.local/share` only when
+`XDG_DATA_HOME` is unset (`embeddedHomeFor()` in `settings_store.cpp`). A shell
+that exports `XDG_DATA_HOME`, as many desktop sessions do, therefore puts the
+embedded home under the developer's real data directory whatever `$HOME` is,
+and a spec that calls `createEmbeddedIdentity` there either meets an occupied
+home or, on a first run, leaves a permanent identity behind. Whether sitometres
+overrides `XDG_DATA_HOME` for its run has not been measured; until it has, a
+spec that creates an identity must not be run from a shell that exports it.
 
 ## The app starts in Explore, and every spec depends on that
 

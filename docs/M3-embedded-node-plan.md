@@ -1,16 +1,17 @@
 # M3 — An embedded Radicle node, set up from inside Basecamp
 
 > **This is the milestone's working document, and it is still maintained** —
-> step 3 added its findings here. [`docs/PLAN.md`](PLAN.md) is the
-> *cross-milestone* forward-looking file the role agents read; this one carries
-> M3's depth, and every technical claim below names where it came from, so a
-> claim in PLAN.md can be re-verified here rather than re-derived.
+> step 3 added its findings here. It carries M3's evidence, not its scope:
+> what is not built yet is the GitHub issue tracker's, by milestone, and every
+> technical claim below names where it came from, so a claim made in an issue
+> or a change's `design.md` can be re-verified here rather than re-derived.
 >
 > An earlier draft of this banner declared the file frozen. That was wrong —
 > step 3 edited it two days later — and asserting "no longer edited" over a
 > document being actively edited is the exact false-but-plausible claim the
-> spec-driven flow exists to remove. Where the two files disagree, prefer the
-> one whose git history is more recent, and fix the other.
+> spec-driven flow exists to remove. Where this file and an issue disagree
+> about what is ahead, the issue wins; where they disagree about a measured
+> fact, re-measure and fix whichever is wrong.
 
 Status: **live.** Which phases have landed is a `git log` question, not a
 sentence to maintain here — this line used to claim "Phases 1-3 are not started"
@@ -795,6 +796,7 @@ networked and slow. Concretely:
   real-but-not-git binary and assert `git --version` validation rejects it.
 - **e2e**: `run-local-e2e.sh` already passes `--env RAD_HOME=…`. An embedded
   node is *easier* to test than the current setup, because the spec can
-  create a throwaway home instead of depending on the developer's profile —
-  which may finally let local browsing into CI, closing the gap CLAUDE.md
-  records as the reason `local.yaml` is hand-run only.
+  create a throwaway home instead of depending on the developer's profile.
+  (`local.yaml` has since joined `ui-tests.yml`'s matrix against a seeded
+  profile; `docs/e2e.md` carries the embedded half of this lesson, with the
+  `XDG_DATA_HOME` precondition it needs.)

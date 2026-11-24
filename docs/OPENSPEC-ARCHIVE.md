@@ -1,9 +1,10 @@
 # Archiving an OpenSpec change
 
 Read this when you are **archiving** — run by the `closer` as a commit on the
-piece branch, before CI and before the merge. `.claude/agents/README.md` is the
-flow; this is the one step with enough mechanical detail to be worth its own
-page.
+piece branch, before CI and before the merge. The specflow plugin's
+`specflow:flow` skill is the flow, and its `specflow:openspec-archive` skill the
+general archiving rules; this page is the step's mechanics as measured in this
+repository, with the reference pair to diff against.
 
 Archiving before the merge rather than after is deliberate: `archive` rewrites
 the live contract in `openspec/specs/`, so it has to be in the tree CI tests and
@@ -135,9 +136,9 @@ look identical.
 Two things not to reach for if it ever does go wrong. **`EnterWorktree` is not
 for a dispatched agent** — it refuses a session at the repository root, and
 crossing between worktrees succeeds while leaving every Bash call refused;
-`.claude/agents/README.md`'s "Handing over between agents" has both probes
-verbatim. And **`cd <dir> && openspec …` costs an approval click** even though
-`Bash(openspec:*)` is allow-listed, because the checker cannot analyse a compound
+the plugin's `specflow:worktree-discipline` skill has the table of which route
+works. And **`cd <dir> && openspec …` costs an approval click** even though
+`Bash(openspec *)` is allow-listed, because the checker cannot analyse a compound
 command.
 
 If validation genuinely cannot run, **say in the report that it did not run, and
@@ -160,8 +161,8 @@ noticed. The discipline that works is declining to restate and **saying so in th
 Purpose**, naming the other requirement and the boundary.
 
 This is the same rule as `openspec/specs/` versus an archived `specs/` delta,
-which the flow README covers: those two are *allowed* to diverge because only
-one is maintained. Two live capabilities are not.
+seen from the other side: those two are *allowed* to diverge because only one
+is maintained. Two live capabilities are not.
 
 ## Moving requirements between capabilities
 

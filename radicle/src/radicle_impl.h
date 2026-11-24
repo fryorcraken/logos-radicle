@@ -548,7 +548,7 @@ public:
      *
      * -> {"rid":"rad:…","scope":"…"} or {"error":"…"}
      *
-     * **This is the fix for the footgun `docs/PLAN.md` names.** `rad init` plus
+     * **This is the fix for the allow-is-not-enough footgun.** `rad init` plus
      * `rad id update --allow <DID>` does **not** replicate a private repository:
      * every node that is to hold it must also seed the RID, and a private one
      * needs scope `all`. Without both halves `rad sync` times out with "All

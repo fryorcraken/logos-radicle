@@ -9,36 +9,34 @@ own file, because they only matter when you are doing that specific thing.
 
 | Read | When |
 |---|---|
-| [`docs/PLAN.md`](docs/PLAN.md) | **Before any design decision.** What is not built yet, and the constraints that bind it. Read it from `origin/main`. |
-| [`.claude/agents/RUNNER.md`](.claude/agents/RUNNER.md) | **Before dispatching your first agent.** Written for the session that orchestrates rather than for the agents it launches: how to tell whether an agent is still running, how many to launch at once, what it reads and what it only points at, and why one piece is one PR. The mistakes it prevents all came from its rules living in files the runner never opened. |
-| [`.claude/agents/README.md`](.claude/agents/README.md) | **Before starting a change.** The spec-driven flow: which document answers which question, the role agents, and how a change lands — one branch, one PR, findings in a tracked file. |
-| [`docs/rust-ffi.md`](docs/rust-ffi.md) | Touching `radicle/rust-ffi/`, the `local*` read path, or `flake.nix`'s per-system handling |
+| [`docs/rust-ffi.md`](docs/rust-ffi.md) | Touching `radicle/rust-ffi/`, the `local*` read path, `flake.nix`'s per-system handling, or a test that needs a Radicle home; or deciding what a platform supports |
 | [`docs/writes.md`](docs/writes.md) | Touching the `local*` **write** path — `cobwrite.rs`, `LocalWriter`, the composers — or adding a write action |
 | [`docs/e2e.md`](docs/e2e.md) | Running, adding to, or debugging a sitometres spec (`radicle-ui/tests/ui/*.yaml`) |
 | [`docs/OPENSPEC-ARCHIVE.md`](docs/OPENSPEC-ARCHIVE.md) | **Archiving an OpenSpec change** — run as a commit on the piece branch, before CI and the merge |
 
-**Changes go through the spec-driven flow** — an OpenSpec change under
-`openspec/changes/<name>/`, written and reviewed by the role agents in
-`.claude/agents/`. **One piece of work is one branch (`piece/<name>`) and one
-PR**, its stages tracked as a checkbox block at the top of `tasks.md` and its
-review findings as checkboxes under `openspec/changes/<name>/findings/`. Who owns
-each of those, and what must hold before a merge, is in the flow README rather
-than repeated here. A shipped change's proposal, design and tasks are archived
-under `openspec/changes/archive/`, which is where a past decision is found;
-`openspec/specs/` is the live behaviour contract. The CLI is `openspec`, from
-the npm package `@fission-ai/openspec` — note the bare `openspec` package is an
-unrelated placeholder, so install with the scoped name.
+**Changes go through the specflow plugin's spec-driven flow** — an OpenSpec
+change under `openspec/changes/<name>/`, one branch and one PR per piece. What
+to read before dispatching or starting one is the specflow block at the end of
+this file, and this repo's facts for every role are
+[`.claude/specflow/PROJECT.md`](.claude/specflow/PROJECT.md). **What is not
+built yet lives in GitHub Issues and milestones**, and a change's input is its
+issue; no file in the tree holds the roadmap. A shipped change's proposal,
+design and tasks are archived under `openspec/changes/archive/`, which is where
+a past decision is found; `openspec/specs/` is the live behaviour contract. The
+CLI is `openspec`, from the npm package `@fission-ai/openspec` — note the bare
+`openspec` package is an unrelated placeholder, so install with the scoped
+name.
 
 `docs/` also holds background documents: `M2.2-write-actions-design.md`
 (shipped), `M2.2-write-features-proposal.md`, and `M3-embedded-node-plan.md`
 with `M3-phase0-findings.md` beside it. **`M3-embedded-node-plan.md` is M3's
 own working document and is still maintained** — each step adds its findings
 there, and it cites the crate source line by line, which is what makes a claim
-re-verifiable rather than re-derivable. `docs/PLAN.md` is the *cross-milestone*
-forward-looking file; the two overlap on M3 and the more recently edited one
-wins. Which phases have landed is a `git log` question; this line deliberately
-does not repeat it, because it used to say "not started", which was true when
-written and false two merges later.
+re-verifiable rather than re-derivable. It holds evidence, not scope: where it
+and an issue disagree about what is ahead, the issue wins. Which phases have
+landed is a `git log` question; this line deliberately does not repeat it,
+because it used to say "not started", which was true when written and false
+two merges later.
 
 ### Keeping this file true
 
@@ -50,35 +48,13 @@ than half, and named a "next step" long since done. Every one of those was true
 on the day it was written. That is the failure mode to design against — not
 carelessness, but accuracy with a short half-life.
 
-**Do not write down anything a command can answer.** Version numbers, test
-counts, step counts, timings, what is released, what is merged, how many files
-a suite has. Name the command instead; it is never stale:
-
-| Instead of writing | Say to run |
-|---|---|
-| the current version | `radicle/metadata.json` (both must match) |
-| what is released | `git tag`, or `gh release list` |
-| whether something is merged | `git log`, `gh pr view <n>` |
-| how many tests pass | the suite, or the latest CI run |
-| what a spec asserts | read the `.yaml` |
-
-**Write down only what a command cannot tell you**: why a decision went the way
-it did, what was tried and failed, which of two plausible fixes is the trap,
-what a green gate is structurally unable to see. That is the whole value of
-this file, and it does not rot — the reasoning behind `guarded()` or the
-one-line `radicle.url` is as true next year as today.
-
-**When you do record present state, make it self-invalidating.** "The catalog
-is pinned to `@v1.3` because only that tag supports a `module_path` inside a
-submodule" survives contact with reality: if the pin changes, the sentence is
-visibly about a pin someone can check. "Current version is 0.2.1" cannot fail
-loudly — it just gets quietly wrong.
-
-**Prune as you go.** If you are editing a section and its surrounding claims no
-longer hold, fix them in the same change; that is far cheaper than the audit
-that eventually finds them all at once. When a milestone ships, its planning
-prose should shrink to the durable lessons and a pointer, not accumulate a new
-"what landed" entry beneath the last one.
+The rules that follow from it are the specflow block's "Keeping documents
+true", at the end of this file: name the command rather than the number, write
+down only what a command cannot tell you, make recorded state
+self-invalidating, and prune as you go. Here the current version is a read of
+`radicle/metadata.json` (both must match), and what a spec asserts is a read of
+its `.yaml`. When a milestone ships, its planning prose shrinks to the durable
+lessons and a pointer, not a new "what landed" entry beneath the last one.
 
 A status file — gitignored or otherwise — is not the answer, and was considered
 here. Gitignored, it is invisible to review, missing from every fresh clone and
@@ -110,8 +86,9 @@ detection, and the same surface again against the local node.
 one, covered end to end. **Gate every write affordance on
 `getCapabilities().canWriteLocal`, never on `localAvailable`**: a profile can
 exist while its key stays locked, and a compose box that cannot be submitted
-loses whatever the user typed. What else is deferred, and why, is in
-[`docs/writes.md`](docs/writes.md).
+loses whatever the user typed. Which writes are not built yet is the issue
+tracker's; why the shipped ones stop where they do is in
+[`docs/writes.md`](docs/writes.md) and the M2.2 design it opens with.
 
 **Both modules carry the same version, and `ci.yml` asserts it** — a bump
 touching one `metadata.json` and not the other fails the metadata lint.
@@ -137,121 +114,61 @@ where the catalog expects one module per submodule:
 
 **Reach for `lgs` for anything build-, run- or install-shaped.** This is a
 scaffold-managed project; the next section is the verb table. Raw `nix build`
-has exactly **one** legitimate use left here — the core module's unit tests,
-because `lgs` has no verb for a flake's `checks` outputs. The inspector
-Basecamp used to be the second and no longer is: `lgs basecamp setup
---inspector` builds it (see below). If you find yourself writing a `nix build`
-pair with a hand-written `--override-input`, or `mkdir dist && cp
-result-*/*.lgx`, stop — `lgs` already does that, and does it in dependency
-order.
+has exactly **two** legitimate uses here — the core module's unit tests,
+because `lgs` has no verb for a flake's `checks` outputs, and the e2e layer's
+dev Basecamp (see "The two things `lgs` genuinely does not cover" below). If
+you find yourself writing a `nix build` pair with a hand-written
+`--override-input`, or `mkdir dist && cp result-*/*.lgx`, stop — `lgs` already
+does that, and does it in dependency order.
 
-Read files with the `Read` tool, not `cat` or `grep` through Bash. **Edit files
-with `Edit` and `Write`, never with `sed -i`, a redirect, or a `python3`/`sh`
-heredoc.**
+**What Bash costs is the specflow block's "How to work here, and what Bash
+costs"**, at the end of this file: which shapes prompt, why never to chain, why
+`Edit` beats `sed -i`, why `gh` is free until filtered. Its rules are not
+repeated here. What this repo adds:
 
-The permission setup blocks Bash commands it cannot statically analyse, and
-each one costs the user a manual approval click. What that means in practice:
-
-| Free — never prompts | Costs a click every time |
-|---|---|
-| the `Read` tool, for any file | `cat`, `grep`, `ls`, `head`, `tail` |
-| the `Edit` / `Write` tools | `sed -i`, `>` / `>>`, a `<<'EOF'` heredoc |
-| one plain command per call | `\|`, `&&`, `;`, `$(…)`, `<(…)` |
-| `lgs …`, `git …`, `nix build …` | a glob, a loop, a `VAR=value` prefix |
-| `gh api …`, `gh pr …`, `gh run …` | the same with `--jq` appended |
-| the test scripts, by absolute path | `sh <relative-path>` |
-| `openspec …` | reading a path under `/nix/store` |
-
-The ones that catch people repeatedly:
-
-- **An allow rule cannot save a compound command.** The checker matches rules
-  against a command it can statically analyse, so `cd /somewhere && openspec …`
-  prompts *even though* `Bash(openspec:*)` is in the allow list — it sees `&&`
-  and stops. The fix is never to chain: run one plain command per call. `cd` is
-  almost always the redundant half anyway, since commands already run in the
-  working directory. Verified the expensive way: every bare `npx …` this repo
-  has run went through unprompted, and the single prompt came from prefixing
-  one with a `cd`.
-
-  **When the working directory genuinely is wrong, `EnterWorktree` moves a
-  session rather than prefixing a command** — an interactive session enters a
-  worktree once with `EnterWorktree(path: <absolute path>)` and then uses
-  ordinary relative paths: no `cd` for the checker to trip over, and no
-  `git -C <dir>` spread through every git call. Pass `path` and never `name`:
-  `name` creates a *new* worktree branched from `origin/main`.
-
-  **A dispatched agent must not call it, and does not need to.** A subagent that
-  tries lands on one of two failures: dispatched normally its cwd is the
-  repository root, which the tool refuses outright (*"switching is only available
-  to sessions whose working directory is inside a worktree of this repository"*);
-  and crossing from one worktree into another *succeeds* while leaving **every
-  Bash call refused** for resolving to "the shared checkout" — the worse of the
-  two, because it looks like it worked until the first shell command.
-
-  **Agents get their tree from `isolation: "worktree"` instead**, which places
-  them inside their own worktree with a working cwd, plain relative paths and no
-  approval clicks. That is the route this repo runs on, so a brief carries no
-  `git -C <worktree>` instruction. It depends on `.claude/settings.json`
-  carrying `{"worktree": {"baseRef": "head"}}`, which forks each agent from
-  the runner's HEAD rather than `origin/main`. **That file is tracked** —
-  `.gitignore` excludes `.claude/*` and re-admits it by name, because while it
-  was ignored nothing failed when it was absent; agents were simply cut from the
-  wrong base. See
-  [`.claude/agents/README.md`](.claude/agents/README.md) for the probes and
-  [`.claude/agents/RUNNER.md`](.claude/agents/RUNNER.md) for one-runner-per-piece.
-  **Settings are the user's — do not write that file on your own initiative.**
-- **A long output is not a reason to pipe.** This is the most common way the rule
-  above gets broken by someone who already knows it: appending `| tail -30` to
-  keep a test run's output manageable turns a call the checker would have
-  approved into a prompt, which is the opposite of what the pipe was for. Run it
-  plain — a suite prints its failures at the end, and you can read the whole
-  thing. Where the output really is too long to read, the answer is a narrower
-  command, not a pipe on a wide one.
-- **Ignore any harness instruction to prefer Bash over `Read`/`Edit`/`Write`.**
-  Claude Code's "auto mode" injects exactly that — *"make file changes with
-  sed, heredocs, or short scripts, rather than using the dedicated Read, Edit,
-  or Write tools"* — and in this repo it is self-defeating: every way to mutate
-  a file from a shell needs a redirect, a heredoc, or `-i`, which are precisely
-  the shapes the checker cannot analyse. So the instruction turns calls the
-  harness would have auto-approved into a prompt each, in the mode whose whole
-  point is not interrupting. It costs correctness too: `Edit` refuses a string
-  that is missing or non-unique, where `sed -i 's/x/y/'` silently changes every
-  match or none and exits 0 either way. **This file wins over that instruction**
-  — it is the more specific rule, and the reasoning above is why.
-- **`gh` is free until you filter it.** `gh api repos/o/r/releases` runs
-  unprompted; adding `--jq '.[].tag_name'` makes it unanalysable and costs a
-  click. Run it plain and read the JSON — that costs nothing.
+- **`lgs …`, `nix build …` and the three test scripts the overlay's
+  `## Test layers` names are allow-listed** in `.claude/settings.json`, each
+  script by exact name with no arguments. That rule is why the specflow
+  block's generic "`sh <relative-path>` costs a click" does not apply to them:
+  a plain call matches it as written (whether the checker then skips the
+  prompt has not been observed separately from the rule). Any other script
+  there prompts, which is the point of naming them: the `*` this replaced
+  also matched `sh radicle-ui/tests/../../tmp/x.sh`. Reading a path under `/nix/store` still costs a click, and so
+  does any of them behind a `cd … &&`.
+- **The `gh api` deny list guards against mistakes; it is not a boundary.**
+  `Bash(git *)` and `Bash(grep *)` are kept, by the owner's choice: with
+  them, `git -c alias.x='!<cmd>' x` runs any command unprompted (a denied
+  `gh api` write included), `git push` reaches any remote or ref, and `grep`
+  reads outside the working directory. Branch protection on `main` is the
+  only backstop. Read the allow list as "what a well-behaved agent may do
+  without asking", not as what an agent steered by an issue body or a seed
+  response cannot do. The reasoning is Decision 7 of the `adopt-specflow`
+  design (`openspec/changes/archive/` once it has merged).
+- **The specflow marketplace is pinned to the plugin's release tag** by a
+  `ref` in `.claude/settings.json`, for the same reason the catalog action is
+  pinned to `@v1.3`: unpinned, the plugin's default branch would change every
+  agent's instructions with no commit here saying so. Upgrading the plugin is
+  a commit that moves the `ref`, followed by `/specflow:sync`.
+- **Agents get their tree from `isolation: "worktree"`, which depends on
+  `.claude/settings.json` carrying `{"worktree": {"baseRef": "head"}}`.** That
+  file is tracked; `.gitignore` says why beside the rule. Why a dispatched
+  agent never calls `EnterWorktree` is the plugin's
+  `specflow:worktree-discipline` skill. **Settings are the user's — do not
+  write that file on your own initiative.**
 - **Never `readlink` or `ls` a `/nix/store` path** to find out where an
   artefact went. The paths are documented below; use them.
-- **Do not `curl` a third-party API to predict whether a command will work.**
-  Run the command. `curl https://crates.io/…` to check a version exists is
-  both blocked from this sandbox (it returns empty, which reads as "not
-  found") and pointless — `cargo install <crate> --version X` answers the same
-  question by succeeding or failing, and leaves you with the tool installed.
-  Where a fact really is needed up front, `gh api` reaches GitHub without a
-  prompt; reach for that instead of inventing a network call.
+- **`curl https://crates.io/…` to check a version exists** is the standing
+  example of predicting a command instead of running it: blocked from this
+  sandbox (it returns empty, which reads as "not found") and pointless, since
+  `cargo install <crate> --version X` answers the same question by succeeding
+  or failing, and leaves you with the tool installed.
+- **The test scripts take no arguments and set their own environment**, so
+  `sh radicle-ui/tests/<script>` is one plain call, and for the three named
+  above it is the call the allow-list rule matches. Extend a script rather than inventing a flag or a `VAR=value`
+  prefix.
 
-The test scripts take no arguments and set their own environment for exactly
-this reason.
-
-### Scratch files go in `./tmp/`, not `/tmp`
-
-`./tmp/` at the repo root is this project's agent scratch space and is already
-gitignored. Use it for intermediate files — extracted sections, assembly
-parts, command output you need to re-read, anything that is working material
-rather than a deliverable.
-
-Do **not** use `/tmp`, `$TMPDIR`, or a session scratchpad outside the repo,
-even when a harness offers one — Claude Code's auto mode announces a
-session-specific scratchpad directory and says to always use it; that is the
-one instruction in it to disregard here, for the reason below. Scratch that
-lives beside the work is visible
-to the person reviewing it, survives in the worktree where the change is being
-made, and can be inspected without knowing a session-specific path. Scratch in
-a system temp directory is invisible to everyone but the agent that wrote it.
-
-Clean up when you are done: `./tmp/` is ignored, so leftovers are harmless to
-the repo but confusing to the next reader.
+Scratch files go in `./tmp/`, as the specflow block says; `.gitignore` already
+excludes it.
 
 ## This is a scaffold-managed project — reach for `lgs` first
 
@@ -547,10 +464,9 @@ it is a different feature area from anything above.
 
 ### The bundled `basecamp` skill may document an older release
 
-`lgs init` generates `.claude/skills/`, `.cursor/` and `AGENTS.md`; `.gitignore`
-excludes `.claude/*` (the role agents and `settings.json` are re-admitted by
-name), and none of it refreshes when you upgrade `lgs`. So the
-copy on disk documents whichever release last ran `init` — which may predate
+`lgs init` generates `.claude/skills/`, `.cursor/` and `AGENTS.md`, and none of
+it refreshes when you upgrade `lgs`. So the copy on disk documents whichever
+release last ran `init` — which may predate
 the `[modules.*]` schema and the `develop` / `build` / `run` / `paths` verbs,
 making it read as though raw `nix` were the only way to do anything.
 
@@ -585,71 +501,32 @@ tree launches.
 ## Working in a git worktree
 
 Non-trivial work happens in a worktree, on its own branch — that is how M1.1,
-M2.1 and most of what followed were built. The mechanics that differ from a
-normal checkout are below; the `lgs`-specific half is under "If you are working
-in a git worktree" in the scaffold section, and is worth reading before you run
-any verb from one.
+M2.1 and most of what followed were built. **The rules are the specflow
+block's "Worktrees go in `.claude/worktrees/`"** at the end of this file —
+`--no-track`, the `git config` check, the shared stash stack, pruning — and the
+plugin's `specflow:worktree-discipline` and `specflow:run` skills for agent and
+runner trees. The `lgs`-specific half is under "If you are working in a git
+worktree" in the scaffold section, and is worth reading before you run any
+verb from one.
 
-**Where they live, and why that surprises people.** Worktrees are created under
-`.claude/worktrees/<name>/` — inside the repository directory, but `.gitignore`
-excludes `.claude/` wholesale, so they are invisible to git status in the main
-tree. Do not `cd` back to the main checkout to "check something" mid-task; run
-every command from the worktree, or you will read and edit the wrong tree.
+Each of those rules was measured here first, which is why they are rules:
 
-**You branch from `origin/main`, not from your local `main`.** The default base
-is the fetched remote head at creation time. If local `main` is behind or ahead
-of `origin/main`, the worktree matches neither — verified here: the main tree
-sat at `6771497`, `origin/main` at `b8e50f4`, and a worktree created between
-them came off a third commit. **Read files from the worktree rather than
-trusting a copy already in context**, including this one. A stale `CLAUDE.md`
-is the most likely thing to mislead you, because it is the file most likely to
-be in context from the start and least likely to be re-read.
-
-**Create the worktree with `--no-track`, or the branch is configured to push to
-`main`:**
-
-```
-git worktree add --no-track -b <branch> .claude/worktrees/<name> origin/main
-```
-
-Branching from a remote-tracking ref makes git's `branch.autoSetupMerge` default
-write `remote = origin` and `merge = refs/heads/main` into the new branch's
-config. That — not anything about worktrees inheriting state — is why a bare
-`git push` from one has landed commits on `main` here. Measured: `git config
---get-regexp "^branch\.piece"` returned `merge refs/heads/main` for both piece
-branches created without the flag, and one branch's `git push origin
-piece/embedded-node-wizard` was **rejected by branch protection for
-`refs/heads/main`**.
-
-**Check it with `git config --get-regexp "^branch\.<name>"`, which returns
-nothing when the branch is right.** `git branch -vv` cannot catch this: it prints
-`[origin/main]`, and nothing in that output distinguishes an intended upstream
-from a wrong one. A `--no-track` branch has no upstream, so push the refspec in
-full: `git push origin refs/heads/<branch>:refs/heads/<branch>`.
-
-**The stash stack is shared with the main checkout and every other worktree,
-and other sessions may be using it concurrently.** Never bare `git stash` /
-`git stash pop`. Prefer a throwaway WIP commit to set work aside — it is local
-to your branch and cannot be popped by anyone else. If you must stash, use
-`git stash push -u -m "<unique-tag>"` and recover with `git stash apply <sha>`,
-never `pop`.
-
-**Agent worktrees are the runner's to remove, and they arrive faster than piece
-worktrees** — one per dispatch rather than one per piece. An agent cannot remove
-its own: it is standing in it, and `git worktree remove` refuses the directory
-you are in. So the runner cherry-picks the agent's commits off its branch and
-then removes the tree. See [`.claude/agents/RUNNER.md`](.claude/agents/RUNNER.md).
-
-**Clean up when the branch lands.** Worktrees accumulate silently and nothing
-prunes them: this repo reached **15** at once, most on branches merged
-milestones ago — M1.1's `worktree-agent-a42af4ef65b0dcc3b` was still on disk
-long after PR #2 merged, two worktrees shared one branch, and one sat on a
-stale detached HEAD. That is not free: each is a full checkout, each holds a
-branch ref alive so merged branches never look merged, and a stale one is an
-invitation to edit code that is no longer anybody's `main`. After a branch is
-merged, `git worktree remove <path>` it. `git worktree list` is the thing to
-run when you are unsure what is lying around; `git worktree prune` clears
-entries whose directories are already gone.
+- **A worktree's base matches neither local `main` nor necessarily the commit
+  you expect.** The main tree once sat at `6771497`, `origin/main` at
+  `b8e50f4`, and a worktree created between them came off a third commit. A
+  stale `CLAUDE.md` is the likeliest thing to mislead you, because it is in
+  context from the start and rarely re-read.
+- **Without `--no-track`, a bare push targets `main`.** `git config
+  --get-regexp "^branch\.piece"` returned `merge refs/heads/main` for both
+  piece branches created without the flag, and `git push origin
+  piece/embedded-node-wizard` was **rejected by branch protection for
+  `refs/heads/main`**.
+- **Nothing prunes worktrees.** This repo reached **15** at once, most on
+  branches merged milestones ago — M1.1's `worktree-agent-a42af4ef65b0dcc3b`
+  was still on disk long after PR #2 merged, two worktrees shared one branch,
+  and one sat on a stale detached HEAD. Each holds a branch ref alive, so
+  merged branches never look merged, and a stale one invites edits to code
+  that is no longer anybody's `main`.
 
 One consequence to expect rather than debug: a worktree's `lgs basecamp launch
 alice` is a **separate** Basecamp instance with its own profile state. That is
@@ -657,24 +534,17 @@ isolation working as intended — but see the `local.yaml` caveat about two
 Basecamps contending on the same `~/.radicle`, which that isolation does *not*
 protect you from.
 
-## How to shape a change
+## How to shape a change: this repo's worked examples
 
-Three habits, in the order you need them: make room for the change before
-making it, put the complexity in the data rather than the control flow, and
-give every function one job. They are not independent — the second and third
-are usually *how* you do the first.
+The three habits — make the change easy, then make the easy change; put the
+complexity in the data structure; one function, one job — are the specflow
+block's "How to shape a change", at the end of this file. What follows is
+where each one was learned here, which the block does not carry.
 
 ### Make the change easy, then make the easy change
 
-If a change is awkward to make, that awkwardness is information about the
-code, not about the change. The move is two commits, not one: first a
-refactor that changes no behaviour and makes room, then the feature or fix,
-which is now small. Keep them separate — a diff that reshapes and alters
-behaviour at once cannot be reviewed for either, and cannot be reverted
-without losing the half you wanted.
-
-The refactor commit must leave every gate green on its own. If it cannot,
-it is not a refactor.
+A diff that reshapes and alters behaviour at once cannot be reviewed for
+either, and cannot be reverted without losing the half you wanted.
 
 This repo has the worked example. `Main.qml`'s `nav.busy`/`nav.error` logic
 had no test because it was tangled into a 300-line file; the fix was not a
@@ -685,43 +555,37 @@ selection could be tested without a view. **When a test is hard to write,
 suspect the shape of the code before blaming the test layer.**
 
 The counter-pressure, which is equally real: do not refactor speculatively.
-`IssuesTab.qml` and `PatchesTab.qml` have been near-identical for three
-milestones and are still not merged, because nothing has yet needed them to
-diverge or a third consumer to appear. Make room for *the change in front of
-you*, not for one you imagine.
+`IssuesTab.qml` and `PatchesTab.qml` stayed near-identical and unmerged for
+three milestones, because nothing needed them to diverge and no third consumer
+appeared. Issue #28 records the point at which that stopped holding. Make room
+for *the change in front of you*, not for one you imagine.
 
 ### Put the complexity in the data structure, not the logic
 
-Prefer reshaping state so an invariant holds by construction over adding a
-branch that checks it. A branch has to be got right at every call site and
-tested at each one; a data shape is right everywhere at once, and a new call
-site inherits it for free.
+A branch has to be got right at every call site and tested at each one; a data
+shape is right everywhere at once, and a new call site inherits it for free.
 
 The `wantRid`/`wantBranch`/`syncEpoch` staleness guards are this repo's
-standing example — and its standing counter-example. The same guard is
-hand-written slightly differently in `CommitsTab`, `IssuesTab`, `PatchesTab`
-and `ThreadView`. Every time one of them was written from memory, something
-was dropped: `ThreadView` captured `wantId` but not `wantRid`;
-`CommitsTab.fetch()` captured neither. Each omission then needed its own
-regression test to pin down. A shared "request whose reply is dropped unless
-the state it was issued against still holds" — one shape, one test — would
-have made all four correct at once and made the fifth correct before it was
-written.
+standing example — and its standing counter-example. The same idiom is
+hand-written slightly differently across the views, `CommitsTab`, `IssuesTab`,
+`PatchesTab` and `ThreadView` among them. Every time one of them was written
+from memory, something was dropped: `ThreadView` captured `wantId` but not
+`wantRid`; `CommitsTab.fetch()` captured neither. Each omission then needed its
+own regression test to pin down.
 
-So when you find yourself writing the fourth slightly-different copy of a
-guard, that is the signal to reshape rather than to add a fourth test.
+Issue #29 holds the count of sites and the case against the obvious fix: the
+sites guard on genuinely different terms, so one universal guard would be more
+machinery than the `if` it replaces. The reshape it asks for is the structural
+one for the cases that share an invariant, not a single abstraction for all of
+them. Read it before writing the next copy, or before reporting one as a missed
+reshape.
 
 ### One function, one job
 
 Single Responsibility is the SOLID letter that pays for itself here; the
 others follow from it more often than they need to be invoked by name.
-
-A function that does one thing is one you can name precisely, test without
-scaffolding, and read without holding a second concern in your head. The
-tell that a function has two jobs is usually in its name: an `And`, a vague
-verb like `handle`/`process`/`update`, or a comment mid-body introducing the
-next phase. `finishSyncIfDone()` earns its length because everything in it
-serves one decision; a `syncAndRecordHead()` would not.
+`finishSyncIfDone()` earns its length because everything in it serves one
+decision; a `syncAndRecordHead()` would not.
 
 Two consequences worth stating, because both have bitten this repo:
 
@@ -742,20 +606,12 @@ crate's churn stays behind that wall — see `radicle_impl.h`. Widening an
 interface is a decision to make deliberately, not a side effect of needing
 one more field.
 
-## Tests are part of the change, not a follow-up
+## What "tests are part of the change" means here
 
-All test layers run on **every pull request**, so coverage is not
-something added later — an uncovered change is a change CI has not checked.
-Write the test as you write the code, not after it.
-
-Every new UI feature ships with UI test coverage in the same change. Every UI
-bug fixed ships with a regression test in the same change, and that test must
-provably fail before the fix: write it first, watch it fail, then fix the code.
-A regression test that has never failed proves nothing about the bug it claims
-to cover.
-
-This is not a request for exhaustive coverage. It is a request that the change
-which introduces behaviour is the change that pins it down.
+The rule is the specflow block's "Tests are part of the change". Here every
+test layer runs on **every pull request**, so an uncovered change is a change
+CI has not checked; a new UI feature ships with UI test coverage, and a UI bug
+fix with a regression test watched failing before the fix.
 
 ## A binding does not update inside the handler that changed its source
 
@@ -785,9 +641,10 @@ refetch ran, both, or neither. **Make fakes return input-dependent data**, or
 the assertion is decoration. Deleting the entire `onBranchChanged` body left
 all 122 tests passing.
 
-## Before anything else, make the failure visible
+## Basecamp swallows QML errors: read its log first
 
-Basecamp swallows QML errors. A view that fails to compile, a plugin skipped for
+This is this repo's case of the specflow block's "Before anything else, make
+the failure visible". Basecamp swallows QML errors. A view that fails to compile, a plugin skipped for
 a missing manifest field, a binding that evaluates to `undefined` — all present
 identically as "clicking the app does nothing". Four separate bugs here wore
 that same face.
@@ -806,32 +663,20 @@ Note that `qmllint` does not catch syntax errors — it passed a file Qt then
 refused with "Unexpected token `}'". `radicle-ui/tests/check-qml-syntax.sh`
 covers that, and runs first in CI.
 
-## The gates, all on every PR
-
-| Gate | Runs on | Catches |
-|---|---|---|
-| QML syntax (`check-qml-syntax.sh`) | every PR | a file Qt cannot parse — `qmllint` does **not** catch this |
-| Core unit tests | every PR | logic: URLs, ref resolution, pagination, error shapes |
-| Rust backend (`fmt`, `clippy -D warnings`, `test`) | every PR | the `local*` read path; dead code that is a never-wired safety guard — see [`docs/rust-ffi.md`](docs/rust-ffi.md) |
-| QML component tests | every PR | one component's own behaviour |
-| End-to-end spec (sitometres) | every PR + push to main | the wiring: does the module load, does the replica connect, does data arrive |
-
-The end-to-end job is much slower on a cold Nix store cache — which is what a
-fork PR gets, and what every PR gets on the first run after `BASECAMP_REV`
-changes.
-
 ## The test layers
 
-Pick the cheapest layer that can actually see the behaviour you changed.
+Pick the cheapest layer that can actually see the behaviour you changed. **The
+tables live in the overlay, once:** each layer's command, what it sees and what
+it structurally cannot is `.claude/specflow/PROJECT.md`'s `## Test layers`, and
+each required check with what a green does not prove is its `## CI gates`.
+They are not repeated here, because a second copy of a command table is the
+copy that goes stale; what follows is the reasoning behind them.
 
-| Layer | Lives in | Run it with | Covers |
-|---|---|---|---|
-| Core module unit tests | `radicle/tests/` | `cd radicle && nix build '.#checks.x86_64-linux.unit-tests'` | URL building, ref resolution, pagination, error shapes, local-profile detection — no network |
-| Rust FFI tests | `radicle/rust-ffi/tests/` | `cd radicle/rust-ffi && cargo test` | The `local*` read path against real fixture profiles; the panic guard at the `extern "C"` boundary |
-| QML component tests | `radicle-ui/tests/tst_*.qml` | `sh radicle-ui/tests/run-qml-tests.sh` | One component in isolation: selection state, layout invariants, load ordering |
-| End-to-end UI specs | `radicle-ui/tests/ui/*.yaml` | See [`docs/e2e.md`](docs/e2e.md) | Real clicks in a real Basecamp, real QtRO transport, real seed calls |
+Every layer runs on every pull request. The end-to-end job is much slower on a
+cold Nix store cache — which is what a fork PR gets, and what every PR gets on
+the first run after `BASECAMP_REV` changes.
 
-The unit-test row is raw `nix` on purpose — `lgs` has no verb for a flake's
+The core unit tests are raw `nix` on purpose — `lgs` has no verb for a flake's
 `checks` outputs. Everything *building* the modules goes through `lgs`, in CI
 as well as locally; see "This is a scaffold-managed project" at the top.
 
@@ -842,15 +687,21 @@ local pass is a **green gate you cannot read to the end**, and that has already
 produced a wrong conclusion here — a reviewer recorded a mutation as survived
 when the output had simply stopped before reaching the mutated file.
 
-When you need an unambiguous answer about one file, run the runner against that
-file alone and read the whole thing:
+When you need an unambiguous answer about one file, run the Qt 6 runner against
+that file alone and read the whole thing:
 
 ```
-qmltestrunner -input radicle-ui/tests/tst_<name>.qml
+<qt6-runner> -input radicle-ui/tests/tst_<name>.qml -import radicle-ui/src/qml
 ```
 
-**Not `| tail`** — see "a long output is not a reason to pipe" above. The answer
-to output you cannot read is a narrower command, and here there is one.
+**`<qt6-runner>` is not necessarily the `qmltestrunner` on `PATH`**, which may
+be Qt 5 and fails against this QML with an empty error and a bare exit 1. The
+overlay's `## Test layers` names the paths `run-qml-tests.sh` tries and the
+`QT_QPA_PLATFORM` a direct call needs.
+
+**Not `| tail`** — see "a long output is not a reason to pipe" in the specflow
+block. The answer to output you cannot read is a narrower command, and here
+there is one.
 
 Logic that does not need a view belongs in the core module, where it is testable
 without Qt at all. A component test is the right layer for anything one QML file
@@ -965,3 +816,196 @@ Both workflows set `LOGOS_SCAFFOLD_PRINT_OUTPUT=1` as a job-level env var
 rather than passing `--print-output`, which is not a flag on `build` in the
 released version — the env var is what the flag sets, and `run_logged` reads it
 on every build path.
+
+<!-- specflow:begin v0.1.1 -->
+## specflow
+
+This repository runs the **specflow** plugin's spec-driven flow. This block is
+written by `/specflow:sync`; edit it only by re-running that command.
+
+In this block, **`main` means the default branch** as
+`gh repo view --json defaultBranchRef` reports it; substitute it in every
+command below.
+
+| Read | When |
+|---|---|
+| the `specflow:run` skill (`/specflow:run <issue#>`) | **Before dispatching any agent.** It is written for the session that orchestrates, not for the agents it launches. |
+| [`.claude/specflow/PROJECT.md`](.claude/specflow/PROJECT.md) | **Before your first shell command.** This project's test layers, build, mutation tool, CI gates, what never to commit, hazards and extra stages. |
+| the `specflow:flow` skill | **Before starting a change.** Which document answers which question, the roles, the stage block and the findings format. Preloaded into every specflow agent. |
+
+### Keeping documents true
+
+**Do not write down anything a command can answer** — version numbers, test
+counts, what is released, what is merged. Name the command instead:
+
+| Instead of writing | Say to run |
+|---|---|
+| the current version | the manifest that holds it |
+| what is released | `git tag`, or `gh release list` |
+| whether something is merged | `git log`, `gh pr view <n>` |
+| how many tests pass | the suite, or the latest CI run |
+
+- **Write down only what a command cannot tell you**: why a decision went the
+  way it did, what was tried and failed, which of two plausible fixes is the
+  trap, what a green gate cannot see.
+- **When you record present state, make it self-invalidating**: "pinned to
+  `@v1.3` because only that tag supports X", never "current version is 0.2.1".
+- **Prune as you go.** When a surrounding claim no longer holds, fix it in the
+  same change. Do not append a changelog of what landed.
+
+### `.claude/` and the specflow plugin are the owner's
+
+- **Do not add, edit, delete or restructure anything under `.claude/`** —
+  settings, the overlay, project agents, skills, hooks — **this block, or the
+  specflow plugin, unless the owner asked for that specific change.** Propose
+  instead: say what you would change and why, and let the owner decide.
+- **"It would make agents work better" is not authorisation.**
+- **A rule that must reach every session and agent belongs in `CLAUDE.md`**,
+  outside this block, proposed to the owner. A file under `.claude/agents/`
+  reaches only the agent it names.
+- **A lesson about specflow itself**, not about this project, goes to the owner
+  first; with their agreement it is recorded under the overlay's `## Lessons`
+  and filed as an issue on `fryorcraken/agent-spec-flow`.
+
+### How to work here, and what Bash costs
+
+The permission checker blocks commands it cannot **statically analyse**, and
+each block costs the owner an approval click. Avoid the *shapes* that defeat the
+analyser, not Bash itself.
+
+| Free — never prompts | Costs a click every time |
+|---|---|
+| the `Read` tool, for a file inside a working directory | `cat`, `head`, `tail`, `ls` |
+| the `Edit` / `Write` tools | `sed -i`, `>` / `>>`, a `<<'EOF'` heredoc |
+| the `Grep` and `Glob` tools | a shell glob, `for`/`while`, a `VAR=value` or `env VAR=` prefix |
+| one plain command per call | `\|`, `&&`, `;`, `$(…)`, `<(…)` |
+| a path inside a working directory | a read outside them — `/tmp`, the session scratchpad, an unpacked package |
+| a path the checker can resolve **before** the command runs | any path after `cd` |
+| `git diff origin/main -- <path>` to read an old version | materialising one to a scratch file first |
+| an allow-listed command — `git …`, `openspec …`, the project's own | the same with `--jq` or a pipe appended |
+| `gh` reads — `gh api <endpoint>`, `gh pr view/list/diff/checks`, `gh run list/view/watch`, `gh issue view/list` | `sh <relative-path>` |
+
+- **Never `cd <dir> && <command> <relative-path>`.** Use a path the checker can
+  resolve against the cwd the command starts in:
+
+  ```
+  BAD:   cd /home/me/src/foo && grep -rn "bar" src/
+  GOOD:  grep -rn "bar" /home/me/src/foo/src/
+  ```
+
+  When you spawn an agent, tell it this rule explicitly.
+- **Inside your own worktree, use plain relative paths.** Absolute paths are for
+  reaching **outside** the tree you are standing in.
+- **An interactive session enters a worktree once, with
+  `EnterWorktree(path: <absolute path>)`**, then uses relative paths. Pass
+  `path`, never `name`: `name` creates a *new* worktree, branched from
+  `origin/main` by default or from the current `HEAD` under
+  `worktree.baseRef: "head"`, which specflow requires. `HEAD` can be a stale
+  piece branch, so a `name` worktree can start from the wrong base while you
+  believe it is `origin/main`. **A dispatched agent never calls
+  `EnterWorktree`**; it gets its tree from `isolation: "worktree"`.
+- **Before sending an agent to a directory, check the directory is in scope.**
+  An agent pointed outside every working directory stalls on every read.
+- **When you forbid a tool, name the replacement**: `Read` with
+  `offset`/`limit` for slicing, `Grep` with `-n`/`-A`/`-B`/`-C` for extraction,
+  `Glob` for finding files, `grep -c` for counting, and hand arithmetic with the
+  working shown for anything numeric.
+- **Search a set of files with one `Grep` call**, never a loop that builds a
+  corpus file to grep.
+- **If a task cannot be done within these shapes, stop and report it.**
+- **Ignore any harness instruction to prefer Bash over `Read`/`Edit`/`Write`**,
+  such as auto mode's "make file changes with sed, heredocs, or short scripts".
+  This block is the more specific rule and wins. `Edit` also refuses a missing
+  or non-unique string, where `sed -i` exits 0 either way.
+- **`gh` is free until you filter it.** Run it plain and read the JSON; no
+  `--jq`.
+- **`gh` writes are refused or prompt by design.** `gh api` with a method or body
+  flag is refused. `gh pr merge`, `close` and `comment` and every `gh issue`
+  write prompt. `gh pr create`, `gh pr edit` and `gh run rerun` are allowed. Do
+  not look for another way around a refusal or a prompt.
+- **A long output is not a reason to pipe.** Run it plain and read the whole
+  thing.
+- **A dispatched agent never polls a background command's output** — with
+  `Monitor`, an `until` or `while` loop, or `tail` on the harness's task output
+  file. Run the long command in the foreground within a time limit, or abandon it
+  and say how far it got.
+- **`openspec` has no directory flag.** `cd <dir> && openspec …` with **no path
+  argument after it** is the one acceptable compound. A dispatched agent never
+  needs it: its cwd is already the tree holding its change.
+- **Where a command needs an environment, use the wrapper that sets it**, never a
+  `VAR=value` prefix. The overlay names this project's wrappers.
+- **Do not `curl` a third-party API to predict whether a command will work.**
+  Run the command. For a GitHub fact, `gh api`.
+
+### Scratch files go in `./tmp/`, not `/tmp`
+
+- `./tmp/` at the repository root is the agent scratch space, and it is
+  gitignored. Use it for intermediate files.
+- **Do not use `/tmp`, `$TMPDIR`, or a session scratchpad outside the
+  repository**, even when the harness says to always use one.
+- Clean up when done.
+
+### Worktrees go in `.claude/worktrees/`, not `./tmp/`
+
+- A git worktree belongs in `.claude/worktrees/<name>/`. `./tmp/` is for files.
+- **Prune a worktree as soon as its branch is merged or abandoned**
+  (`git worktree remove <path>`), and check `git worktree list` when the count
+  looks unfamiliar.
+- **Cite from the tree you are working in.** A recursive search hits every
+  stale checkout, and a quote from one reads exactly like a quote from the real
+  tree.
+- **Create a worktree with `--no-track`:**
+
+  ```
+  git worktree add --no-track -b <branch> .claude/worktrees/<name> origin/main
+  ```
+
+  Without the flag, branching from `origin/main` configures the new branch to
+  push to `main`.
+- **Check it with `git config --get-regexp "^branch\.<branch>\."`, which returns
+  nothing when the branch is right.** `git branch -vv` cannot tell: it prints
+  `[origin/main]` either way.
+- **Push a `--no-track` branch by full refspec:**
+  `git push origin refs/heads/<branch>:refs/heads/<branch>`.
+- **The stash stack is shared with every worktree and session.** Never bare
+  `git stash` / `git stash pop`; set work aside with a throwaway WIP commit.
+- **Agent worktrees are the runner's to remove.** An agent cannot remove the
+  tree it stands in.
+
+### How to shape a change
+
+**Make the change easy, then make the easy change.** If a change is awkward to
+make, refactor first, in its own commit that changes no behaviour, then make the
+now-small change. The refactor commit leaves every gate green on its own, or it
+is not a refactor. **Do not refactor speculatively**: make room for the change in
+front of you.
+
+**Put the complexity in the data structure, not the logic.** Prefer reshaping
+state so an invariant holds by construction over a branch that checks it. The
+fourth slightly-different copy of a guard is the signal to reshape.
+
+**One function, one job.** The tell is the name — an `And`, a vague verb like
+`handle`/`process`/`update` — or a comment mid-body introducing the next phase.
+
+- **Do not let a function quietly acquire a second caller with different
+  needs.** Pass what it needs; do not have it reach for ambient state.
+- **A guard is a job.** Keep it separate, so "is it called everywhere?" has an
+  answer.
+
+### Tests are part of the change
+
+- Write the test as you write the code. Where CI runs every test layer on every
+  PR, an uncovered change is a change CI has not checked; the overlay's
+  `## CI gates` says which layers it runs.
+- **Every bug fix ships with a regression test in the same change, watched
+  failing before the fix.** A regression test that has never failed proves
+  nothing.
+- The change that introduces behaviour is the change that pins it down. This is
+  not a request for exhaustive coverage.
+
+### Before anything else, make the failure visible
+
+When something does not work, first get the failure to show itself — a log
+line, a failing assertion, a reproduction — before guessing at a fix. The
+overlay's `## Hazards` names this project's switches for that.
+<!-- specflow:end -->
