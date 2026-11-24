@@ -3,7 +3,7 @@
 - [ ] ~~spec — `spec-writer`~~ — no behaviour change in either module; the proposal is written and the change declares `skip_specs: true`
 - [x] design + code — `dev-writer`
 - [ ] ~~tests — `tester`~~ — no spec requirement to test; the new `ci.yml` step is exercised by the PR's own CI run
-- [ ] review: correctness — `code-reviewer`
+- [x] review: correctness — `code-reviewer`
 - [x] review: security — `code-reviewer`
 - [x] review: readability — `code-reviewer`
 - [ ] review: architecture — `code-reviewer`
