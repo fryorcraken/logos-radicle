@@ -185,7 +185,7 @@ covers every requirement the CLI measures as long).
       (`tst_embedded_panel.qml:343`) is matched to it by that name, so renaming
       it would move a mapping and check nothing new. No scenario step changed
       for this box, so no test needs revisiting.
-- [ ] **`tester`** — `embedded-header` `ADDED` "One rule decides the header
+- [x] **`tester`** — `embedded-header` `ADDED` "One rule decides the header
       identity for every mode": the scenario is pinned on a **hand-written copy**
       of `Main.qml`'s binding, not on `Main.qml`. `tst_source.qml:883` hosts
       `NodeIdentity` under `visible: slotState.modeHasIdentity &&
@@ -227,6 +227,12 @@ covers every requirement the CLI measures as long).
       as the finding allows), or schedule the component extraction. The box
       stays open because that choice, and the issue that would hold it, are not
       mine to make or file.
+      **Accepted gap, on the owner's decision** ("Header-binding gap ...:
+      accept the gap. No test, no source change, no issue."), recorded by the
+      `dev-writer` in the commit "Close the strict-spec-validation findings on
+      the owner's decisions". The scenario is understood as pinning the rule,
+      not the wiring; `Main.qml:1052` stays unseen by every layer, and
+      `design.md`'s `embedded-header` entry now says the owner accepted that.
 - [x] **`tester`** — `embedded-setup` `ADDED` "The setup presents no start step
       and starts nothing": the `startNode` leg of
       `test_an_existing_identity_with_a_stopped_node_is_walked_without_a_start`
@@ -269,7 +275,7 @@ covers every requirement the CLI measures as long).
       QML object's declared properties is a belief about Qt 6, not something I
       could run, which is what the precondition is for. If CI fails on the
       precondition, the leg should be dropped, not loosened.
-- [ ] **`runner`** — **part 2's mutations were not run, by this review or by the
+- [x] **`runner`** — **part 2's mutations were not run, by this review or by the
       tester**, so no new test has an observed failure. Where a toolchain exists
       (Qt 6 runner; `cc` for `cargo test`), the three worth running, each in its
       own single-file form from the overlay's Test layers, restoring after each:
@@ -290,3 +296,13 @@ covers every requirement the CLI measures as long).
       which is the same observable (an equivalent mutation, not a test defect).
       **Severity:** the same open box as the tester's own `runner` entry in
       `findings/tester.md`; this one adds the list.
+      **Deferred, on the owner's decision** ("Mutation runs: deferred. The
+      owner accepts CI green as the evidence"), recorded by the `dev-writer`
+      in the commit "Close the strict-spec-validation findings on the owner's
+      decisions". None of the four was run: the pod has no Qt 6
+      `qmltestrunner`, no C compiler and no `nix`. What is missing is any
+      observed failure for the new tests; CI green shows they pass, not that
+      they can fail. The three QML mutations, with their predictions, now live
+      in `design.md`'s Risks ("No new test has an observed failure"), so the
+      list survives this file's deletion. The `node_config.rs` one is left
+      out there, being predicted equivalent.

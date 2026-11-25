@@ -81,7 +81,7 @@ its own file rather than `spec-test.md`, which belongs to the `spec-test-reviewe
       without anyone editing this line" was left: it is scoped to the header
       line, and that is true.
 
-- [ ] **`runner`** — **nothing the tester added or changed was executed.** The
+- [x] **`runner`** — **nothing the tester added or changed was executed.** The
       pod has no Qt 6 `qmltestrunner`, no C or C++ compiler (`cc`, `g++`,
       `clang++` absent; `cargo test` stops at "linker `cc` not found" while
       building `proc-macro2`'s build script), no `nix`, and no `crt1.o`. Only
@@ -94,3 +94,12 @@ its own file rather than `spec-test.md`, which belongs to the `spec-test-reviewe
       core unit tests) over this branch, read to the end, before the tests row is
       relied on; the `spec-test-reviewer` mutation list in the tester's report is
       the work to repeat where a toolchain exists.
+      **Deferred, on the owner's decision** ("Mutation runs: deferred. The
+      owner accepts CI green as the evidence"), recorded by the `dev-writer`
+      in the commit "Close the strict-spec-validation findings on the owner's
+      decisions". The Needs' CI run is the evidence the owner accepts: PR
+      #98's run over this commit, read to the end, is what the tests row
+      relies on. What is missing is a local execution and any observed
+      failure, because this pod still has no Qt 6 `qmltestrunner`, no C
+      compiler and no `nix`; the mutations worth repeating are in `design.md`'s
+      Risks ("No new test has an observed failure").

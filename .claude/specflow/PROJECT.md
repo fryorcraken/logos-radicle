@@ -113,7 +113,7 @@ on demand.
 
 | Check (required on `main`) | What it runs | A green does not prove |
 |---|---|---|
-| `Lint` | metadata validity and equal versions; the Logos stack pins agree; no QML component shadows a Qt built-in; layout imports present | behaviour of any kind |
+| `Lint` | metadata validity and equal versions; the Logos stack pins agree; no QML component shadows a Qt built-in; layout imports present; every live OpenSpec spec passes `validate --specs --strict` on the pinned CLI | behaviour of any kind. The spec step skips a capability directory with no `spec.md` without a word, passes after a declined archive promotion (every live spec is still valid), and never reads an in-flight change's delta |
 | `QML lint and component tests` | `check-qml-syntax.sh`, `lint-qml.sh` (`REQUIRE_QML_LINT=1`), `run-qml-tests.sh` (`REQUIRE_QML_TESTS=1`), then asserts one `Totals:` line per `tst_*.qml` | the wiring between modules. A `tst_*.qml` that the runner skips fails the count, but a test whose fake returns the same for every input passes whatever the code does |
 | `Rust backend tests` | `cargo fmt --check`, `clippy -D warnings`, `cargo test`, then a floor on the passed count (a floor, not an exact count) | the C++ side; a changed `const`. The Nix module build compiles the crate with `doCheck = false`, so this job is the only place those tests run |
 | `UI spec validation` | every `tests/ui/*.yaml` parses against the sitometres schema | that a spec passes, or that it is in the `ui-tests.yml` matrix |
@@ -242,6 +242,12 @@ guess.
   returning identical shapes is what lets a view render either without
   branching; a requirement that fixes one and is silent on the other leaves the
   asymmetry to be found later.
+- **A requirement's text before its first scenario stays at or under 500
+  characters.** A longer one fails `Lint` once archived, and
+  `openspec validate <change> --strict` does not catch it for a `MODIFIED`
+  requirement that shrank but stayed over the limit: the CLI flags a `MODIFIED`
+  only when it is longer than the text it replaces, so the change check passes
+  and the first signal is `Lint` red after the archive commit.
 
 ## dev-writer
 

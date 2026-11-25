@@ -92,7 +92,7 @@ steps), `CLAUDE.md` and `docs/OPENSPEC-ARCHIVE.md` (the doc edits),
       entry in `design.md` points at the comment. Comment and prose only; no
       test can fail without it.
 
-- [ ] **`dev-writer`** — `design.md:131-137` — Decision 3's blind spots have no
+- [x] **`dev-writer`** — `design.md:131-137` — Decision 3's blind spots have no
       issue. Decision 4 states the rule "work not done goes to its issue", and
       cites #56, #62, #64, #72 for the other cut passages. But the two real
       blind spots the gate leaves open (a capability directory with no
@@ -124,6 +124,14 @@ steps), `CLAUDE.md` and `docs/OPENSPEC-ARCHIVE.md` (the doc edits),
       Once filed, `design.md` Decision 3 and Risks should name both numbers;
       I added the sentence to Decision 3 saying the existing records note
       the gap and do not track it.
+      **Deferred, to issues #99 and #100**, filed on the owner's decision
+      ("Blind-spot issues: file them"), in the commit "Close the
+      strict-spec-validation findings on the owner's decisions". #99 is
+      "Lint's live-spec validation passes when a capability directory has no
+      spec.md" and #100 is "A declined archive promotion passes every gate";
+      each body states the gap, how it was measured (pointing at `design.md`
+      Decision 3 and `docs/OPENSPEC-ARCHIVE.md`) and what a fix could look
+      like. `design.md` Decision 3 and both Risks entries now cite them.
 
 - [x] **`dev-writer`** — `design.md:76-83` — the guard list for Decision 1 is
       thin in two places. (1) `setup-node` is listed as a guard, but "which
@@ -180,7 +188,7 @@ steps), `CLAUDE.md` and `docs/OPENSPEC-ARCHIVE.md` (the doc edits),
       radicle/rust-ffi/src` lists exactly those two files. The two
       mutations remain the runner's to run where a Qt 6 runner exists.
 
-- [ ] **owner (`.claude/specflow/PROJECT.md`), via `dev-writer` to propose** —
+- [x] **owner (`.claude/specflow/PROJECT.md`), via `dev-writer` to propose** —
       the trap a spec-writer meets tomorrow is not where the spec-writer reads.
       After this change a requirement whose lead text exceeds 500 characters
       fails `Lint` once archived, and `openspec validate <change> --strict` can
@@ -201,3 +209,16 @@ steps), `CLAUDE.md` and `docs/OPENSPEC-ARCHIVE.md` (the doc edits),
       `## CI gates`, with its blind spots in the "does not prove" column.
       Nothing under `.claude/` was touched. Accepting or declining is the
       owner's, so the box is theirs to tick.
+      **Fixed, overlay edited at the owner's request** ("Overlay edits: the
+      owner asks you to make both"), in the commit "Close the
+      strict-spec-validation findings on the owner's decisions". In
+      `.claude/specflow/PROJECT.md`: `## spec-writer` carries the rule that a
+      requirement's text before its first scenario stays at or under 500
+      characters, with why (a `MODIFIED` that shrank but stayed long passes
+      `validate <change> --strict` and fails `Lint` after archive); the
+      `## CI gates` `Lint` row names the `validate --specs --strict` step on
+      the pinned CLI, and its "does not prove" column names a capability
+      directory with no `spec.md`, a declined archive promotion and an
+      in-flight change's delta. Nothing else under `.claude/` changed. The
+      PR body's "Proposed for the owner" section now says what was done.
+      Prose only; no test can fail without it.

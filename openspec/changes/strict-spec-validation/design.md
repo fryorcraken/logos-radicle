@@ -164,10 +164,12 @@ It is not built here because it is behaviour the proposal does not ask for:
 the proposal asks that a live spec failing validation fail a required check,
 and a directory with no `spec.md` is not a spec the CLI considers. Whether the
 gate must also prove it read every directory is a decision about what the gate
-promises, so it is reported to the `spec-writer` rather than built. The blind
-spot is written beside the step in `ci.yml`, in `docs/OPENSPEC-ARCHIVE.md`, and
-in Risks below. Those say the gap exists; none of them tracks closing it, which
-is an issue's job, not this document's.
+promises, for a spec to state before anyone builds a guard, so it is not built
+here. The blind spot is written beside the step in `ci.yml`, in
+`docs/OPENSPEC-ARCHIVE.md`, and in Risks below; those say the gap exists.
+Closing it is tracked by issue #99 (a capability directory with no `spec.md`,
+or an empty `openspec/specs/`), and the other gap the gate leaves open, a
+declined archive promotion, by issue #100.
 
 ### 4. Where the reasoning cut from the specs lives
 
@@ -339,7 +341,11 @@ the spec's; nothing here adds to it.
   cases. The test is also pinned on a copy of `Main.qml`'s header binding,
   because `Main.qml` cannot be instantiated in a component test, and
   `local.yaml` never runs Embedded with an identity, so no layer sees a change
-  to the binding itself.
+  to the binding itself. The owner accepted that gap: the scenario pins the
+  rule, not the wiring, and no test, source change or issue follows. The owner
+  also accepted CI green as the evidence for this change's tests and deferred
+  the named mutations, which need a Qt 6 `qmltestrunner`, a C compiler and
+  Nix, none of which the pods that worked on it had.
 - **The header identity is copied by taking it.** The one thing anyone does
   with a DID is paste it — into `rad id update --allow`, or a message asking a
   delegate to authorise this node — so copying is what the display serves. A
@@ -803,22 +809,39 @@ the spec's; nothing here adds to it.
 
 - **[The gate cannot see a capability directory with no `spec.md`, or an empty
   `openspec/specs/`]** → Stated beside the step and in
-  `docs/OPENSPEC-ARCHIVE.md`; a guard is Decision 3's open question for the
-  `spec-writer`.
+  `docs/OPENSPEC-ARCHIVE.md`; whether the gate must guard it is Decision 3's
+  open question, tracked by issue #99.
 - **[A declined archive promotion still passes]** → It leaves every live spec
-  valid, so the gate is green exactly when the contract is missing. Unaddressed;
-  catching it needs a check that every capability named in an archived
-  `proposal.md` has a live spec.
+  valid, so the gate is green exactly when the contract is missing. Unaddressed
+  here and tracked by issue #100; catching it needs a check that every
+  capability an archived change's `specs/` names carries that change's
+  requirements in `openspec/specs/`.
 - **[A `MODIFIED` requirement that shrinks but stays over 500 characters passes
   `validate <change> --strict`]** → The CLI flags a `MODIFIED` only when it is
   longer than the text it replaces, so the first signal is this gate going red
-  after the archive commit. Recorded in `docs/OPENSPEC-ARCHIVE.md`.
+  after the archive commit. Recorded in `docs/OPENSPEC-ARCHIVE.md`, and as a
+  rule in the overlay's `## spec-writer`, where the writer reads it before the
+  requirement is written.
 - **[Reasoning under the limit, or after the scenarios, passes]** → The rule
   measures length, not content. Review is the only check.
 - **[A behaviour dropped while splitting a requirement passes]** → The
   validator cannot tell a lost `MUST`. That is the spec-test and design
   reviewers' read, against `git diff --no-index` of each pair. The one drop
   this change makes on purpose is Decision 6's.
+- **[No new test has an observed failure]** → No pod that worked on this change
+  had a Qt 6 `qmltestrunner`, a C compiler or Nix, so every run of the new
+  tests is CI's, and a CI pass shows they pass, not that they can fail. The
+  owner accepted CI green as the evidence and deferred the mutations. The ones
+  worth running where a toolchain exists, each in the single-file form and
+  restored after: `SourceState.qml`'s `modeHasIdentity` keyed on
+  `mode === "local"` instead of `current === "local"`, against `tst_source.qml`
+  (predicted red on `embedded`); `SetupFlow.qml` no longer waiting for the
+  capabilities reply before the resume lands, against `tst_setup_wizard.qml`
+  (predicted red at the withheld-capabilities test's first
+  `compare(flow.step, "preflight")`); and `EmbeddedState.qml` keying the
+  prompt on `canWrite` instead of `encrypted`, against
+  `tst_embedded_panel.qml` (predicted red at
+  `test_a_key_that_cannot_sign_is_not_taken_for_an_encrypted_one`).
 - **[The pinned CLI ages]** → A rule a newer CLI enforces passes CI; bump the
   pin deliberately. The `closer`'s local `validate <change> --strict` runs on
   whatever CLI the agent has, so a newer rule tends to surface there first.

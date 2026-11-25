@@ -94,6 +94,9 @@ no change to what the module does:
 ## Impact
 
 - **`.github/workflows/ci.yml`**: a validation step in a required job.
+- **`.claude/specflow/PROJECT.md`**, at the owner's request: the `Lint` row of
+  `## CI gates` names the step and what a green from it does not prove, and
+  `## spec-writer` gains the 500-character rule.
 - **`openspec/specs/`**: all nine capabilities, once this change is archived.
   No existing requirement heading changes, so a citation by requirement name
   still resolves.

@@ -77,7 +77,9 @@ is PR #98's latest run (`gh pr checks 98`), not that one. A pass shows a test
 passes, not that it can fail: no mutation the `tester` or the spec-test review
 named has been run anywhere, including the two against
 `test_the_identity_is_shown_in_exactly_the_modes_that_derive_local` (design.md,
-the `embedded-header` entry).
+the `embedded-header` entry). The owner accepted CI green as the evidence and
+deferred those mutations; the ones worth running are listed in design.md's
+Risks.
 
 The three `embedded-state` scenarios whose step changed (design.md,
 Decision 7) are pinned by
@@ -94,6 +96,3 @@ outstanding-start leg of
   alone. That is expected until the `closer`'s archive commit (design.md,
   Migration Plan), and is the evidence the step can fail.
 - After the archive commit, `Lint` passes the step with 9 passed.
-- `.claude/specflow/PROJECT.md`'s `## CI gates` row for `Lint` does not list
-  this step. It is the owner's file; the change proposes the edit rather than
-  making it.
