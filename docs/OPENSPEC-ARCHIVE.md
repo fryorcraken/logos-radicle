@@ -31,7 +31,9 @@ While a change is in flight it lives in `openspec/changes/<name>/`, and its
 
 1. **offers to merge the delta into `openspec/specs/`** — the live contract. It
    is a prompt, and declining it archives without promoting the spec, so take
-   the sync;
+   the sync. **CI will not catch a declined one**: `ci.yml`'s `Lint` job runs
+   `openspec validate --specs --strict` over the live specs, and a promotion
+   that never ran leaves every one of them valid;
 2. **moves the folder** to `openspec/changes/archive/<date>-<name>/`, dated
    today unless the name already carries a date, which is never stacked.
 
@@ -105,6 +107,28 @@ archive.
 heading structure, not consistency: in the sibling repo it twice passed a spec
 whose prose and scenarios disagreed about the same field. Re-read the whole
 requirement after editing it.
+
+**What `Lint`'s strict validation of the live specs cannot see**, each
+measured on `@fission-ai/openspec` 2.1.1:
+
+- **A capability directory with no `spec.md`** is skipped without a word:
+  renaming one `spec.md` to `Spec.md` gives "8 passed, 0 failed (8 items)" and
+  no failure.
+- **An in-flight change's delta.** `--specs` reads `openspec/specs/` only.
+  `openspec validate <change> --strict` before archiving is that check, but it
+  applies the length rule unevenly: an `ADDED` requirement over 500 characters
+  fails it, while a `MODIFIED` one is flagged only when it is longer than the
+  live text it replaces (`validator.js` in the CLI's `dist/core/validation/`).
+  A `MODIFIED` that shrinks but stays over the limit passes the change check
+  and fails `Lint` once archived.
+- **Prose after a requirement's scenarios**, which the length rule does not
+  count: it measures the text between the heading and the first scenario.
+- **A declined promotion**, above, and **a self-contradiction**, just above.
+
+**A change that fixes the live specs through a delta is red on `Lint` until its
+archive commit.** The gate reads `openspec/specs/` as the branch holds it, and a
+delta changes nothing there until `archive` promotes it. That is expected, and is
+one more reason the archive runs on the piece branch before CI is read.
 
 **Archive in merge order**, oldest first — a later `MODIFIED` must apply to the
 text an earlier `ADDED` produced. Derive the order from
