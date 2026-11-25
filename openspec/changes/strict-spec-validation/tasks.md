@@ -69,9 +69,11 @@ licence to change behaviour quietly.
 - [x] 3.7 `source-modes`: 1 scenario pinned.
 
 "Pinned" here means a test exists that, read against the code, can fail for the
-reason the scenario names. **None of the tests added in this group has been
-run**: the pod that wrote them has no Qt runner, C/C++ compiler or Nix, so the
-first execution is CI's.
+reason the scenario names. The pod that wrote them has no Qt runner, C/C++
+compiler or Nix, so their first execution was CI's: run `45560729970` on
+`645235f`, where every test this group added or changed passed (29 QML, 4 Rust,
+7 C++, each found by name in its job's log). That shows they pass, not that
+they can fail; the mutations the `tester` named have not been run anywhere.
 
 ## Workflow follow-up
 
