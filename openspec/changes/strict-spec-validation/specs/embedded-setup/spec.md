@@ -1,0 +1,1002 @@
+## MODIFIED Requirements
+
+### Requirement: Four steps in a fixed order
+
+The setup MUST present exactly four steps, in this order: preflight, embedded,
+identity, network. The step in force MUST be observable, and MUST be preflight
+on every showing until the preflight has answered.
+
+Advancing, where permitted, MUST move to the next step and MUST NOT skip one;
+where not permitted it MUST leave the step in force unchanged. Going back MUST
+move to the previous step and MUST NOT be offered on the first step.
+
+#### Scenario: The flow opens on preflight
+
+- **WHEN** the setup flow is shown, before the preflight has answered
+- **THEN** the step in force MUST be the preflight step
+- **AND** the control for going back MUST NOT be enabled
+
+#### Scenario: Advancing walks the sequence without skipping
+
+- **GIVEN** a flow whose every step is permitted to advance, whose step in force
+  has been put back to preflight
+- **WHEN** advance is invoked three times
+- **THEN** the step in force after each invocation MUST be, in order, embedded,
+  identity and network
+- **AND** a fourth invocation MUST leave the step in force at network
+
+#### Scenario: Going back returns to the previous step
+
+- **GIVEN** the step in force is the network step
+- **WHEN** back is invoked
+- **THEN** the step in force MUST be the identity step
+- **AND** invoking back again MUST make the step in force the embedded step
+
+#### Scenario: No step of the setup starts a node
+
+- **GIVEN** a flow over a backend accepting every call
+- **WHEN** the flow is walked from preflight to the network step, advancing and
+  submitting each step's control where one is offered
+- **THEN** no `startNode` call MUST have been issued
+
+#### Scenario: Returning to a step that already acted does not offer to act again
+
+- **GIVEN** an identity step that has created an identity, reported by the
+  backend as `exists:true` with a node id
+- **WHEN** the step in force returns to the identity step
+- **THEN** invoking the identity step's forward control MUST issue no
+  `createEmbeddedIdentity` call
+- **AND** the created node id MUST be displayed
+
+### Requirement: The preflight reports four findings before offering a choice
+
+The preflight step MUST report four findings, each separately, named and as its
+own outcome rather than one pass/fail, before the flow offers any choice that
+depends on one:
+
+- `git`, from `getCapabilities().gitFound`;
+- identity, from `getEmbeddedIdentity().exists`, with its node id when true,
+  never claiming the home is empty when false;
+- socket, from `getNodeStatus().serving`;
+- home, from a non-empty `getEmbeddedIdentity().home` with an empty
+  `getCapabilities().pathsProblem`.
+
+#### Scenario: Four findings are reported separately
+
+- **GIVEN** a backend reporting `gitFound:true`, an embedded home that is empty,
+  `serving:false` and an empty `pathsProblem`
+- **WHEN** the preflight step completes
+- **THEN** four findings MUST be displayed
+- **AND** each MUST report its own outcome
+
+#### Scenario: One failing check is distinguishable from another
+
+- **GIVEN** a backend reporting `gitFound:false` with a non-empty `gitProblem`,
+  and every other check passing
+- **THEN** the git finding MUST be displayed as failed
+- **AND** the other three findings MUST NOT be displayed as failed
+- **AND WHEN** the backend instead reports `gitFound:true` with a non-empty
+  `pathsProblem` and every other check passing
+- **THEN** the paths finding MUST be displayed as failed and the git finding MUST
+  NOT be
+
+#### Scenario: No identity yet is not reported as an empty home
+
+- **GIVEN** a backend whose `getEmbeddedIdentity()` reports `exists:false` with
+  an empty `problem`
+- **THEN** the identity finding MUST report that no identity exists
+- **AND** it MUST NOT state that the home is empty
+- **AND WHEN** the backend reports `exists:true` with a node id
+- **THEN** the identity finding MUST report that one exists, carrying that node
+  id
+
+#### Scenario: A backend sentence is shown unaltered
+
+- **GIVEN** a backend reporting `gitFound:false` with `gitProblem` set to a
+  distinctive sentence
+- **THEN** that sentence MUST appear in what the preflight displays
+
+#### Scenario: The preflight writes nothing
+
+- **WHEN** the preflight step runs to completion against any backend
+- **THEN** no `createEmbeddedIdentity` call MUST have been issued
+- **AND** no `startNode` call MUST have been issued
+- **AND** no `setSetting` call MUST have been issued
+
+### Requirement: A failed preflight blocks the step it gates and says which
+
+A failed preflight finding MUST block advancing past the step whose work it
+makes impossible, and the flow MUST state which finding is blocking. A failed
+finding that makes no step's work impossible MUST block nothing: a missing `git`
+and a node already answering on the resolved socket MUST each block no step of
+this setup, and MUST still be reported.
+
+Blocking MUST be keyed on the finding, so that a finding reported as passing
+removes its block with nothing else changed.
+
+#### Scenario: A missing git blocks no step
+
+- **GIVEN** a preflight reporting `gitFound:false` and every other check passing
+- **THEN** advancing from the identity step MUST be permitted
+- **AND** advancing from the embedded step MUST be permitted
+- **AND** the git finding MUST be displayed as failed
+
+#### Scenario: A node already serving blocks no step
+
+- **GIVEN** a preflight reporting `serving:true` and every other check passing
+- **THEN** advancing from the identity step MUST be permitted
+- **AND** advancing from the network step MUST be permitted
+- **AND** the socket finding MUST report that a node is already answering
+
+#### Scenario: An occupied home blocks creation without blocking the step
+
+- **GIVEN** a preflight whose `getEmbeddedIdentity()` reports `exists:true`
+- **WHEN** the identity step's forward control is invoked
+- **THEN** no `createEmbeddedIdentity` call MUST have been issued
+- **AND** the step in force MUST be the network step
+- **AND WHEN** a preflight instead reports an unresolvable home with no identity
+- **THEN** the forward control MUST NOT be enabled
+- **AND** the step in force MUST still be the identity step
+
+#### Scenario: A half-created home is offered creation, and its refusal shown
+
+- **GIVEN** a preflight whose `getEmbeddedIdentity()` reports `exists:false`
+  with an empty `problem`, over a home the backend will refuse as half-created
+- **THEN** the identity step's forward control MUST be enabled
+- **AND WHEN** it is invoked and the backend refuses with a message naming a
+  `keys` path to remove
+- **THEN** that message MUST be displayed verbatim
+- **AND** the flow MUST NOT report the identity as created
+
+#### Scenario: A block lifts when its finding passes
+
+- **GIVEN** a flow whose identity step's forward control is not enabled because
+  the preflight reported an unresolvable home with no identity
+- **WHEN** the same flow is given a preflight reporting a resolving home, with
+  nothing else changed
+- **THEN** the identity step's forward control MUST be enabled
+
+### Requirement: The embedded step confirms Embedded and states the identity consequence
+
+The embedded step MUST state what Embedded mode is — this module keeps its own
+Radicle home and runs the node itself — and MUST state, in the step and in full,
+that the node operates as a new identity this module creates, separate from any
+Radicle node the user runs and any identity they hold. It MUST also state that
+the repositories in the user's existing home are not in this node's storage, and
+that a private repository reaches it only once a delegate authorises this DID.
+
+#### Scenario: The step states Embedded's separate identity
+
+- **WHEN** the embedded step is shown
+- **THEN** the displayed text MUST state that this module runs a node of its own
+- **AND** it MUST state that the node operates as a new identity, separate from
+  any Radicle node the user already runs
+- **AND** it MUST state that a private repository reaches this node only once a
+  delegate authorises this DID
+
+#### Scenario: The separateness statement precedes any identity write
+
+- **WHEN** the embedded step is shown
+- **THEN** the separate-identity statement MUST be visible
+- **AND** no `createEmbeddedIdentity` call MUST have been issued
+
+#### Scenario: No other mode is offered, whatever the startable set reports
+
+- **GIVEN** an embedded step told a `getCapabilities().startableModes`
+  containing `explore`, `local` and `embedded`
+- **THEN** no control selecting `explore` MUST be present
+- **AND** no control selecting `local` MUST be present
+- **AND** no text MUST be displayed stating that a mode cannot be started
+- **AND WHEN** the same step is told a `startableModes` containing `embedded`
+  alone
+- **THEN** what is displayed MUST be unchanged
+
+#### Scenario: Arriving at the step writes no mode
+
+- **GIVEN** a flow whose `getCapabilities().mode` is `local`
+- **WHEN** the step in force becomes the embedded step
+- **THEN** no `setSetting` call MUST have been issued
+- **AND** the mode in force MUST still be `local`
+
+#### Scenario: Going back from the step writes no mode
+
+- **GIVEN** an embedded step where `getCapabilities().mode` is `local` and the
+  control putting Embedded in force has not been invoked
+- **WHEN** back is invoked
+- **THEN** no `setSetting` call MUST have been issued
+- **AND** the mode in force MUST still be `local`
+
+#### Scenario: The step's control puts Embedded in force
+
+- **GIVEN** an embedded step where `getCapabilities().mode` is `local`
+- **WHEN** the control that puts Embedded in force is invoked, against a backend
+  that accepts the write and then reports `embedded`
+- **THEN** exactly one `setSetting` call MUST have been issued, with key `mode`
+  and value `embedded`
+- **AND** the mode in force MUST be `embedded`
+- **AND** advancing MUST be permitted
+
+#### Scenario: The mode in force is the reply, not the value written
+
+- **GIVEN** an embedded step where `getCapabilities().mode` is `local`
+- **WHEN** the control that puts Embedded in force is invoked against a backend
+  that accepts the write but goes on reporting `local`
+- **THEN** the mode in force MUST be `local`
+- **AND** advancing MUST NOT be permitted
+
+#### Scenario: A refused mode write neither advances nor moves the mode in force
+
+- **GIVEN** an embedded step where `getCapabilities().mode` is `local`
+- **WHEN** the control that puts Embedded in force is invoked against a backend
+  that refuses the write with a distinctive message
+- **THEN** that message MUST be displayed
+- **AND** the mode in force MUST still be `local`
+- **AND** advancing MUST NOT be permitted
+- **AND** the step in force MUST still be the embedded step
+
+#### Scenario: Returning with Embedded already in force does not re-offer it
+
+- **GIVEN** an embedded step where `getCapabilities().mode` reports `embedded`
+- **THEN** the control that puts Embedded in force MUST NOT be enabled
+- **AND** the text stating that this is a new, separate identity MUST still be
+  displayed
+- **AND** advancing MUST be permitted
+
+### Requirement: The identity step offers one forward control
+
+The identity step MUST offer exactly one control that moves the flow forward,
+and MUST NOT offer creation and advancing as two separate controls.
+
+With no identity in the embedded home, that control MUST create one and, on a
+reply reporting it created, MUST advance in the same act. With an identity
+already there — created in this showing or present on arrival — it MUST advance
+and MUST NOT issue `createEmbeddedIdentity`.
+
+#### Scenario: One forward control creates and advances together
+
+- **GIVEN** an identity step with alias `tester`, over a backend reporting no
+  identity in the embedded home and accepting creation
+- **WHEN** the step's forward control is invoked once
+- **THEN** exactly one `createEmbeddedIdentity` call MUST have been issued
+- **AND** the step in force MUST be the network step
+- **AND** no second invocation MUST have been required to leave the identity
+  step
+
+#### Scenario: With an identity already there, the control advances and creates nothing
+
+- **GIVEN** an identity step entered over a backend reporting `exists:true` with
+  a node id
+- **WHEN** the step's forward control is invoked
+- **THEN** no `createEmbeddedIdentity` call MUST have been issued
+- **AND** the step in force MUST be the network step
+
+#### Scenario: The label names the act the control will perform
+
+- **GIVEN** an identity step over a backend reporting no identity
+- **THEN** the forward control's label MUST name creating the identity
+- **AND WHEN** the same step is given a backend reporting `exists:true` with a
+  node id
+- **THEN** the forward control's label MUST NOT name creating an identity
+- **AND** it MUST name continuing to the next step
+
+#### Scenario: A refused creation stays on the step with the control available
+
+- **GIVEN** an identity step over a backend that refuses creation with a
+  distinctive message
+- **WHEN** the forward control is invoked
+- **THEN** that message MUST be displayed
+- **AND** the step in force MUST still be the identity step
+- **AND** the forward control MUST still be enabled
+- **AND WHEN** the control is invoked again against a backend that now accepts
+  creation
+- **THEN** the step in force MUST be the network step
+
+#### Scenario: A blocked step with no identity offers no forward control
+
+- **GIVEN** an identity step whose home cannot be resolved, over a backend
+  reporting no identity
+- **THEN** the forward control MUST NOT be enabled
+- **AND** the displayed reason MUST name what is blocking
+
+### Requirement: The identity step distinguishes its three states
+
+The identity step MUST render three states distinctly, derived from what the
+backend reported rather than from the step having been shown:
+
+- **no identity yet** — it MUST NOT display a node id, nor any statement that
+  an identity exists;
+- **created in this showing** — it MUST report the identity created, with the
+  node id the creation reply reported;
+- **already there on arrival** — it MUST report the identity already present,
+  with its node id, and MUST NOT report it created by this showing.
+
+#### Scenario: The three states are told apart
+
+- **GIVEN** an identity step over a backend reporting no identity
+- **THEN** the step MUST NOT report an identity as existing
+- **AND** the step MUST NOT display a node id
+- **AND WHEN** creation is submitted and the backend replies created, with a
+  distinctive node id
+- **THEN** the step MUST report the identity as created in this showing,
+  carrying that node id
+- **AND WHEN** a fresh showing is instead entered over a backend reporting
+  `exists:true` with a different distinctive node id, with no creation submitted
+- **THEN** the step MUST report that an identity was already present, carrying
+  the second node id
+- **AND** it MUST NOT report the identity as created in this showing
+
+#### Scenario: An identity that was already there is not reported as a failure
+
+- **GIVEN** an identity step entered over a backend reporting `exists:true` with
+  a node id, with no creation submitted in this showing
+- **THEN** no refusal MUST be displayed
+- **AND** the step MUST NOT display a statement that creating an identity was
+  refused
+
+#### Scenario: Created and refused are never displayed together
+
+- **GIVEN** an identity step that has submitted creation and been told the
+  identity was created
+- **THEN** the step MUST display that the identity was created
+- **AND** the step MUST NOT simultaneously display a statement that creating an
+  identity is refused
+
+### Requirement: The identity step names the home it writes to
+
+The identity step MUST display the path of the embedded home it is writing
+into, or has written into, from `getEmbeddedIdentity().home`, so a step told a
+different home displays a different path, and MUST display it in all three of
+its states.
+
+When `home` is empty, the step MUST state that no home could be resolved instead
+of displaying an empty path, and MUST display the backend's own sentence where
+one was supplied.
+
+#### Scenario: The reported home is the path displayed
+
+- **GIVEN** an identity step told a `getEmbeddedIdentity()` reply whose `home`
+  is a distinctive path
+- **THEN** that path MUST be displayed
+- **AND WHEN** the step is told a reply carrying a different distinctive path
+- **THEN** the second path MUST be displayed and the first MUST NOT
+
+#### Scenario: The home is stated before and after creation
+
+- **GIVEN** an identity step over a backend reporting no identity and a
+  distinctive `home`
+- **THEN** that path MUST be displayed
+- **AND WHEN** creation is submitted and succeeds
+- **THEN** that path MUST still be displayed
+
+#### Scenario: An unresolvable home is stated rather than shown as an empty path
+
+- **GIVEN** an identity step told a `getEmbeddedIdentity()` reply whose `home`
+  is empty, with a distinctive `problem`
+- **THEN** the step MUST state that no home could be resolved
+- **AND** that `problem` sentence MUST be displayed
+
+### Requirement: The identity step states the passphrase trade where it is chosen
+
+The identity step MUST take an alias and a passphrase, and the passphrase
+control MUST arrive in the state that sets one. Where that choice is offered it
+MUST state, for both settings of the control and before the choice is made,
+both halves of the trade: an encrypted key must be unlocked each time the node
+starts, so it is asked for at every opening of Embedded; an unencrypted key lets
+the node start with no prompt, at the cost of a secret stored in plaintext.
+
+#### Scenario: A passphrase is the arriving default
+
+- **WHEN** the identity step is shown for the first time, over a backend
+  reporting no identity
+- **THEN** the control choosing whether to set a passphrase MUST be in the state
+  that sets one
+
+#### Scenario: Both halves of the trade are stated before the choice is made
+
+- **WHEN** the identity step is shown over a backend reporting no identity,
+  before the passphrase control is touched
+- **THEN** the displayed text MUST state that the node must be unlocked each
+  time it starts when a passphrase is set
+- **AND** it MUST state that an unencrypted key stores a secret in plaintext
+
+#### Scenario: The trade stays stated when the passphrase is turned off
+
+- **GIVEN** an identity step over a backend reporting no identity, whose
+  passphrase control has been turned off
+- **THEN** the displayed text MUST still state both halves of the trade
+
+#### Scenario: An identity that already exists offers no passphrase choice
+
+- **GIVEN** an identity step entered over a backend reporting `exists:true` with
+  a node id
+- **THEN** no control choosing whether to set a passphrase MUST be present
+- **AND WHEN** the same step is instead given a backend reporting no identity
+- **THEN** that control MUST be present
+
+#### Scenario: An unencrypted identity is created with an empty passphrase
+
+- **GIVEN** an identity step with alias `tester` and the passphrase control
+  turned off
+- **WHEN** creation is submitted
+- **THEN** exactly one `createEmbeddedIdentity` call MUST have been issued
+- **AND** its alias argument MUST be `tester`
+- **AND** its passphrase argument MUST be the empty string
+
+#### Scenario: A set passphrase is the one passed through
+
+- **GIVEN** an identity step with alias `tester`, the passphrase control set,
+  and a passphrase of `correct horse battery`
+- **WHEN** creation is submitted
+- **THEN** the `createEmbeddedIdentity` call's passphrase argument MUST be
+  `correct horse battery`
+
+#### Scenario: The trade names what happens on every later opening
+
+- **WHEN** the identity step is shown over a backend reporting no identity
+- **THEN** the displayed text MUST state that an unencrypted key lets the node
+  start without a prompt
+- **AND** it MUST state that an encrypted key is asked for each time
+
+#### Scenario: The passphrase does not outlive the creation call
+
+- **GIVEN** an identity step with alias `tester` and a passphrase of
+  `correct horse battery`, over a backend that accepts creation
+- **WHEN** creation is submitted and the reply reporting the identity created
+  has arrived
+- **THEN** the flow MUST NOT retain that passphrase
+- **AND** no call carrying it MUST have been issued other than the
+  `createEmbeddedIdentity` call
+
+#### Scenario: A rejected alias is reported from the backend, not pre-empted
+
+- **GIVEN** an identity step whose alias contains whitespace
+- **WHEN** creation is submitted against a backend that refuses it with a
+  distinctive message
+- **THEN** a `createEmbeddedIdentity` call MUST have been issued
+- **AND** the backend's message MUST be displayed
+
+### Requirement: The network step states outbound-only as the default in force
+
+The network step MUST state that the embedded node accepts no inbound
+connections, as the setting in force rather than a recommendation or a choice,
+and MUST state the consequence: peers cannot fetch from it. It MUST offer the
+seeds `listKnownSeeds()` reports, with the built-in public seeds among them.
+
+It MUST NOT offer a control that enables inbound connections, and MUST instead
+state that enabling them is not available in this flow.
+
+#### Scenario: The outbound-only default and its consequence are both stated
+
+- **WHEN** the network step is shown
+- **THEN** the displayed text MUST state that the node accepts no inbound
+  connections
+- **AND** it MUST state that peers cannot fetch from this node
+
+#### Scenario: The reported seeds are the ones offered
+
+- **GIVEN** a network step told a `listKnownSeeds()` reply naming two seeds
+- **THEN** both seeds MUST be offered
+- **AND WHEN** the step is told a reply naming a different, single seed
+- **THEN** exactly that one MUST be offered
+
+#### Scenario: No inbound control is offered and the absence is stated
+
+- **WHEN** the network step is shown
+- **THEN** no control enabling inbound connections MUST be present
+- **AND** the displayed text MUST state that enabling them is not available in
+  this flow
+
+### Requirement: The setup ends by finishing, not by being dismissed
+
+The network step's forward control MUST end the setup: it MUST report that the
+user has finished, and MUST NOT move to a further step. The setup MUST NOT
+present a terminal screen whose only act is to be dismissed.
+
+Ending the setup MUST NOT start the node, MUST NOT write the mode again, and
+MUST NOT issue any call.
+
+#### Scenario: Finishing the last step ends the setup
+
+- **GIVEN** a flow whose step in force is the network step
+- **WHEN** the step's forward control is invoked
+- **THEN** the flow MUST report that the user has finished
+- **AND** the step in force MUST NOT have moved to a further step
+
+#### Scenario: Ending the setup issues no call
+
+- **GIVEN** a flow whose step in force is the network step, over a backend
+  accepting every call
+- **WHEN** the step's forward control is invoked
+- **THEN** no `startNode` call MUST have been issued
+- **AND** no `setSetting` call MUST have been issued
+- **AND** no `createEmbeddedIdentity` call MUST have been issued
+
+### Requirement: A step reports a backend refusal rather than a generic failure
+
+Every step that calls a module method MUST treat an `{"error":"..."}` reply as a
+refusal to display, not a failure to summarise, and MUST show its message as the
+backend worded it.
+
+A step MUST NOT advance on a refusal, and MUST NOT report the action as done. A
+subsequent successful call MUST clear a displayed refusal.
+
+#### Scenario: Two different refusals display two different messages
+
+- **GIVEN** an identity step whose backend refuses creation with one distinctive
+  message
+- **THEN** that message MUST be displayed
+- **AND WHEN** the same step is submitted against a backend refusing with a
+  different distinctive message
+- **THEN** the second message MUST be displayed and the first MUST NOT
+
+#### Scenario: A success clears a previously displayed refusal
+
+- **GIVEN** a step displaying a refusal message
+- **WHEN** a subsequent call to the same method succeeds
+- **THEN** no refusal message MUST be displayed
+
+### Requirement: The setup is raised over the view, and lowered by its own close
+
+The module MUST host the setup as a surface raised over the screen the user is
+on, leaving that screen in place, and MUST NOT host it as a navigation
+destination that replaces the screen or adds a history entry. It MUST expose
+whether the setup is raised.
+
+The setup MUST be lowered when the flow reports that the user has finished or
+given up, and MUST NOT lower itself. Lowering it MUST NOT change the view in
+force, the repository it shows, or the tab within it.
+
+#### Scenario: Raising the setup leaves the screen underneath in force
+
+- **GIVEN** a module showing a repository, with the setup not raised
+- **WHEN** the setup is raised
+- **THEN** the module MUST report the setup as raised
+- **AND** the view in force MUST still be the repository view
+- **AND WHEN** the flow reports the user has finished
+- **THEN** the module MUST report the setup as not raised
+- **AND** the view in force MUST still be the repository view, showing the same
+  repository
+
+#### Scenario: The setup is lowered by its report, not by the control that raised it
+
+- **GIVEN** a module with the setup raised
+- **WHEN** the flow reports the user has finished
+- **THEN** the module MUST report the setup as not raised
+- **AND WHEN** the setup is raised again and the flow makes no such report
+- **THEN** the module MUST still report the setup as raised
+
+### Requirement: The setup and the settings surface are never raised together
+
+The module MUST NOT have the setup and the durable settings surface raised at
+the same time: raising either one MUST lower the other. Lowering one MUST NOT
+raise the other.
+
+#### Scenario: Raising each surface lowers the other
+
+- **GIVEN** a module with the settings surface raised and the setup not raised
+- **WHEN** the setup is raised
+- **THEN** the module MUST report the setup as raised
+- **AND** the module MUST report the settings surface as not raised
+- **AND WHEN** the settings surface is then raised
+- **THEN** the module MUST report the settings surface as raised
+- **AND** the module MUST report the setup as not raised
+
+#### Scenario: Lowering one raises nothing
+
+- **GIVEN** a module with the setup raised and the settings surface not raised
+- **WHEN** the flow reports the user has finished
+- **THEN** the module MUST report the setup as not raised
+- **AND** the module MUST report the settings surface as not raised
+
+### Requirement: The setup opens only when a user asks for it
+
+The setup MUST be raised only in response to a user's act that names opening
+it: the request the Embedded state surface emits when its setup action is
+taken, or an equivalent request from the durable settings surface once that
+surface offers one.
+
+Selecting Embedded MUST NOT raise it, whether from the header, from the settings
+surface, or as the mode restored at start; nor MUST a report that no identity
+exists, a start failing, or the module becoming ready.
+
+#### Scenario: Selecting Embedded does not raise the setup
+
+- **GIVEN** a module in a mode other than `embedded`, with the setup not raised
+- **WHEN** Embedded is selected and the backend reports it in force, with
+  `getEmbeddedIdentity()` reporting `exists:false`
+- **THEN** the module MUST report the setup as not raised
+
+#### Scenario: Starting in Embedded with no identity does not raise the setup
+
+- **GIVEN** a module whose backend reports `embedded` already in force and
+  `getEmbeddedIdentity().exists` false
+- **WHEN** the module becomes ready
+- **THEN** the module MUST report the setup as not raised
+
+#### Scenario: The state surface's setup request raises it
+
+- **GIVEN** a module in `embedded` with the setup not raised, whose state surface
+  is rendering the no-identity state
+- **WHEN** the state surface's setup action is taken
+- **THEN** the module MUST report the setup as raised
+
+### Requirement: A reopened setup lands at the first step with work left
+
+When the setup is raised, the flow MUST re-run the preflight and put in force
+the first step whose work the backend reports as not yet done, and MUST NOT
+depend on any record of a previous showing. That step MUST be derived from the
+preflight replies:
+
+- mode not reported as `embedded`: the embedded step;
+- mode `embedded` and `getEmbeddedIdentity().exists` false: the identity step;
+- mode `embedded` and an identity existing: the network step.
+
+#### Scenario: An existing identity resumes past the identity step
+
+- **GIVEN** a setup raised against a backend reporting `embedded` in force, an
+  existing identity with a node id, and the node not serving
+- **WHEN** the preflight has answered
+- **THEN** the step in force MUST NOT be the identity step
+- **AND** the step in force MUST be the network step
+
+#### Scenario: Different backend states resume to different steps
+
+- **GIVEN** a setup raised against a backend reporting `embedded` in force,
+  `getEmbeddedIdentity().exists` false
+- **WHEN** the preflight has answered
+- **THEN** the step in force MUST be the identity step
+- **AND WHEN** a setup is raised against a backend reporting `embedded` in force
+  and an existing identity with a node id
+- **THEN** the step in force MUST be the network step
+- **AND WHEN** a setup is raised against a backend reporting a mode other than
+  `embedded` and an existing identity
+- **THEN** the step in force MUST be the embedded step
+
+#### Scenario: The node's state does not change where the flow lands
+
+- **GIVEN** a setup raised against a backend reporting `embedded` in force, an
+  existing identity, and the node reporting `running:false` and `serving:false`
+- **WHEN** the preflight has answered
+- **THEN** the step in force MUST be the network step
+- **AND WHEN** the same setup is lowered and raised again against a backend
+  identical but for the node reporting `running:true` and `serving:true`
+- **THEN** the step in force MUST still be the network step
+
+#### Scenario: A mode not yet in force resumes to the embedded step
+
+- **GIVEN** a setup raised against a backend reporting a mode other than
+  `embedded`, and `getEmbeddedIdentity().exists` false
+- **WHEN** the preflight has answered
+- **THEN** the step in force MUST be the embedded step
+
+#### Scenario: The step reached last time does not decide where it reopens
+
+- **GIVEN** a setup that was raised, advanced to the network step, and lowered,
+  against a backend reporting `embedded` in force and `exists:false`
+- **WHEN** the setup is raised again and the preflight has answered
+- **THEN** the step in force MUST be the identity step
+- **AND WHEN** the same setup is lowered and raised again against a backend now
+  reporting an existing identity
+- **THEN** the step in force MUST be the network step
+
+#### Scenario: The flow waits at preflight rather than resuming from defaults
+
+- **GIVEN** a setup raised against a backend whose identity reply is withheld,
+  reporting `embedded` in force
+- **THEN** the step in force MUST be the preflight step
+- **AND WHEN** the withheld reply is delivered, reporting an existing identity
+- **THEN** the step in force MUST be the network step
+
+#### Scenario: The resumed step's findings are populated
+
+- **GIVEN** a setup raised against a backend reporting `embedded` in force and
+  an existing identity with a distinctive node id
+- **WHEN** the preflight has answered and the step in force is the network step
+- **THEN** the identity finding MUST report that an identity exists, carrying that
+  node id
+- **AND WHEN** back is invoked to reach the identity step
+- **THEN** invoking that step's forward control MUST issue no
+  `createEmbeddedIdentity` call
+
+### Requirement: The setup is offered only for work it can do
+
+The module MUST raise the setup only for a request to set the embedded node up.
+A request to start, or to restart, an already-created node MUST NOT raise it.
+
+This MUST be keyed on which request was made, not on the state the module is
+in, so a host that raises the setup for every request alike fails it.
+
+#### Scenario: A start request does not raise the setup
+
+- **GIVEN** a module in `embedded` with the setup not raised
+- **WHEN** a request to start the node is made
+- **THEN** the module MUST report the setup as not raised
+- **AND WHEN** a request to set the node up is instead made
+- **THEN** the module MUST report the setup as raised
+
+#### Scenario: A restart request does not raise the setup
+
+- **GIVEN** a module in `embedded` with the setup not raised, whose node reports
+  `running:true` with `serving:false` and no start outstanding
+- **WHEN** a request to restart the node is made
+- **THEN** the module MUST report the setup as not raised
+
+## ADDED Requirements
+
+### Requirement: The setup presents no start step and starts nothing
+
+The setup MUST NOT present a step that starts the node, nor a step whose only
+content restates what the preceding steps did. It MUST NOT issue `startNode`,
+in any step, for any reason.
+
+#### Scenario: An existing identity with a stopped node is not started
+
+- **GIVEN** a flow over a backend reporting `embedded` in force, an existing
+  identity, and a node reporting `running:false` and `serving:false`
+- **WHEN** the flow is walked from the step in force to its end, invoking each
+  step's forward control
+- **THEN** no `startNode` call MUST have been issued
+- **AND** every step presented MUST have been one of preflight, embedded,
+  identity and network
+
+### Requirement: Going back undoes nothing
+
+Going back MUST NOT undo anything an earlier step performed. A step that has
+performed its act MUST report what it did when it is returned to, rather than
+offer to do it again.
+
+#### Scenario: Going back over the embedded step keeps Embedded in force
+
+- **GIVEN** a flow whose embedded step has put Embedded in force, with the
+  backend reporting `embedded`, and whose step in force is the identity step
+- **WHEN** back is invoked
+- **THEN** no `setSetting` call MUST have been issued by going back
+- **AND** the mode in force MUST still be `embedded`
+
+### Requirement: A failed finding is named in the backend's words
+
+A preflight finding that failed MUST name what failed. Where the backend
+supplied a sentence — `gitProblem`, `pathsProblem` or
+`getEmbeddedIdentity().problem` — it MUST be displayed verbatim rather than
+replaced with the flow's own wording.
+
+#### Scenario: A paths problem is shown unaltered
+
+- **GIVEN** a backend reporting `gitFound:true` and a `pathsProblem` set to a
+  distinctive sentence
+- **THEN** that sentence MUST appear in what the preflight displays
+- **AND** the paths finding MUST be displayed as failed
+
+### Requirement: The preflight writes nothing
+
+The preflight MUST NOT write anything: it MUST NOT call
+`createEmbeddedIdentity`, `startNode` or `setSetting`.
+
+#### Scenario: A failing preflight writes nothing either
+
+- **GIVEN** a backend reporting `gitFound:false`, a non-empty `pathsProblem`
+  and `serving:true`
+- **WHEN** the preflight step runs to completion
+- **THEN** no `createEmbeddedIdentity`, `startNode` or `setSetting` call MUST
+  have been issued
+
+### Requirement: An unresolvable home blocks the identity step, an occupied one only creation
+
+An unresolvable home MUST block the identity step: its forward control MUST NOT
+be enabled, and the reason MUST be stated. A home already holding a complete
+identity MUST block only the creation call: the forward control MUST stay
+enabled, and MUST advance without issuing `createEmbeddedIdentity`.
+
+#### Scenario: A paths problem blocks the identity step and is named
+
+- **GIVEN** a preflight reporting a non-empty `pathsProblem` and no identity
+- **WHEN** the step in force is the identity step
+- **THEN** the forward control MUST NOT be enabled
+- **AND** the displayed reason MUST name the home finding as what is blocking
+
+### Requirement: A half-created home does not block the identity step
+
+A half-created home, which the preflight sees as `exists:false`, MUST NOT block
+the identity step: creation MUST be offered, so that the backend's refusal
+naming the `keys` path to remove is what the user is shown.
+
+#### Scenario: A half-created home is not stated as blocking
+
+- **GIVEN** a preflight whose `getEmbeddedIdentity()` reports `exists:false`
+  with an empty `problem` and a resolving home, over a backend that will refuse
+  creation as half-created
+- **WHEN** the step in force is the identity step
+- **THEN** the flow MUST NOT state that any finding is blocking it
+
+### Requirement: The embedded step offers no other mode
+
+The embedded step MUST NOT offer `explore` or `local`, MUST NOT present the
+modes as a set to pick from, and MUST NOT annotate a mode as unavailable,
+whatever `getCapabilities().startableModes` reports.
+
+#### Scenario: An empty startable set changes nothing either
+
+- **GIVEN** an embedded step told a `getCapabilities().startableModes` that is
+  an empty array
+- **THEN** no control selecting `explore` or `local` MUST be present
+- **AND** no text MUST be displayed stating that a mode cannot be started
+
+### Requirement: The embedded step's control puts Embedded in force
+
+The embedded step MUST offer a control that puts Embedded in force, and MUST
+NOT write the mode because the step is shown. The control MUST persist it
+through `setSetting("mode", "embedded")` and MUST NOT record the flow's own copy
+of the mode in force; what the step reports as the mode in force MUST come from
+`getCapabilities().mode`.
+
+#### Scenario: The mode in force follows a later reply
+
+- **GIVEN** an embedded step whose control's write was accepted, with the
+  backend reporting `embedded`
+- **WHEN** the backend subsequently reports `local`
+- **THEN** the mode in force MUST be `local`
+
+### Requirement: Leaving the embedded step leaves the mode where it was
+
+Going back and closing the flow MUST remain available on the embedded step.
+Leaving it by either route, without its control having been invoked, MUST leave
+the mode in force where it was.
+
+#### Scenario: Closing from the embedded step writes no mode
+
+- **GIVEN** an embedded step where `getCapabilities().mode` is `local` and the
+  control putting Embedded in force has not been invoked
+- **WHEN** the control that closes the flow is invoked
+- **THEN** no `setSetting` call MUST have been issued
+- **AND** the flow MUST report that the user has given up
+
+### Requirement: Advancing past the embedded step waits for the backend
+
+Advancing past the embedded step MUST require that `getCapabilities().mode`
+reports `embedded`. A refused `setSetting` MUST therefore leave advancing
+refused, and the refusal MUST be displayed.
+
+#### Scenario: Arriving in another mode does not permit advancing
+
+- **GIVEN** an embedded step where `getCapabilities().mode` is `local` and the
+  control putting Embedded in force has not been invoked
+- **WHEN** advance is invoked
+- **THEN** the step in force MUST still be the embedded step
+
+### Requirement: Returning to the embedded step reports Embedded rather than re-offering it
+
+Returning to the embedded step once Embedded is in force MUST report that it is,
+and MUST NOT offer to put it in force again. The statement of what Embedded
+means MUST stay displayed either way.
+
+#### Scenario: Embedded in force is stated as in force
+
+- **GIVEN** an embedded step where `getCapabilities().mode` reports `embedded`
+- **THEN** the step MUST state that Embedded is the mode in force
+- **AND WHEN** advance is invoked
+- **THEN** no `setSetting` call MUST have been issued
+
+### Requirement: The identity step's forward control says what it will do
+
+The identity step's forward control MUST be labelled with the act it will
+perform: creating the identity when none exists, and continuing to the next
+step when one does.
+
+#### Scenario: The label follows an identity created in this showing
+
+- **GIVEN** an identity step over a backend reporting no identity, whose
+  creation has been submitted and replied to as created
+- **WHEN** the step in force returns to the identity step
+- **THEN** the forward control's label MUST NOT name creating an identity
+- **AND** it MUST name continuing to the next step
+
+### Requirement: A refused or blocked creation keeps the identity step in force
+
+The identity step's forward control MUST NOT be enabled while creation is
+blocked and no identity exists. A refused creation MUST NOT advance: the step
+MUST remain in force with the refusal displayed, and the control MUST remain
+enabled so the user can correct what was refused and submit again.
+
+#### Scenario: A creation refused twice stays on the step
+
+- **GIVEN** an identity step over a backend that refuses every creation
+- **WHEN** the forward control is invoked twice
+- **THEN** two `createEmbeddedIdentity` calls MUST have been issued
+- **AND** the step in force MUST still be the identity step
+
+### Requirement: Created and refused are never shown together
+
+The identity step MUST NOT display at once a statement that the identity was
+created and one that creating it is refused. Where an identity was already
+there, a note that a second would be refused MUST NOT be presented as a failure
+or an error, and the surface for backend refusals MUST show only a refusal the
+backend returned to this showing.
+
+#### Scenario: A refusal returned to this showing is shown as a refusal
+
+- **GIVEN** an identity step over a backend reporting no identity, which
+  refuses creation with a distinctive message
+- **WHEN** creation is submitted
+- **THEN** that message MUST be displayed as a refusal
+- **AND** the step MUST NOT display that the identity was created
+
+### Requirement: The setup's passphrase is used for creation alone
+
+The passphrase the identity step takes MUST be used for `createEmbeddedIdentity`
+and for nothing else, and MUST NOT be retained past the reply to that call.
+
+#### Scenario: Finishing the setup carries the passphrase nowhere
+
+- **GIVEN** an identity step with alias `tester` and a passphrase of
+  `correct horse battery`, over a backend that accepts creation
+- **WHEN** creation is submitted and the flow is then walked to its end
+- **THEN** no call other than the one `createEmbeddedIdentity` call MUST have
+  carried that passphrase
+
+### Requirement: An existing identity is offered no passphrase trade
+
+Where an identity already exists, the identity step MUST offer neither the
+passphrase control nor the statement of the passphrase trade.
+
+#### Scenario: An existing identity states no trade
+
+- **GIVEN** an identity step entered over a backend reporting `exists:true`
+  with a node id
+- **THEN** the displayed text MUST NOT state that the node must be unlocked
+  each time it starts
+
+### Requirement: The alias is the backend's to judge
+
+The identity step MUST submit the alias to `createEmbeddedIdentity` as the user
+typed it, and MUST NOT pre-validate it against a rule of its own.
+
+#### Scenario: An over-long alias is submitted, not pre-empted
+
+- **GIVEN** an identity step whose alias is 40 characters long
+- **WHEN** creation is submitted
+- **THEN** a `createEmbeddedIdentity` call MUST have been issued
+- **AND** its alias argument MUST be exactly the alias typed
+
+### Requirement: The node's state does not decide where the setup reopens
+
+Whether the node is running or serving MUST NOT affect which step a reopened
+setup puts in force.
+
+#### Scenario: A serving node with no identity still lands on the identity step
+
+- **GIVEN** a setup raised against a backend reporting `embedded` in force,
+  `getEmbeddedIdentity().exists` false, and a node reporting `serving:true`
+- **WHEN** the preflight has answered
+- **THEN** the step in force MUST be the identity step
+
+### Requirement: The resume waits for the preflight and moves once
+
+The resume MUST put the chosen step in force as a single move, not by repeated
+advancing. Until the preflight has answered, the step in force MUST remain the
+preflight step, and the flow MUST NOT move to a step chosen from replies that
+have not arrived.
+
+#### Scenario: A withheld capabilities reply holds the flow at preflight
+
+- **GIVEN** a setup raised against a backend reporting an existing identity,
+  whose `getCapabilities()` reply is withheld
+- **THEN** the step in force MUST be the preflight step
+- **AND WHEN** the withheld reply is delivered, reporting `embedded` in force
+- **THEN** the step in force MUST be the network step
+- **AND** the identity finding MUST report that an identity exists
+
+### Requirement: A resumed step behaves as one reached by advancing
+
+A step put in force by the resume MUST behave exactly as it does when reached by
+advancing: what it may do, what it must state and what blocks it are unchanged,
+and a step that has already acted MUST report what it did rather than offer to
+act again.
+
+#### Scenario: A resumed embedded step offers its control
+
+- **GIVEN** a setup raised against a backend reporting `local` in force and no
+  identity
+- **WHEN** the preflight has answered
+- **THEN** the step in force MUST be the embedded step
+- **AND** the control that puts Embedded in force MUST be enabled
+- **AND** advancing MUST NOT be permitted
