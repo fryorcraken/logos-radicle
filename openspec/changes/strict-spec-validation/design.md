@@ -42,7 +42,7 @@ shape how it is built, none of them visible from the proposal:
 - Validating in-flight change folders in CI. The `closer`'s
   `openspec validate <change> --strict` before archiving stays that check.
 - A coverage guard around the CLI (see Decision 3).
-- Pinning the 36 new scenarios with tests. That is the `tester`'s stage;
+- Pinning the 37 new scenarios with tests. That is the `tester`'s stage;
   `tasks.md` group 3 lists them.
 
 ## Decisions
@@ -140,17 +140,19 @@ in Risks below.
 
 **Chosen:** in this document, under "Reasoning carried out of the specs" below,
 one entry per requirement, named by requirement heading so a reader of the live
-spec can find it by grepping the archive.
+spec can find it by grepping the archive. That includes the two passages that
+sat after a requirement's scenarios, which the length rule never measured
+(`node-paths`' "Embedded mode must never resolve the user's own Radicle home"
+and `source-modes`' "A mode that cannot start asks its node for nothing"); the
+delta removes both, and their entries below carry them.
 
 **Alternatives:**
 
 - **Leave it in the spec, after the scenarios**, where the length rule does not
-  measure it. Two such passages already survive the split (in `node-paths`'
-  embedded-mode requirement and `source-modes`' "A mode that cannot start asks
-  its node for nothing"), and the strict run passes over them. Rejected: a spec
-  is the behaviour contract, and reasoning in it is reasoning a reader has to
-  separate from the contract at every reading. Those two passages are reported
-  to the `spec-writer`.
+  measure it, so the strict run passes over it. Rejected: a spec is the
+  behaviour contract, and reasoning in it is reasoning a reader has to separate
+  from the contract at every reading. The length rule not reaching a passage is
+  no reason for it to stay.
 - **The spec's `## Purpose`.** Rejected for the same reason, and because a
   Purpose describes the capability, not why one rule in it exists.
 - **Work not done goes to its issue, not here.** Where a cut passage named an
@@ -202,9 +204,12 @@ the spec's; nothing here adds to it.
   field is `createEmbeddedIdentity`'s, which no later session has and which
   computes the value from its argument. Without it a surface must either always
   prompt, wrong for an unencrypted key, or attempt a start and read the
-  failure, a destructive probe. `getCapabilities().canWriteLocal` is not a
-  substitute: it probes the mode in force's home, and conflates an encrypted
-  key with a missing or unreadable one.
+  failure, a destructive probe.
+- **canWriteLocal is not a substitute for the encrypted field** (split out).
+  `getCapabilities().canWriteLocal` probes the mode in force's home, not
+  necessarily the embedded one, and a `false` from it conflates an encrypted key
+  with a missing or unreadable one. A surface reading it as "encrypted" prompts
+  for a passphrase an unencrypted key does not have.
 - **An unreadable key is not reported as unencrypted** (split out). An
   unreadable key is not an unencrypted one, so the field reports no guess and
   `problem` says why.
@@ -536,8 +541,11 @@ the spec's; nothing here adds to it.
 - **Socket precedence prefers the runtime directory over the home.** The runtime
   directory is short by construction, scoped to the user's session and cleaned
   up on logout. The home-derived form is kept because it is where a hand-run
-  `rad` node places its socket, and `local` mode must still find it when no
-  runtime directory exists.
+  `rad` node places its socket. The live requirement also said, as a rule of its
+  own, that `local` mode must still find that socket when no runtime directory
+  exists. The delta drops that sentence, the one `MUST` in this change not kept
+  in any requirement, because the precedence it restated already returns the
+  home-derived socket in exactly that case.
 - **The 108-byte sun_path cap constrains the socket alone.** At resolution rather
   than at connection, so a preflight surface can report it without a live
   profile or a running node.
@@ -548,7 +556,13 @@ the spec's; nothing here adds to it.
 - **Embedded mode must never resolve the user's own Radicle home.** Embedded
   promises an identity separate from any node the user runs; a resolution that
   could reach the user's profile would expose their signing key and put two
-  nodes on one git storage.
+  nodes on one git storage. The scenario "an unrecognised mode resolves
+  nothing" holds by composition, not by anything in `node-paths`: it depends on
+  `module-settings` sanitising an unknown stored mode to `explore` on read, and
+  `explore` resolving no home. A change to that fallback, outside this
+  capability entirely, would break the scenario's `MUST NOT`, so whoever changes
+  it must re-check this one. It sits in `node-paths` because the resolved home
+  is what a reader of this capability is asking about.
 - **The absent-profile sentence is chosen by the mode that asked.** It
   outranks the empty-home default too, because the case most needing a
   mode-specific sentence, embedded with no data directory, is the case where the
@@ -602,8 +616,9 @@ the spec's; nothing here adds to it.
   So that no not-implemented state is shown before the first capabilities reply
   arrives.
 - **The method prefix is derived from the mode.** A separately stored prefix
-  could drift from the mode. Every mode deriving `local` is named, so an
-  unrecognised mode derives `remote`, the prefix that touches no local profile.
+  could drift from the mode. Naming every mode that derives `local`, rather
+  than every mode that derives `remote`, is what sends an unrecognised mode to
+  `remote`, the prefix that touches no local profile.
 - **getCapabilities reports the mode and its consequences.**
   `modeUnavailableReason` is empty in every state a test can reach on this
   build, since every known mode is startable and an unknown stored mode
@@ -618,7 +633,14 @@ the spec's; nothing here adds to it.
   home with no identity and a refusal rendered as an error banner. A request
   issued and then hidden still arrives and repopulates the screen. Deriving the
   decision from what the backend reports, not a mode's name, means a mode
-  gaining a node changes this with no view edited.
+  gaining a node changes this with no view edited. The third clause of the
+  scenario "An unprovisioned embedded home is not reported as empty", that the
+  "no repositories" wording is not shown, was once unpinned: the covering
+  test asserted only that the pane was not blank, which an error shown
+  alongside that wording also satisfies. `embedded-state`'s "The no-repositories
+  wording is withheld where no node exists" now states it as a requirement of
+  its own, with scenarios that tell the two apart, so the gap is closed there
+  rather than annotated here.
 
 ## Risks / Trade-offs
 
