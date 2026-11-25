@@ -64,7 +64,7 @@ file. Scope: the `Lint` step in `.github/workflows/ci.yml`, the doc edits, the
 
 ## Findings
 
-- [ ] **`tester`** — `radicle-ui/tests/tst_setup_wizard.qml:1786` and `:1846` — the new "no `startNode` may be issued" call-log scans can never fail
+- [x] **`tester`** — `radicle-ui/tests/tst_setup_wizard.qml:1786` and `:1846` — the new "no `startNode` may be issued" call-log scans can never fail
       **Scenario:** the harness's `fake` has no start function by design (the
       comment at lines 259-268 says the `startNode` entries are "unreachable
       rather than merely absent"), so no call a flow makes can ever be logged as
@@ -83,8 +83,17 @@ file. Scope: the `Lint` step in `.github/workflows/ci.yml`, the doc edits, the
       **Severity:** low-medium; the scenario is pinned by one name-bound check
       and presented as pinned by two. **Measured:** not run (no Qt runner); the
       argument is from the fake's source.
+      **Outcome (`tester`): fixed.** The reviewer is right, and the same
+      finding is the second `tester` box in `spec-test.md`; the outcome is
+      recorded there. Short form: the log legs are now commented as tripwires
+      and the comment claiming they were a pin is corrected, and the leg that
+      can fail is `assertNoStartMember(flow)` in `tst_setup_wizard.qml`, added
+      to the first two tests this box names and to
+      `test_no_step_of_the_setup_starts_a_node`. It catches a start under
+      another name (`startEmbeddedNode`), which was this box's scenario.
+      **Predicted, not run** (no Qt 6 runner in this pod).
 
-- [ ] **`tester`** — `radicle/tests/test_radicle_impl.cpp:625-640` and `radicle/tests/test_settings_store.cpp:355-372` — the "before any write" leg of the two five-keys tests is only fresh on the first run
+- [x] **`tester`** — `radicle/tests/test_radicle_impl.cpp:625-640` and `radicle/tests/test_settings_store.cpp:355-372` — the "before any write" leg of the two five-keys tests is only fresh on the first run
       **Scenario:** `scratchSettingsPath("five-keys")` and
       `ScratchSettings s("five-keys")` give a fixed directory under `TMPDIR`
       that nothing removes, and these tests write all five keys into it. On a
@@ -100,8 +109,24 @@ file. Scope: the `Lint` step in `.github/workflows/ci.yml`, the doc edits, the
       directory. `ScopedXdgDataHome` in the same file already removes its
       directory for exactly this reason.
       **Severity:** low (local-rerun hygiene). **Measured:** not run.
+      **Outcome (`tester`): fixed in both tests, locally.** Each now removes
+      its scratch `settings.json` before the first read and asserts the file is
+      gone (`std::filesystem::exists` in `test_radicle_impl.cpp`, an `ifstream`
+      `good()` check in `test_settings_store.cpp`, which also gains
+      `<cstdio>`), so the "never written" half is true on every run and a
+      removal that did not take fails the test rather than weakening it. I did
+      not give `ScratchSettings` and `scratchSettingsPath` a destructor that
+      cleans up: it would change every other test using them, and the
+      `ScratchSettings` comment ("removed on destruction") is false as it
+      stands, which is noted here rather than fixed. **Which test fails
+      without it:** none on a clean directory, so CI cannot tell the two
+      apart; this is the reviewer's own point (CI starts clean). On a second
+      local run, before the change the opening count read a file already
+      holding five values and a sixth key written only on the no-file path was
+      missed; after it, that read is of a removed file. **Predicted, not
+      run** (no C++ compiler in this pod).
 
-- [ ] **`tester`** — `radicle-ui/tests/tst_embedded_panel.qml:1154-1164` — `test_the_passphrase_field_does_not_show_what_is_typed` restores the field only on the passing path
+- [x] **`tester`** — `radicle-ui/tests/tst_embedded_panel.qml:1154-1164` — `test_the_passphrase_field_does_not_show_what_is_typed` restores the field only on the passing path
       **Scenario:** the control leg sets `f.echoMode = TextInput.Normal` on the
       one `TextField` shared by every test in the file. If a `verify` before the
       restore fails (the masked walk finds the secret, or the control walk does
@@ -113,3 +138,17 @@ file. Scope: the `Lint` step in `.github/workflows/ci.yml`, the doc edits, the
       the wrong test. It costs diagnosis time only when something has already
       broken. A restore in `init()` or `cleanup()` removes it.
       **Severity:** low (failure-time noise). **Measured:** not run.
+      **Outcome (`tester`): fixed.** The body of
+      `test_the_passphrase_field_does_not_show_what_is_typed` now runs inside a
+      `try` with a `finally` that restores the field's `echoMode` (to the mode
+      it was found in, not one written in the test) and clears its text, so a
+      `verify` that throws mid-function no longer leaves the shared field
+      unmasked and holding the secret. I chose that over a restore in `init()`
+      because it needs the field to exist at init time and leaves the fixture
+      repaired where it was damaged. This is a failure-time fix: **no test
+      passes or fails differently when everything is green**, so there is no
+      red to observe for it. **Predicted, not run:** with the `finally`
+      removed and the control leg's `verify(seen, ...)` made to fail, the next
+      test that asserts the mask
+      (`test_an_encrypted_identity_is_offered_a_passphrase_field`) fails too;
+      with it, that test is unaffected.

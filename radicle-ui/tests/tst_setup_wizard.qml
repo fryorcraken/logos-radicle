@@ -264,8 +264,12 @@ Item {
         // a test assert about a path that does not exist.
         //
         // The `startNode` entries the call-log assertions look for are
-        // therefore unreachable rather than merely absent, which is what makes
-        // "no step of the setup starts a node" structural.
+        // therefore unreachable, and **a search of the call log for one cannot
+        // fail**: whatever a flow did, nothing it was wired with could log one.
+        // Those searches are tripwires for the day a start is wired into this
+        // fake, and say nothing until then. What can fail is the set of steps
+        // presented, and `assertNoStartMember`, which reads the flow's own
+        // members for anything named for a start under any injected name.
 
         function deliverHeld() {
             if (held === null) return false;
@@ -316,6 +320,14 @@ Item {
         saveSetting: function (k, v, cb) { fake.setting(k, v, cb); }
     }
 
+    /// Every name `obj` exposes to a script, by enumeration — properties,
+    /// signals and functions alike.
+    function memberNames(obj) {
+        var names = [];
+        for (var k in obj) names.push(String(k));
+        return names;
+    }
+
     /// Walk the flow to a named step, so a test about a later step does not
     /// re-assert the navigation rules on its way there.
     function advanceTo(f, stepName) {
@@ -355,6 +367,33 @@ Item {
             flow.reset();
             heldFlow.reset();
             fake.reset();
+        }
+
+        /// **The flow holds nothing named for a start, under any name.**
+        ///
+        /// `typeof flow.startNode === "undefined"` sees one spelling. A start
+        /// reintroduced as `startEmbeddedNode`, `fetchStart` or `canStartNode`
+        /// passes it, and passes a call-log search too, because this harness
+        /// wires nothing that could log one. So the members are enumerated and
+        /// any that says "start" as a word is a failure. `restart` does not: the
+        /// pattern asks for a leading `start` or a capital `Start`.
+        ///
+        /// **The enumeration is shown to see something first**, by requiring
+        /// two members the flow certainly has. If a runtime enumerated nothing
+        /// for a QML object this would fail on that, loudly, instead of passing
+        /// over an empty list.
+        function assertNoStartMember(f) {
+            var names = harness.memberNames(f);
+            verify(names.indexOf("createIdentity") !== -1
+                   && names.indexOf("advance") !== -1,
+                   "precondition: the enumeration lists the flow's own "
+                   + "members, got " + names.length + " names");
+            var starts = [];
+            for (var i = 0; i < names.length; i++)
+                if (/^start|Start/.test(names[i])) starts.push(names[i]);
+            compare(starts.join(","), "",
+                    "the flow must expose nothing named for a start, whatever "
+                    + "it is called");
         }
 
         // ---- four steps in a fixed order ------------------------------------
@@ -1270,16 +1309,20 @@ Item {
         /// offered on the way, against a backend that accepts everything — and
         /// no `startNode` entry may appear in the call log.
         ///
-        /// The call-log half alone would be satisfied by a flow that simply had
-        /// no start wired in this harness, so `flow.startNode === undefined` is
-        /// asserted too: the property is gone from `SetupFlow`, so a step that
-        /// wanted to start a node would have to reintroduce it first, which is
-        /// a visible act rather than a silent one.
+        /// **The call-log half is a tripwire, not a pin.** This harness wires no
+        /// start, so no flow could log one whatever it did; the loop at the end
+        /// can fail only the day a start is wired into the fake. What can fail
+        /// today is the flow's own members — `assertNoStartMember`, which also
+        /// catches a start reintroduced under another name — and
+        /// `flow.startNode === undefined`, the one spelling the requirement
+        /// names. A step that wanted to start a node would have to reintroduce
+        /// one first, which is a visible act rather than a silent one.
         function test_no_step_of_the_setup_starts_a_node() {
             compare(typeof flow.startNode, "undefined",
                     "the flow must hold no startNode function at all — with "
                     + "nothing to call, 'MUST NOT issue startNode in any step' "
                     + "holds structurally rather than by inspection");
+            assertNoStartMember(flow);
 
             flow.runPreflight();
             fake.reset();
@@ -1777,9 +1820,12 @@ Item {
             verify(flow.onLastStep, "precondition: the walk reached the end");
             compare(typeof flow.startNode, "undefined",
                     "the flow holds no startNode to call");
-            // The log holds the preflight's four calls, so this is a search of
-            // something rather than of an empty list: the walk itself issues no
-            // backend call at all over an existing identity.
+            assertNoStartMember(flow);
+            // A TRIPWIRE, not a pin. The log is not empty (the preflight's
+            // calls are in it), but a `startNode` entry could never be written
+            // to it by this harness — it wires no start — so this passes for
+            // any flow until a start is wired into the fake. The two checks
+            // above are what can fail; see the note beside the fake.
             verify(fake.callLog.length > 0,
                    "precondition: the preflight really did ask");
             for (var j = 0; j < fake.callLog.length; j++)
@@ -1839,10 +1885,14 @@ Item {
             verify(fake.callLog.length >= 3,
                    "precondition: it really did ask: "
                    + JSON.stringify(fake.callLog));
+            assertNoStartMember(flow);
             for (var i = 0; i < fake.callLog.length; i++) {
                 var c = String(fake.callLog[i]);
                 verify(c.indexOf("createEmbeddedIdentity") !== 0,
                        "a failing preflight must not create an identity: " + c);
+                // The `startNode` line is a tripwire (see the note beside the
+                // fake): this harness cannot log one, so it cannot fail today.
+                // The `createEmbeddedIdentity` and `setSetting` lines can.
                 verify(c.indexOf("startNode") !== 0,
                        "a failing preflight must not start a node: " + c);
                 verify(c.indexOf("setSetting") !== 0,

@@ -348,6 +348,40 @@ Item {
                     "control: answered, the act is named again");
         }
 
+        /// **The reply clears the outstanding start, not the request.** The
+        /// scenario's GIVEN is a node reporting `running:true` and
+        /// `serving:false` — the one report over which an outstanding start
+        /// renders as starting, because a node reporting neither is rendered as
+        /// stopped whatever is outstanding — and its WHEN is the call being
+        /// answered with an error.
+        ///
+        /// The answer is modelled as the two things a refused reply does to this
+        /// state object, `startPending` cleared and `startError` set, which is
+        /// what `Main.qml` writes. The expected states are the spec's own: the
+        /// starting one while outstanding, and not the starting one after. The
+        /// node's report is held fixed across both, so the state moving is the
+        /// reply's doing.
+        ///
+        /// Predicted, not run: a derivation that kept `starting` after the
+        /// reply (for instance one keyed on a start having been requested,
+        /// never cleared) fails the second `verify`; one that never read
+        /// `startPending` fails the first `compare`.
+        function test_the_reply_clears_the_outstanding_start_not_the_request() {
+            st.running = true;
+            st.serving = false;
+
+            st.startPending = true;
+            compare(st.current, "starting",
+                    "precondition: an outstanding start over a running, "
+                    + "non-serving node is the starting state");
+
+            st.startPending = false;
+            st.startError = "the passphrase did not unlock the key";
+            verify(st.current !== "starting",
+                   "answered with an error, the state must not be starting, "
+                   + "got: " + st.current);
+        }
+
         /// **The `!startPending` term in `actionEnabled`, proven.**
         ///
         /// A separate test because it needs `startHosted` armed: with start

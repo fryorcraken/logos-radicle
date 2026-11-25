@@ -6,6 +6,7 @@
 // validation case below asserts against.
 #include "seed_client.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <string>
@@ -352,7 +353,16 @@ LOGOS_TEST(the_store_reports_exactly_five_keys_before_and_after_each_write)
     // `contains()` cannot see a sixth key, and a reply grown by one — a node
     // key, say, which this surface must never carry — left the whole suite
     // green. The count is what a stray key cannot pass.
+    //
+    // The file is REMOVED first. `ScratchSettings` names a fixed directory under
+    // TMPDIR that nothing cleans (whatever its comment says of destruction), and
+    // this test writes all five keys into it, so on a second local run the
+    // opening read would be of a file already holding values — not of one that
+    // has never been written, which is the half it claims. The check after the
+    // removal makes a removal that did not take fail here.
     ScratchSettings s("five-keys");
+    std::remove(s.path().c_str());
+    LOGOS_ASSERT_FALSE(std::ifstream(s.path()).good());
     SettingsStore store{s.path()};
 
     LOGOS_ASSERT_EQ(store.all().size(), size_t(5));

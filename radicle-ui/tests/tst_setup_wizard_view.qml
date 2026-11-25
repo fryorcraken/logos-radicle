@@ -45,6 +45,15 @@ Item {
         /// that the embedded step offers nothing extra whatever it says.
         property var startableModes: ["explore", "local", "embedded"]
 
+        /// The findings `getCapabilities()` reports, held on the fake so there
+        /// is ONE place that builds the reply. A test moves the field it is
+        /// about and the next `capabilities()` carries it, which is what the
+        /// wizard-flow file does with its `capabilitiesMode`; a second builder
+        /// elsewhere in the file would be a copy that drifts from this one.
+        property bool gitFound: true
+        property string gitProblem: ""
+        property string pathsProblem: ""
+
         property var seedItems: [
             { url: "https://seed.radicle.xyz", alias: "radicle", source: "builtin" },
             { url: "https://seed.example.org", alias: "example", source: "builtin" }
@@ -61,7 +70,8 @@ Item {
             cb({ mode: mode,
                  startableModes: startableModes,
                  modeUnavailableReason: "",
-                 gitFound: true, gitProblem: "", pathsProblem: "",
+                 gitFound: gitFound, gitProblem: gitProblem,
+                 pathsProblem: pathsProblem,
                  nodeId: nodeId });
         }
         function identity(cb) {
@@ -162,6 +172,9 @@ Item {
             fake.nodeId = "";
             fake.mode = "embedded";
             fake.startableModes = ["explore", "local", "embedded"];
+            fake.gitFound = true;
+            fake.gitProblem = "";
+            fake.pathsProblem = "";
             fake.seedItems = [
                 { url: "https://seed.radicle.xyz", alias: "radicle",
                   source: "builtin" },
@@ -964,16 +977,10 @@ Item {
         // state object, because a rule that is right and never drawn is the
         // failure this file exists for.
 
-        /// A capabilities reply carrying exactly one distinctive difference.
-        function capabilitiesWith(extra) {
-            var reply = { mode: "embedded",
-                          startableModes: ["explore", "local", "embedded"],
-                          modeUnavailableReason: "",
-                          gitFound: true, gitProblem: "", pathsProblem: "",
-                          nodeId: fake.nodeId };
-            for (var k in extra) reply[k] = extra[k];
-            return function (cb) { cb(reply); };
-        }
+        // A test below that needs a capabilities reply carrying one distinctive
+        // difference sets that field on `fake` (`pathsProblem`, `gitFound`,
+        // `gitProblem`, `startableModes`) and re-runs what reads it. There is
+        // deliberately no second builder of the reply in this file.
 
         /// **A paths problem is shown unaltered**, in what the preflight
         /// displays, and its finding reads as failed. `gitFound` is true, so the
@@ -985,8 +992,7 @@ Item {
             var sentence = "the node control socket path is too long: 131 bytes "
                          + "exceeds the 107-byte cap";
             wizard.flow.reset();
-            wizard.flow.fetchCapabilities =
-                capabilitiesWith({ pathsProblem: sentence });
+            fake.pathsProblem = sentence;
             wizard.flow.runPreflight();
             compare(wizard.flow.preflightDone, true, "precondition");
             compare(wizard.flow.gitFound, true, "precondition: git passed");
@@ -1001,7 +1007,7 @@ Item {
                    "while the git finding is not");
 
             wizard.flow.reset();
-            wizard.flow.fetchCapabilities = function (cb) { fake.capabilities(cb); };
+            fake.pathsProblem = "";
             wizard.flow.runPreflight();
             verify(home.failed === false,
                    "control: over a home that resolves the finding passes");
@@ -1022,8 +1028,7 @@ Item {
             var sentence = "the node control socket path is too long: 131 bytes "
                          + "exceeds the 107-byte cap";
             wizard.flow.reset();
-            wizard.flow.fetchCapabilities =
-                capabilitiesWith({ pathsProblem: sentence });
+            fake.pathsProblem = sentence;
             wizard.flow.runPreflight();
             goTo("identity");
 
@@ -1039,8 +1044,9 @@ Item {
                    "and must be the home finding's sentence, got: " + why.text);
 
             wizard.flow.reset();
-            wizard.flow.fetchCapabilities = capabilitiesWith(
-                { gitFound: false, gitProblem: "no git found, tried /usr/bin/git" });
+            fake.pathsProblem = "";
+            fake.gitFound = false;
+            fake.gitProblem = "no git found, tried /usr/bin/git";
             wizard.flow.runPreflight();
             goTo("identity");
             compare(btn.enabled, true,
@@ -1063,8 +1069,7 @@ Item {
             verify(before.toLowerCase().indexOf("embedded means") !== -1,
                    "precondition: the walk sees the embedded step's own text");
 
-            wizard.flow.fetchCapabilities =
-                capabilitiesWith({ startableModes: [] });
+            fake.startableModes = [];
             wizard.flow.refreshCapabilities();
 
             compare(harness.findByName(wizard, "modePick_explore"), null,

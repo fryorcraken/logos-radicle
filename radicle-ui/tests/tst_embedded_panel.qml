@@ -710,6 +710,19 @@ Item {
         /// `encrypted` is the only field moved between the two legs, and the
         /// node status is identical in both — so a panel starting on the node's
         /// state rather than on the key answers the same in each and fails.
+        ///
+        /// **While that call is outstanding and the node still reports
+        /// `running:false`, the state rendered is the STOPPED one** — the
+        /// scenario's last step, which the spec states because a stopped node
+        /// outranks an outstanding start: the backend's report wins over what
+        /// this view is waiting for. The harness does not move
+        /// `embeddedStartPending` itself, so the test sets it, as `Main.qml`
+        /// does between issuing the call and its reply. The control reports
+        /// the same outstanding call over a node that says `running:true`,
+        /// where the state is `starting` — so the stopped answer is the
+        /// node's report deciding and not an outstanding flag the panel
+        /// never read. A render that put `starting` above `stopped` fails the
+        /// first leg; one ignoring `embeddedStartPending` fails the control.
         function test_an_unencrypted_stopped_node_is_started_without_being_asked() {
             app.embeddedEncrypted = false;
             list.reload();
@@ -723,6 +736,28 @@ Item {
             compare(list.embedded.actionKind, "",
                     "and no control is offered beside it — a button the module "
                     + "has already pressed asks for an act with one answer");
+
+            // The call is now outstanding, and the node still reports
+            // `running:false` and `serving:false`.
+            app.embeddedStartPending = true;
+            compare(list.embedded.current, "stopped",
+                    "while the start is outstanding and the node still "
+                    + "reports running:false, the rendered state must be the "
+                    + "stopped one, not starting");
+            compare(app.startLog.length, 1,
+                    "and the outstanding call must not be issued again: "
+                    + JSON.stringify(app.startLog));
+
+            // The control: the same outstanding call over a node that reports
+            // `running:true` IS the starting state.
+            app.embeddedRunning = true;
+            compare(list.embedded.current, "starting",
+                    "control: with the node reporting running the same "
+                    + "outstanding call renders starting");
+
+            // Back to the baseline for the encrypted control below.
+            app.embeddedRunning = false;
+            app.embeddedStartPending = false;
 
             // The control: the same node status with an encrypted key starts
             // nothing and asks instead.
@@ -1141,27 +1176,39 @@ Item {
             var f = passphrase();
             verify(f !== null && f.visible, "precondition: the field is offered");
 
+            // The field is ONE item shared by every test in this file, and the
+            // control leg below unmasks it. A failed `verify` aborts the
+            // function by throwing, so a restore written after the last
+            // assertion is skipped exactly when something has broken — leaving
+            // the field unmasked and holding the secret, and a later test that
+            // asserts the mask (`test_an_encrypted_identity_is_offered_a_
+            // passphrase_field`) failing with a message about the wrong test.
+            // The `finally` restores it whichever way this function ends, to
+            // the mode it was found in rather than to a mode written here.
+            var foundEchoMode = f.echoMode;
             var secret = "correct horse battery";
-            f.text = secret;
+            try {
+                f.text = secret;
 
-            var masked = shownStrings(list, []);
-            verify(masked.length > 0, "precondition: the walk found text");
-            for (var i = 0; i < masked.length; i++)
-                verify(masked[i].indexOf(secret) === -1,
-                       "the typed passphrase must not be displayed, but this is: "
-                       + masked[i]);
+                var masked = shownStrings(list, []);
+                verify(masked.length > 0, "precondition: the walk found text");
+                for (var i = 0; i < masked.length; i++)
+                    verify(masked[i].indexOf(secret) === -1,
+                           "the typed passphrase must not be displayed, but this "
+                           + "is: " + masked[i]);
 
-            f.echoMode = TextInput.Normal;
-            var shown = shownStrings(list, []);
-            var seen = false;
-            for (var j = 0; j < shown.length; j++)
-                if (shown[j].indexOf(secret) !== -1) seen = true;
-            verify(seen,
-                   "control: with the mask off, the walk DOES find the secret — "
-                   + "so its absence above is the mask's doing");
-
-            f.echoMode = TextInput.Password;
-            f.text = "";
+                f.echoMode = TextInput.Normal;
+                var shown = shownStrings(list, []);
+                var seen = false;
+                for (var j = 0; j < shown.length; j++)
+                    if (shown[j].indexOf(secret) !== -1) seen = true;
+                verify(seen,
+                       "control: with the mask off, the walk DOES find the "
+                       + "secret — so its absence above is the mask's doing");
+            } finally {
+                f.echoMode = foundEchoMode;
+                f.text = "";
+            }
         }
 
         /// **`canWriteLocal` is not read as `encrypted`.** The capability probes

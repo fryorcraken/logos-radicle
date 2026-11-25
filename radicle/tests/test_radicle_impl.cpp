@@ -622,9 +622,21 @@ LOGOS_TEST(get_settings_reports_exactly_five_keys_before_and_after_every_write)
     // The reply to every write is counted as well as the read that follows it,
     // because `setSetting` returns the whole object and a caller re-renders
     // from that reply alone.
+    //
+    // The scratch file is REMOVED first. `scratchSettingsPath` names a fixed
+    // directory under TMPDIR that nothing cleans, and this test writes all five
+    // keys into it, so on a second local run the opening read below would be of
+    // a file that already holds `mode:"local"`, a home and a seed — not of one
+    // that has never been written, which is the half of the scenario it claims.
+    // The existence check after the removal makes a removal that did not take
+    // fail here, rather than quietly weaken the first read.
     ScopedRadHome home("settings-five-keys");
+    const auto settingsPath = scratchSettingsPath("five-keys");
+    std::error_code removeEc;
+    std::filesystem::remove(settingsPath, removeEc);
+    LOGOS_ASSERT_FALSE(std::filesystem::exists(settingsPath, removeEc));
     auto impl = makeRadicleImpl(SeedClient{}, LocalStore{},
-                                SettingsStore{scratchSettingsPath("five-keys")});
+                                SettingsStore{settingsPath});
 
     LOGOS_ASSERT_EQ(parse(impl.getSettings()).size(), size_t(5));
 

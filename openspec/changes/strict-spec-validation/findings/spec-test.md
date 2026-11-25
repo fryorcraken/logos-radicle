@@ -207,7 +207,27 @@ covers every requirement the CLI measures as long).
       is understood as pinning the rule, not the wiring. **Severity:**
       low to medium; the same limit applies to the existing scenario "Embedded
       shows its DID as Local does".
-- [ ] **`tester`** — `embedded-setup` `ADDED` "The setup presents no start step
+      **Outcome (`tester`): left OPEN, deliberately, and no test added.** The
+      finding is right and I could not close it with a test. The line that
+      decides what the header draws (`Main.qml:1052`) sits in a file no
+      component test can instantiate, so every test at this layer is pinned on
+      a copy of it; the two ways to see the real line are both outside what I
+      may do. (1) Move the header's identity item into a component a test hosts
+      for real: that is a source change, and this pass is tests and fixtures
+      only. (2) A sitometres step over an Embedded home that holds an identity:
+      `local.yaml` never runs the wizard (its own comment at the Embedded steps
+      says so), so no such home exists in that spec; and it asserts the root's
+      `nodeIdentity`, a property, not that the header item is visible, so a
+      step added there would need a seeded embedded identity and a visibility
+      probe, neither of which I can write or run in this pod. A source-text test
+      that greps `Main.qml` for the binding was considered and not written: this
+      repo has no test that reads a source file, it would pin spelling and not
+      behaviour, and it cannot fail for the reason the scenario names. **For the
+      owner:** accept the gap (the scenario then pins the rule, not the wiring,
+      as the finding allows), or schedule the component extraction. The box
+      stays open because that choice, and the issue that would hold it, are not
+      mine to make or file.
+- [x] **`tester`** — `embedded-setup` `ADDED` "The setup presents no start step
       and starts nothing": the `startNode` leg of
       `test_an_existing_identity_with_a_stopped_node_is_walked_without_a_start`
       (`tst_setup_wizard.qml`, new test; and its sibling at `:1271`) cannot fail.
@@ -223,6 +243,32 @@ covers every requirement the CLI measures as long).
       **Needs:** either say in the test that the log leg is a tripwire for a
       future fake, or give the fake a `startNode` that logs, so that wiring one
       in anywhere is seen. **Severity:** low.
+      **Outcome (`tester`): fixed, by the first of the two Needs and one more
+      leg.** A fake `startNode` cannot be wired: `SetupFlow` has no such
+      property, and assigning one in the harness is a QML error ("non-existent
+      property"), which is why the fake has none. So the log legs in
+      `test_no_step_of_the_setup_starts_a_node`,
+      `test_an_existing_identity_with_a_stopped_node_is_walked_without_a_start`
+      and `test_a_failing_preflight_writes_nothing_either`
+      (`tst_setup_wizard.qml`) are now commented as tripwires that cannot fail
+      until a start is wired into the fake, and the comment beside the fake no
+      longer says they make the scenario structural. The leg that can fail is
+      new: `assertNoStartMember(flow)` enumerates the flow's own members and
+      fails on any whose name starts with `start` or contains `Start`
+      (`startEmbeddedNode`, `fetchStart`, `canStartNode`; not `restart`), so the
+      finding's own scenario, a start under another name, is seen. It first
+      requires the enumeration to list `createIdentity` and `advance`, so a
+      runtime that enumerated nothing fails loudly rather than passing over an
+      empty list. **Predicted, not run:** adding `property var startEmbeddedNode`
+      to `SetupFlow.qml` reddens `test_no_step_of_the_setup_starts_a_node`,
+      `test_an_existing_identity_with_a_stopped_node_is_walked_without_a_start`
+      and `test_a_failing_preflight_writes_nothing_either` at
+      `assertNoStartMember`, while the previous version of all three passed.
+      **Limit:** a start injected under a name with no `start` in it
+      (`launchNode`) is still not seen; and whether QML's `for...in` lists a
+      QML object's declared properties is a belief about Qt 6, not something I
+      could run, which is what the precondition is for. If CI fails on the
+      precondition, the leg should be dropped, not loosened.
 - [ ] **`runner`** — **part 2's mutations were not run, by this review or by the
       tester**, so no new test has an observed failure. Where a toolchain exists
       (Qt 6 runner; `cc` for `cargo test`), the three worth running, each in its

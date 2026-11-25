@@ -38,7 +38,7 @@ this pod).
 
 ## Findings
 
-- [ ] **`tester`** — `radicle-ui/tests/tst_setup_wizard_view.qml:968-976` — `capabilitiesWith()` is a second, drifting copy of the fake's `getCapabilities` reply
+- [x] **`tester`** — `radicle-ui/tests/tst_setup_wizard_view.qml:968-976` — `capabilitiesWith()` is a second, drifting copy of the fake's `getCapabilities` reply
       **Scenario:** the file's `fake.capabilities()` (line 59) builds the reply
       from `fake.mode`, `fake.startableModes` and `fake.nodeId`. The new
       `capabilitiesWith(extra)` rebuilds the same object with `mode: "embedded"`
@@ -54,3 +54,18 @@ this pod).
       drop the helper.
       **Severity:** low; a maintainability preference, not a present defect (no
       test is wrong today, and CI passed the three that use it).
+      **Outcome (`tester`): fixed, in the shape the reviewer proposed.**
+      `capabilitiesWith()` is gone. The file's `fake` now carries `gitFound`,
+      `gitProblem` and `pathsProblem` beside the `mode` and `startableModes` it
+      already had, `fake.capabilities()` builds the one reply from them, and
+      `init()` resets them. The three tests set the field they are about
+      (`fake.pathsProblem`, `fake.gitFound` with `fake.gitProblem`,
+      `fake.startableModes = []`) and re-run what reads it, so a test that
+      moves `fake.mode` can no longer be answered `embedded` by a second copy,
+      and a field added to the reply is added in one place. Each test's
+      assertions are unchanged, and each keeps its control leg, now by
+      resetting the same field rather than by swapping a reader function.
+      **Predicted, not run:** this is a refactor of the fixture with no
+      behavioural claim, so the three tests are expected to pass as before;
+      the check that would show it wrong is a CI run of
+      `tst_setup_wizard_view.qml`.
