@@ -2,7 +2,7 @@
 
 - [x] spec — `spec-writer`
 - [x] design + code — `dev-writer`
-- [ ] tests — `tester`
+- [x] tests — `tester`
 - [ ] review: correctness — `code-reviewer`
 - [ ] review: security — `code-reviewer`
 - [ ] review: readability — `code-reviewer`
@@ -55,13 +55,21 @@ proposal expects no code change; a scenario the code fails is a finding, not a
 licence to change behaviour quietly.
 
 - [ ] 3.1 `embedded-header`: 1 scenario pinned by a test that can fail.
-- [ ] 3.2 `embedded-identity`: 4 scenarios pinned.
-- [ ] 3.3 `embedded-setup`: 20 scenarios pinned.
-- [ ] 3.4 `embedded-state`: 5 scenarios pinned.
-- [ ] 3.5 `module-settings`: 3 scenarios pinned; the five-keys one closes the
+      **Left open on purpose**: the scenario contradicts `source-modes` and
+      cannot be satisfied by the code (a spec defect, for the `spec-writer`);
+      what could be pinned consistently is pinned, and marked `NO SPEC`.
+- [x] 3.2 `embedded-identity`: 4 scenarios pinned.
+- [x] 3.3 `embedded-setup`: 20 scenarios pinned.
+- [x] 3.4 `embedded-state`: 5 scenarios pinned.
+- [x] 3.5 `module-settings`: 3 scenarios pinned; the five-keys one closes the
       gap issue #64 records.
-- [ ] 3.6 `node-config`: 3 scenarios pinned.
-- [ ] 3.7 `source-modes`: 1 scenario pinned.
+- [x] 3.6 `node-config`: 3 scenarios pinned.
+- [x] 3.7 `source-modes`: 1 scenario pinned.
+
+"Pinned" here means a test exists that, read against the code, can fail for the
+reason the scenario names. **None of the tests added in this group has been
+run**: the pod that wrote them has no Qt runner, C/C++ compiler or Nix, so the
+first execution is CI's.
 
 ## Workflow follow-up
 
