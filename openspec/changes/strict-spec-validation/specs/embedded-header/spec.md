@@ -9,8 +9,9 @@ whenever the mode in force has one and the reported DID is non-empty, in
 The DID MUST be displayed in full, including its `did:key:` prefix, and MUST be
 the one the backend reported rather than a truncation or a placeholder.
 
-A mode with no identity — `explore`, and any mode whose reported DID is empty —
-MUST display nothing rather than a blank slot or a placeholder.
+Where the mode in force has no identity, as `explore` has none, or its reported
+DID is empty, the header MUST display nothing rather than a blank slot or a
+placeholder.
 
 #### Scenario: Embedded shows its DID as Local does
 
@@ -76,10 +77,16 @@ Whether the header displays an identity MUST be decided by one rule covering
 every mode, keyed on whether the mode in force has an identity, and MUST NOT be
 decided by a list of modes that each have the display switched on.
 
-#### Scenario: A mode the header was not written for still shows its DID
+A mode has an identity exactly when it derives the `local` method prefix, as
+`source-modes`' "The method prefix is derived from the mode" decides it. A mode
+that derives `remote` has none. Whether that identity exists yet is the
+reported DID, a separate question.
 
-- **GIVEN** a header in a mode other than `explore`, `local` and `embedded`,
-  whose backend reports a distinctive DID
-- **THEN** that DID MUST be displayed in full
-- **AND WHEN** the same header is told an empty DID with nothing else changed
-- **THEN** no identity MUST be displayed
+#### Scenario: The identity is shown in exactly the modes that derive the local prefix
+
+- **GIVEN** a header whose backend reports a distinctive DID
+- **WHEN** the mode is `local`, and then `embedded`
+- **THEN** that DID MUST be displayed in each
+- **AND WHEN** the mode is `explore`, and then a string the view does not
+  recognise
+- **THEN** no identity MUST be displayed in either

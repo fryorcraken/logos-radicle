@@ -3,7 +3,7 @@
 Written by the `tester` for `strict-spec-validation`, tasks.md group 3. This is
 its own file rather than `spec-test.md`, which belongs to the `spec-test-reviewer`.
 
-- [ ] **`spec-writer`** — `specs/embedded-header/spec.md`, ADDED requirement "One
+- [x] **`spec-writer`** — `specs/embedded-header/spec.md`, ADDED requirement "One
       rule decides the header identity for every mode", scenario "A mode the
       header was not written for still shows its DID" — **the scenario cannot be
       satisfied by the code, and cannot be satisfied without breaking
@@ -35,6 +35,27 @@ its own file rather than `spec-test.md`, which belongs to the `spec-test-reviewe
       relationship the code has ("a mode has an identity exactly when it routes
       to the `local*` methods"), or drop it and keep the requirement's prose.
       Task 3.1 is left unticked for this reason.
+      **Outcome (`spec-writer`): fixed, by restating the scenario as the
+      relationship the code has.** The finding is right: the scenario was not
+      live text but one the split-out wrote, and it named an input nobody can
+      supply. The requirement's two `MUST`s are unchanged. It now also states
+      the term the live text left implicit: a mode has an identity exactly when
+      it derives the `local` method prefix, as `source-modes`' "The method
+      prefix is derived from the mode" decides it, and whether that identity
+      exists yet is the reported DID. The scenario is now "The identity is
+      shown in exactly the modes that derive the local prefix": with a
+      distinctive DID reported, it is displayed in `local` and in `embedded`,
+      and not in `explore` or in a string the view does not recognise. That
+      agrees with `source-modes` and with the code, and the scenario count is
+      unchanged (one). The MODIFIED requirement's no-identity sentence was
+      reworded so it no longer calls an `embedded` mode with an empty DID "a
+      mode with no identity", which the new definition would have
+      contradicted. Its `MUST` and all three scenarios are unchanged. The
+      `NO SPEC` test `test_an_unrecognised_mode_has_no_identity_to_show` should
+      drop its marker, name this scenario, set a distinctive `nodeId` and
+      assert `slotIdentity.visible` (what is displayed) for each mode
+      alongside `slotState.current`, not `modeHasIdentity` alone. Task 3.1 can
+      then be ticked.
 
 - [ ] **`dev-writer`** — `radicle-ui/src/qml/SourceState.qml:162`, comment on
       `modeHasIdentity` — "this rule is right for a fourth mode before anyone

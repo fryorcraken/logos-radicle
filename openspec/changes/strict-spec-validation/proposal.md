@@ -36,6 +36,12 @@ the limit.
   the home-derived socket when no runtime directory exists. It does not need
   to: the precedence that requirement states returns that socket in exactly
   that case.
+- **One term the live text left implicit is stated.** `embedded-header`'s rule
+  is keyed on whether a mode "has an identity", which the live spec never
+  defined. Its split-out requirement says a mode has one exactly when it
+  derives the `local` method prefix, which is how the view already decides it,
+  so a mode the view does not recognise, which `source-modes` routes to the
+  seed, shows no identity.
 
 ## Capabilities
 
