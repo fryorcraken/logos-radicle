@@ -54,10 +54,12 @@ Each `ADDED` requirement carries a scenario no existing requirement had. The
 proposal expects no code change; a scenario the code fails is a finding, not a
 licence to change behaviour quietly.
 
-- [ ] 3.1 `embedded-header`: 1 scenario pinned by a test that can fail.
-      **Left open on purpose**: the scenario contradicts `source-modes` and
-      cannot be satisfied by the code (a spec defect, for the `spec-writer`);
-      what could be pinned consistently is pinned, and marked `NO SPEC`.
+- [x] 3.1 `embedded-header`: 1 scenario pinned by a test that can fail.
+      The first wording contradicted `source-modes` and could not be pinned;
+      the `spec-writer` restated it as the relationship the code has (a mode
+      has an identity exactly when it derives the `local` prefix), and
+      `test_the_identity_is_shown_in_exactly_the_modes_that_derive_local` pins
+      it on `slotIdentity.visible`.
 - [x] 3.2 `embedded-identity`: 4 scenarios pinned.
 - [x] 3.3 `embedded-setup`: 20 scenarios pinned.
 - [x] 3.4 `embedded-state`: 5 scenarios pinned.

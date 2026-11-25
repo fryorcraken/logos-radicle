@@ -995,38 +995,57 @@ Item {
                     + "methods means");
         }
 
-        /// NO SPEC: what the header shows for a mode string this build does not
-        /// recognise. `embedded-header`'s "A mode the header was not written
-        /// for still shows its DID" cannot be pinned as written — see
-        /// `findings/tester.md` in the strict-spec-validation change: the only
-        /// way a mode reaches the local methods is by being NAMED in
-        /// `SourceState.current`, so "a mode nobody wrote a rule for" derives
-        /// the seed prefix, which `source-modes` requires, and has no identity.
+        /// **The identity is shown in exactly the modes that derive the local
+        /// prefix** — `embedded-header`'s "One rule decides the header identity
+        /// for every mode".
         ///
-        /// What this pins instead is the half that IS consistent with both
-        /// capabilities: the header's rule is derived from the same routing
-        /// that decides which methods a mode reaches, so a mode that routes to
-        /// the seed shows no identity. A list keyed the other way round —
-        /// "every mode except Explore has one" — is the mutation it is written
-        /// against: it agrees on the three known modes and disagrees here.
+        /// Asserted on what is DISPLAYED (`slotIdentity.visible`, and the label's
+        /// text where it is), not on `modeHasIdentity` alone: the property is
+        /// the rule, the slot is what a user sees, and the scenario is about the
+        /// second. `slotState.current` is read alongside because the scenario
+        /// defines "has an identity" as "derives the local prefix".
         ///
-        /// Both legs hold the mode fixed and move nothing else, and the known
-        /// modes are asserted alongside so this is not a rule that says "no"
-        /// to everything.
-        function test_an_unrecognised_mode_has_no_identity_to_show() {
+        /// Every case is given a DIFFERENT, non-empty DID, so a "hidden" result
+        /// is about the mode and nothing else, and a "shown" one carries the
+        /// DID that case was given rather than a stale or hardcoded string. The
+        /// expectation below is written out by hand, not read back from the
+        /// code. Unrecognised modes are a string the view has no rule for and
+        /// the empty string, which is what `mode` is before anything has set
+        /// it; both route to the seed (`source-modes`) and so show nothing.
+        ///
+        /// Mutation it is written against: "every mode except Explore has an
+        /// identity" agrees on the three known modes and shows a DID for
+        /// `turbo` and for the empty string; "only Local" hides `embedded`.
+        function test_the_identity_is_shown_in_exactly_the_modes_that_derive_local() {
+            var cases = [
+                { mode: "local",    did: "did:key:z6MkCASELOCALaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+                { mode: "embedded", did: "did:key:z6MkCASEEMBEDbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+                { mode: "explore",  did: "did:key:z6MkCASEEXPLOcccccccccccccccccccccccccccc" },
+                { mode: "turbo",    did: "did:key:z6MkCASETURBOdddddddddddddddddddddddddddd" },
+                { mode: "",         did: "did:key:z6MkCASEEMPTYeeeeeeeeeeeeeeeeeeeeeeeeeeeee" }
+            ];
             var answers = [];
-            var modes = ["explore", "local", "embedded", "turbo", ""];
-            for (var i = 0; i < modes.length; i++) {
-                root.slotMode = modes[i];
-                answers.push("[" + modes[i] + "]:"
-                             + (slotState.modeHasIdentity ? "yes" : "no")
-                             + ":" + slotState.current);
+            for (var i = 0; i < cases.length; i++) {
+                root.slotMode = cases[i].mode;
+                slotIdentity.nodeId = cases[i].did;
+                var line = "[" + cases[i].mode + "]:" + slotState.current + ":"
+                           + (slotIdentity.visible ? "shown" : "hidden");
+                if (slotIdentity.visible) {
+                    var label = root.findByName(slotIdentity,
+                                                "nodeIdentityLabel");
+                    line += ":" + (String(label.text) === cases[i].did
+                                   ? "its-own-did" : "wrong-did");
+                }
+                answers.push(line);
             }
             compare(answers.join(" "),
-                    "[explore]:no:remote [local]:yes:local "
-                    + "[embedded]:yes:local [turbo]:no:remote []:no:remote",
-                    "a mode has an identity exactly when it routes to the local "
-                    + "methods, and one nobody has named routes to the seed");
+                    "[local]:local:shown:its-own-did "
+                    + "[embedded]:local:shown:its-own-did "
+                    + "[explore]:remote:hidden "
+                    + "[turbo]:remote:hidden "
+                    + "[]:remote:hidden",
+                    "a DID is displayed in exactly the modes that derive the "
+                    + "local method prefix, and in full");
         }
 
         /// Exactly one at a time, across every mode. Asserted as a loop over
