@@ -57,7 +57,7 @@ its own file rather than `spec-test.md`, which belongs to the `spec-test-reviewe
       alongside `slotState.current`, not `modeHasIdentity` alone. Task 3.1 can
       then be ticked.
 
-- [ ] **`dev-writer`** — `radicle-ui/src/qml/SourceState.qml:162`, comment on
+- [x] **`dev-writer`** — `radicle-ui/src/qml/SourceState.qml:162`, comment on
       `modeHasIdentity` — "this rule is right for a fourth mode before anyone
       writes one" is not true as the code stands. A fourth mode is right only
       once it is added to the list in `current`; until then it derives `remote`
@@ -65,6 +65,21 @@ its own file rather than `spec-test.md`, which belongs to the `spec-test-reviewe
       requires. The comment is existing text that the strict-spec-validation
       change did not touch; it is the same claim as the defect above, in the
       code. Not changed by the tester (implementation).
+      **Fixed** in the commit "Correct the fourth-mode claim about the header
+      identity rule" (comment only; no code or test behaviour changed, so no
+      test can fail without it). The `modeHasIdentity` comment now defines an
+      identity as deriving the `local` prefix, citing `embedded-header`'s
+      requirement, and says a fourth mode gains one in the same edit that adds
+      it to `current` and not before, routing to the seed until then. The same
+      claim sat in the doc comment above `tst_source.qml`'s
+      `test_having_an_identity_is_derived_rather_than_listed` and is corrected
+      there too (the comment only, not the test). The comment's list of tests a
+      `mode === "local"` mutation reddens now names the new scenario test as a
+      fourth by reading, and says that one was not run under the mutation.
+      `design.md`'s `embedded-header` entry was the same claim in prose and now
+      states the relationship. `Main.qml`'s "right for a mode added later
+      without anyone editing this line" was left: it is scoped to the header
+      line, and that is true.
 
 - [ ] **`runner`** — **nothing the tester added or changed was executed.** The
       pod has no Qt 6 `qmltestrunner`, no C or C++ compiler (`cc`, `g++`,

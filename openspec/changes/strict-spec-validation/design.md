@@ -182,10 +182,20 @@ the spec's; nothing here adds to it.
   that is likeliest, because its identity is one the module created. A mode with
   no identity shows nothing rather than a placeholder, because a placeholder
   suggests a value that is loading.
-- **One rule decides the header identity for every mode** (split out). A rule
-  keyed on whether the mode has an identity is right for a mode added later; a
-  list of modes is one someone has to notice and extend, which is how Embedded
-  came to show nothing while the contract required otherwise.
+- **One rule decides the header identity for every mode** (split out). The
+  header keeps no list of its own: a mode has an identity exactly when it
+  derives the `local` method prefix, so the one list that decides routing also
+  decides the header. A second list is one someone has to notice and extend,
+  which is how Embedded came to show nothing while the contract required
+  otherwise. A mode added later therefore gains an identity in the same edit
+  that routes it to the `local*` methods, and not before: until then it
+  derives `remote` and shows none, the safe direction `source-modes` requires
+  of a mode the view does not recognise. The live text called the rule "right
+  for a mode added later without anyone editing it"; that holds for the header
+  line, not for the routing. The definition is what this change adds to the
+  requirement, and the scenario pins the relationship (shown in `local` and
+  `embedded`, not in `explore` or an unrecognised string) rather than a mode
+  nobody has written, which no input can be.
 - **The header identity is copied by taking it.** The one thing anyone does
   with a DID is paste it — into `rad id update --allow`, or a message asking a
   delegate to authorise this node — so copying is what the display serves. A

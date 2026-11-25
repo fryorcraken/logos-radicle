@@ -977,9 +977,9 @@ Item {
         /// derivation directly.
         ///
         /// The list version is what shipped and what cost Embedded its DID. A
-        /// list has to be noticed and extended by somebody; a rule keyed on
-        /// whether the mode reads a home of its own is right for a fourth mode
-        /// before anyone writes one.
+        /// second list has to be noticed and extended by somebody; a rule keyed
+        /// on the prefix the mode derives gives a fourth mode an identity in
+        /// the same edit that routes it to the `local*` methods.
         function test_having_an_identity_is_derived_rather_than_listed() {
             var answers = [];
             var modes = ["explore", "local", "embedded"];
