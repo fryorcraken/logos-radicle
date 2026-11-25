@@ -115,8 +115,8 @@ The empty-list placeholder, which reports a node holding no repositories, MUST
 NOT be rendered in the blocked, no identity, stopped, start failed or starting
 states.
 
-It MUST be permitted in the running and empty state, and the sentence rendered
-there MUST also say that this node lists what it is seeding.
+In the running and empty state, the sentence rendered MUST say that this node
+lists what it is seeding.
 
 #### Scenario: The empty-list wording is absent where no node was asked
 
@@ -184,7 +184,8 @@ not by being issued. While starting, the surface MUST NOT name the start action.
 #### Scenario: The reply clears the outstanding start, not the request
 
 - **GIVEN** a repository list in `embedded` that has issued a `startNode` call
-  which has not been answered
+  which has not been answered, with the node reporting `running:true` and
+  `serving:false`
 - **THEN** the state MUST be the starting one
 - **AND WHEN** the call is answered with `{"error":"..."}`
 - **THEN** the state MUST NOT be the starting one
@@ -192,7 +193,8 @@ not by being issued. While starting, the surface MUST NOT name the start action.
 #### Scenario: The start action is withheld while a start is outstanding
 
 - **GIVEN** a repository list in `embedded` that has issued a `startNode` call
-  which has not been answered
+  which has not been answered, with the node reporting `running:true` and
+  `serving:false`
 - **THEN** no action MUST be named
 - **AND WHEN** the call is answered with `{"error":"..."}`
 - **THEN** the named action MUST be the one that starts the node
@@ -268,7 +270,8 @@ start the node unasked in any other state.
 - **WHEN** the state is rendered, with no action taken
 - **THEN** exactly one `startNode` call MUST have been issued
 - **AND** its passphrase argument MUST be the empty string
-- **AND** the rendered state MUST be the starting one
+- **AND** while that call is outstanding and the node still reports
+  `running:false`, the rendered state MUST be the stopped one
 
 #### Scenario: The automatic start is issued once, not on every reading
 
@@ -448,14 +451,14 @@ MUST carry the observable to the replacement.
 
 ### Requirement: Each embedded state has one condition
 
-Each embedded state MUST be selected by its condition:
+Each state MUST be selected by its condition:
 
-- **blocked** — a non-empty `pathsProblem`, or an empty
-  `getEmbeddedIdentity().home`;
+- **blocked** — a non-empty `pathsProblem`, or an empty `home`;
 - **no identity** — `exists` is false;
-- **stopped** — the node reports neither `running` nor `serving`;
-- **starting** — a `startNode` the view issued is outstanding;
-- **start failed** — the last `startNode` was refused;
+- **stopped** — neither `running` nor `serving`, and the last `startNode` not
+  refused;
+- **starting** — a `startNode` outstanding, with `running` or `serving`;
+- **start failed** — the last `startNode` refused;
 - **not serving** — `running:true`, `serving:false`, no start outstanding;
 - **running and empty** — `serving:true` and an empty list.
 
@@ -468,12 +471,13 @@ Each embedded state MUST be selected by its condition:
 
 ### Requirement: Each state names its own next action
 
-Each state MUST carry its own sentence and its own named action, and one banner
-MUST NOT stand in for them. No identity names opening the setup; stopped with an
-encrypted key, a passphrase and a start; not serving, a restart; blocked, no
-action that writes. Stopped with an unencrypted key names none, and MUST NOT
-render a control duplicating the start already issued. A state whose action
-nothing can carry out MUST still name it.
+Each state MUST carry its own sentence, and one banner MUST NOT stand in for
+them. These MUST name their own action: no identity, opening the setup; stopped
+with an encrypted key, a passphrase and a start; start failed, a start; not
+serving, a restart. Blocked, starting, running and empty, and stopped with an
+unencrypted key MUST name none; the last MUST NOT render a control duplicating
+the start already issued. A state whose action nothing can carry out MUST still
+name it.
 
 #### Scenario: A stopped node with an unencrypted key offers no start control
 

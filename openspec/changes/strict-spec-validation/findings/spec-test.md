@@ -71,7 +71,7 @@ covers every requirement the CLI measures as long).
 
 ## Findings
 
-- [ ] **`spec-writer`** — `embedded-state`, "Embedded's empty surface reports one
+- [x] **`spec-writer`** — `embedded-state`, "Embedded's empty surface reports one
       of seven states" (MODIFIED) and the `ADDED` "Each embedded state has one
       condition": the listed order contradicts the listed conditions, so two of
       the seven states can never be the first that holds.
@@ -93,7 +93,49 @@ covers every requirement the CLI measures as long).
       moved ahead of it. **Severity:** medium (spec defect, no code defect).
       **Measured:** read only; the three tests above pin the opposite of the
       literal text.
-- [ ] **`spec-writer`** — `embedded-state`, `ADDED` "Each state names its own
+      **Outcome (`spec-writer`): fixed for `start failed`, and fixed the other
+      way for `starting`.** The live spec was wrong in the same way: its order
+      is the one carried, and its own scenario "A refused automatic start is
+      reported as a refusal" requires start failed over a stopped node. The fix
+      is in the `ADDED` "Each embedded state has one condition" only; the order
+      in the `MODIFIED` requirement is unchanged. `stopped` now reads "neither
+      `running` nor `serving`, and the last `startNode` not refused". The
+      half of **Needs** that excludes an outstanding start from `stopped` is
+      **not** taken: it would change what the code must do.
+      `EmbeddedState.qml`'s `current` renders `stopped`, not `starting`, while a
+      start is outstanding and the node still reports `running:false`, and
+      `tst_embedded_state.qml`'s
+      `test_no_action_is_named_while_a_start_is_outstanding` and
+      `test_an_outstanding_start_withholds_a_hosted_start_control` pin that
+      (`compare(st.current, "stopped")` with `startPending` true). That is the
+      live order read literally, so the spec now says it: `starting` reads "a
+      `startNode` outstanding, with `running` or `serving`". Checked against
+      `current` case by case (node stopped or loaded, start outstanding or not,
+      refused or not): the stated conditions in the stated order give the
+      code's answer in every case.
+      That exposed three `MODIFIED` scenarios, carried byte for byte, that
+      disagree with the order, and each now gets one step changed. "The reply
+      clears the outstanding start, not the request" and "The start action is
+      withheld while a start is outstanding" now give the node status their
+      requirement assumes (`running:true`, `serving:false`) in the **GIVEN**.
+      "A stopped node with an unencrypted key starts by itself" said "the
+      rendered state MUST be the starting one" over a node reporting
+      `running:false`; it now says "while that call is outstanding and the node
+      still reports `running:false`, the rendered state MUST be the stopped
+      one". No code changes. `proposal.md` records the three scenario changes.
+      **For the `tester`:** `test_an_unencrypted_stopped_node_is_started_without_being_asked`
+      (`tst_embedded_panel.qml:713`) is the test for that last scenario and
+      asserts no state today. It needs a leg that sets
+      `app.embeddedStartPending = true` after the automatic start and asserts
+      `list.embedded.current === "stopped"`; it is the one changed step no test
+      pins. For the two changed **GIVEN**s, every test in
+      `tst_embedded_state.qml` that sets `startPending = true` and expects
+      `starting` already sets `running = true` (`:170`, `:275`, `:339`, `:377`,
+      `:473`, `:574`), so whichever of them the `tester` maps to those two
+      scenarios needs reading against the new text, not changing. The three tests
+      this box names (`tst_embedded_panel.qml:859`, `:968`, `:1074`) already
+      assert what the new text says.
+- [x] **`spec-writer`** — `embedded-state`, `ADDED` "Each state names its own
       next action": the first sentence says each state MUST carry "its own named
       action", and the next sentences give states with none (`stopped` with an
       unencrypted key "names none", `blocked` "no action that writes"; `starting`
@@ -103,7 +145,21 @@ covers every requirement the CLI measures as long).
       can carry out MUST still name it. Carried from the live text. **Needs:**
       "each state that has an action names it" or an explicit list of the states
       that have none. **Severity:** low.
-- [ ] **`spec-writer`** — optional-phrased text in requirements the change
+      **Outcome (`spec-writer`): fixed, in the delta.** The live spec was wrong
+      in the same way ("Each state MUST carry ... its own action naming what
+      the user may do next", beside states that offer none). The requirement
+      now says each state MUST carry its own sentence; names the four that
+      MUST name their own action (no identity, setup; stopped with an encrypted
+      key, a passphrase and a start; start failed, a start; not serving, a
+      restart); and says blocked, starting, running and empty and stopped with
+      an unencrypted key MUST name none. That is `EmbeddedState.qml`'s
+      `actionKind` exactly, so no code changes. Two of the "none" entries were
+      not stated anywhere before (running and empty; starting only as "MUST NOT
+      name the start action"); both are already pinned by
+      `test_each_state_says_something_different` (`tst_embedded_state.qml:146`,
+      whose expected string ends `starting/ ... runningEmpty/`). The `ADDED`
+      scenario is unchanged, so no test needs revisiting for this box.
+- [x] **`spec-writer`** — optional-phrased text in requirements the change
       touches: `embedded-setup` `ADDED` "A resumed step behaves as one reached
       by advancing" says "what it **may** do, what it **must** state" in lower
       case, and `embedded-state` "The no-repositories wording is withheld where
@@ -114,6 +170,21 @@ covers every requirement the CLI measures as long).
       **Needs:** state the obligation (the sentence rendered there MUST say the
       node lists what it is seeding) and drop the permission. **Severity:** low;
       both are carried from the live text.
+      **Outcome (`spec-writer`): fixed for both requirements; the scenario
+      title rejected.** The live text was wrong in the same way in both. In
+      `embedded-state`, "It MUST be permitted in the running and empty state,
+      and the sentence rendered there MUST also say ..." is now "In the running
+      and empty state, the sentence rendered MUST say that this node lists what
+      it is seeding": the permission obliged nothing, so dropping it changes
+      nothing an implementation must do. In `embedded-setup`, "what it may do,
+      what it must state and what blocks it are unchanged" is now "it MUST offer
+      the same actions, state the same text and be blocked by the same
+      findings". The scenario title "A serving node that holds nothing may say
+      so" is **kept**: a title is a name, not a requirement, its one step is
+      already a `MUST`, and `test_a_serving_node_that_holds_nothing_may_say_so`
+      (`tst_embedded_panel.qml:343`) is matched to it by that name, so renaming
+      it would move a mapping and check nothing new. No scenario step changed
+      for this box, so no test needs revisiting.
 - [ ] **`tester`** — `embedded-header` `ADDED` "One rule decides the header
       identity for every mode": the scenario is pinned on a **hand-written copy**
       of `Main.qml`'s binding, not on `Main.qml`. `tst_source.qml:883` hosts

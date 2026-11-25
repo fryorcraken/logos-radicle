@@ -988,9 +988,9 @@ have not arrived.
 ### Requirement: A resumed step behaves as one reached by advancing
 
 A step put in force by the resume MUST behave exactly as it does when reached by
-advancing: what it may do, what it must state and what blocks it are unchanged,
-and a step that has already acted MUST report what it did rather than offer to
-act again.
+advancing: it MUST offer the same actions, state the same text and be blocked by
+the same findings, and a step that has already acted MUST report what it did
+rather than offer to act again.
 
 #### Scenario: A resumed embedded step offers its control
 
