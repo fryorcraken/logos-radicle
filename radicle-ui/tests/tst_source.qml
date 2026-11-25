@@ -995,6 +995,40 @@ Item {
                     + "methods means");
         }
 
+        /// NO SPEC: what the header shows for a mode string this build does not
+        /// recognise. `embedded-header`'s "A mode the header was not written
+        /// for still shows its DID" cannot be pinned as written — see
+        /// `findings/tester.md` in the strict-spec-validation change: the only
+        /// way a mode reaches the local methods is by being NAMED in
+        /// `SourceState.current`, so "a mode nobody wrote a rule for" derives
+        /// the seed prefix, which `source-modes` requires, and has no identity.
+        ///
+        /// What this pins instead is the half that IS consistent with both
+        /// capabilities: the header's rule is derived from the same routing
+        /// that decides which methods a mode reaches, so a mode that routes to
+        /// the seed shows no identity. A list keyed the other way round —
+        /// "every mode except Explore has one" — is the mutation it is written
+        /// against: it agrees on the three known modes and disagrees here.
+        ///
+        /// Both legs hold the mode fixed and move nothing else, and the known
+        /// modes are asserted alongside so this is not a rule that says "no"
+        /// to everything.
+        function test_an_unrecognised_mode_has_no_identity_to_show() {
+            var answers = [];
+            var modes = ["explore", "local", "embedded", "turbo", ""];
+            for (var i = 0; i < modes.length; i++) {
+                root.slotMode = modes[i];
+                answers.push("[" + modes[i] + "]:"
+                             + (slotState.modeHasIdentity ? "yes" : "no")
+                             + ":" + slotState.current);
+            }
+            compare(answers.join(" "),
+                    "[explore]:no:remote [local]:yes:local "
+                    + "[embedded]:yes:local [turbo]:no:remote []:no:remote",
+                    "a mode has an identity exactly when it routes to the local "
+                    + "methods, and one nobody has named routes to the seed");
+        }
+
         /// Exactly one at a time, across every mode. Asserted as a loop over
         /// all three rather than three separate checks, because the invariant
         /// is "at most one", and a fourth mode added later inherits it.
@@ -1195,6 +1229,35 @@ Item {
             verify(sourceState.modeStartable,
                    "before capabilities arrive the mode must not read as "
                    + "unstartable");
+            sourceState.startableModes = ["explore", "local"];
+        }
+
+        /// **An empty set derives startable for Embedded too**, and a populated
+        /// set that omits it does not. The test above holds the mode at `local`;
+        /// `embedded` is the mode the build used to report unstartable, so it is
+        /// the one a rule special-casing "empty set means the modes that have
+        /// always worked" would get wrong.
+        ///
+        /// The same component, the same mode and ONE changed input — the set —
+        /// so a derivation that ignored the set answers the same for both legs
+        /// and fails the second.
+        function test_an_empty_startable_set_derives_startable_for_embedded_too() {
+            sourceState.mode = "embedded";
+
+            sourceState.startableModes = [];
+            verify(sourceState.modeStartable,
+                   "an empty set is not yet reported, so embedded reads as "
+                   + "startable");
+
+            sourceState.startableModes = ["explore", "local"];
+            verify(!sourceState.modeStartable,
+                   "a populated set omitting embedded must read it as "
+                   + "unstartable");
+
+            sourceState.startableModes = [];
+            verify(sourceState.modeStartable,
+                   "and emptying the set again restores 'not yet reported'");
+
             sourceState.startableModes = ["explore", "local"];
         }
 

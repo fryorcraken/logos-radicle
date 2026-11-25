@@ -323,6 +323,55 @@ LOGOS_TEST(an_unknown_mode_is_refused_and_the_message_lists_the_valid_ones)
                     std::string(SettingsStore::kModeExplore));
 }
 
+LOGOS_TEST(a_refused_mode_names_all_three_whatever_was_tried)
+{
+    // The sentence has to describe the SET, not echo the attempt. `remote` is
+    // the case worth a row of its own: it is a real word in this module's
+    // vocabulary (the method prefix Explore derives), so it is the value a
+    // caller is likeliest to try, and a message built around the attempted
+    // value would name that and nothing else.
+    //
+    // A table, because one value cannot tell a message built from the valid
+    // set from one that happens to contain the three words for that input.
+    ScratchSettings s("bad-mode-table");
+    SettingsStore store{s.path()};
+
+    for (const char* tried : {"remote", "turbo"}) {
+        const auto result = store.set(SettingsStore::kKeyMode, tried);
+        LOGOS_ASSERT_TRUE(isError(result));
+        const std::string message = result["error"].get<std::string>();
+        LOGOS_ASSERT_CONTAINS(message, std::string(SettingsStore::kModeExplore));
+        LOGOS_ASSERT_CONTAINS(message, std::string(SettingsStore::kModeLocal));
+        LOGOS_ASSERT_CONTAINS(message, std::string(SettingsStore::kModeEmbedded));
+    }
+}
+
+LOGOS_TEST(the_store_reports_exactly_five_keys_before_and_after_each_write)
+{
+    // The store's own reply, counted. The test that checks the five names with
+    // `contains()` cannot see a sixth key, and a reply grown by one — a node
+    // key, say, which this surface must never carry — left the whole suite
+    // green. The count is what a stray key cannot pass.
+    ScratchSettings s("five-keys");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_EQ(store.all().size(), size_t(5));
+
+    // One accepted value per key, so "after a write to each" is the whole set.
+    const auto afterMode = store.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
+    LOGOS_ASSERT_EQ(afterMode.size(), size_t(5));
+    const auto afterHome = store.set(SettingsStore::kKeyRadHome, "/some/home");
+    LOGOS_ASSERT_EQ(afterHome.size(), size_t(5));
+    const auto afterSocket = store.set(SettingsStore::kKeyRadSocket, "/run/user/1000/rad.sock");
+    LOGOS_ASSERT_EQ(afterSocket.size(), size_t(5));
+    const auto afterGit = store.set(SettingsStore::kKeyGitPath, "");
+    LOGOS_ASSERT_EQ(afterGit.size(), size_t(5));
+    const auto afterSeed = store.set(SettingsStore::kKeyRemoteSeed, "https://seed.example");
+    LOGOS_ASSERT_EQ(afterSeed.size(), size_t(5));
+
+    LOGOS_ASSERT_EQ(store.all().size(), size_t(5));
+}
+
 LOGOS_TEST(all_three_modes_are_accepted)
 {
     ScratchSettings s("modes");

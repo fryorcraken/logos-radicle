@@ -569,26 +569,62 @@ fn reporting_encryption_needs_no_passphrase_and_no_agent() {
     cleanup(&dir);
 }
 
-/// Reading the key does not change it.
+/// Every file under `<home>/keys`, by name, with its bytes.
+///
+/// A map rather than the one private-key file: the requirement is that **every
+/// file under the `keys` directory** is byte-for-byte what it was, so a probe
+/// that left `keys/radicle` alone and rewrote `keys/radicle.pub` (or dropped a
+/// sibling file next to them) must be seen. Names are part of the snapshot, so
+/// a file created or removed by the probe changes the map as well.
+fn keys_snapshot(home: &str) -> std::collections::BTreeMap<String, Vec<u8>> {
+    let keys = std::path::Path::new(home).join("keys");
+    let mut out = std::collections::BTreeMap::new();
+    for entry in std::fs::read_dir(&keys).expect("the keys directory must exist") {
+        let entry = entry.expect("a keys entry must be readable");
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let bytes = std::fs::read(entry.path()).expect("a keys file must be readable");
+        out.insert(name, bytes);
+    }
+    out
+}
+
+/// Reading the key does not change it — any of it.
 ///
 /// A probe that unsealed and rewrote the key would report the right answer and
-/// destroy the property it reported. The file's bytes are compared before and
-/// after, which is the only observation that would notice.
+/// destroy the property it reported. The bytes of every file under `keys` are
+/// compared before and after, which is the only observation that would notice.
+///
+/// The snapshot is asserted to hold the private key AND the public one before
+/// anything is probed, so a comparison of two empty maps cannot pass for a
+/// home whose keys directory was never populated.
+///
+/// Covers the whole read side of `getEmbeddedIdentity()` that touches this
+/// directory — the encryption probe and the existence probe — so the scenario
+/// "a report leaves the sealed key as it was" is asked of both.
 #[test]
 fn reporting_encryption_leaves_the_key_untouched() {
     let (dir, home) = fresh_home("key-encrypted-immutable");
     let _ = init_profile(&home, "tester", "correct horse battery");
 
-    let key = std::path::Path::new(&home).join("keys").join("radicle");
-    let before = std::fs::read(&key).expect("the private key must exist");
+    let before = keys_snapshot(&home);
+    assert!(
+        before.contains_key("radicle") && before.contains_key("radicle.pub"),
+        "precondition: the snapshot must hold both halves of the key, got {:?}",
+        before.keys().collect::<Vec<_>>()
+    );
 
     let probed = parse(&key_encrypted(&home));
     assert_eq!(probed["encrypted"], serde_json::json!(true), "{probed}");
+    assert!(
+        profile_exists(&home),
+        "precondition: the existence probe must see the identity it reports on"
+    );
 
-    let after = std::fs::read(&key).expect("the private key must still exist");
+    let after = keys_snapshot(&home);
     assert_eq!(
         before, after,
-        "probing whether the key is encrypted must not rewrite it"
+        "reporting whether the key is encrypted must not rewrite, remove or add \
+         any file under keys/"
     );
 
     cleanup(&dir);
