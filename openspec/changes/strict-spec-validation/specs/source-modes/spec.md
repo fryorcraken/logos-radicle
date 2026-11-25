@@ -209,8 +209,9 @@ The `remote*` / `local*` method prefix a view calls MUST be derived from the
 mode, and MUST NOT be a separately stored or separately chosen value.
 
 `local` and `embedded` MUST both derive `local`, and `explore` MUST derive
-`remote`; a mode the derivation does not recognise MUST derive `remote`. The
-prefix MUST NOT be treated as a proxy for the mode.
+`remote`. Every mode that derives `local` MUST be named explicitly: a mode the
+derivation does not recognise MUST derive `remote`. The prefix MUST NOT be
+treated as a proxy for the mode.
 
 #### Scenario: Each mode derives its prefix
 
@@ -389,12 +390,6 @@ backend reports, not from a particular mode's name.
 - **AND** the "no repositories" wording MUST NOT be shown in its place, since
   a home with no identity is not a node that exists and holds nothing
 - **AND** no error banner MUST be raised, since nothing was asked
-
-The third clause of that scenario was recorded here as unpinned by any test: the
-covering test asserted only that the pane was not blank, which an error
-*alongside* the "no repositories" wording would satisfy. `embedded-state` now
-states it as a requirement in its own right, with scenarios that distinguish the
-two, so the gap closes there rather than remaining an annotation here.
 
 ## ADDED Requirements
 

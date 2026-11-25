@@ -213,7 +213,7 @@ write the signing key unencrypted; a non-empty one MUST encrypt it. The reply's
 An unencrypted key MUST be signable at once, with no prompt. An encrypted key
 MUST NOT be: with no passphrase in the environment and no agent holding it, a
 write probe MUST report that it cannot write. Reads MUST NOT require the
-passphrase.
+passphrase: the identity MUST stay visible while the key is locked.
 
 #### Scenario: An empty passphrase yields an immediately signable profile
 
@@ -342,3 +342,16 @@ return `home:""`, `exists:false`, `nodeId:""`, `encrypted:false` and a non-empty
 - **THEN** `getEmbeddedIdentity()` MUST return `nodeId` as `""`
 - **AND** the reply MUST contain each of `home`, `exists`, `nodeId`,
   `encrypted` and `problem`
+
+### Requirement: canWriteLocal is not a substitute for the encrypted field
+
+`getCapabilities().canWriteLocal` MUST NOT be treated as a substitute for
+`getEmbeddedIdentity().encrypted`.
+
+#### Scenario: A key that cannot sign is not taken for an encrypted one
+
+- **GIVEN** a repository list in `embedded` told `exists:true` with
+  `encrypted:false`, a node reporting `running:false` and `serving:false`, and
+  capabilities reporting `canWriteLocal:false`
+- **THEN** a `startNode` call with an empty passphrase MUST have been issued
+- **AND** no field for a passphrase MUST be present

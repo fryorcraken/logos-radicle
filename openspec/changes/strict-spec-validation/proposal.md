@@ -24,10 +24,18 @@ the limit.
     leaves the spec. It is carried into this change's `design.md`, or, where it
     names work not done, it is already a GitHub issue.
   - **A second behaviour** stated in the same requirement. It becomes its own
-    `ADDED` requirement, with a scenario of its own. There are 36.
+    `ADDED` requirement, with a scenario of its own. There are 37.
+- **Reasoning after a requirement's last scenario leaves too**, although the
+  length rule does not measure it: one passage in `node-paths`' "Embedded mode
+  must never resolve the user's own Radicle home", one in `source-modes`' "A
+  mode that cannot start asks its node for nothing". No scenario step changes.
 - **No behaviour changes.** Every `MUST` and `MUST NOT` in the live specs is
-  still asserted, in the requirement that held it or in one split from it,
-  except two that restated a rule already asserted elsewhere.
+  still asserted, in the requirement that held it or in one split from it, with
+  one exception. `node-paths`' "Socket precedence prefers the runtime directory
+  over the home" no longer says separately that `local` mode MUST still find
+  the home-derived socket when no runtime directory exists. It does not need
+  to: the precedence that requirement states returns that socket in exactly
+  that case.
 
 ## Capabilities
 
@@ -56,7 +64,7 @@ no change to what the module does:
 - **`openspec/specs/`**: all nine capabilities, once this change is archived.
   No existing requirement heading changes, so a citation by requirement name
   still resolves.
-- **Tests**: no existing scenario changes. The 36 `ADDED` requirements each
+- **Tests**: no existing scenario changes. The 37 `ADDED` requirements each
   carry a new scenario, which a test has to pin.
 - **No code in `radicle/` or `radicle-ui/` changes**, unless a new scenario
   finds the code does not do what the live contract already required.

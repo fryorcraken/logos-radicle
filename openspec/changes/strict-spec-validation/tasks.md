@@ -55,7 +55,7 @@ proposal expects no code change; a scenario the code fails is a finding, not a
 licence to change behaviour quietly.
 
 - [ ] 3.1 `embedded-header`: 1 scenario pinned by a test that can fail.
-- [ ] 3.2 `embedded-identity`: 3 scenarios pinned.
+- [ ] 3.2 `embedded-identity`: 4 scenarios pinned.
 - [ ] 3.3 `embedded-setup`: 20 scenarios pinned.
 - [ ] 3.4 `embedded-state`: 5 scenarios pinned.
 - [ ] 3.5 `module-settings`: 3 scenarios pinned; the five-keys one closes the

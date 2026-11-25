@@ -160,15 +160,6 @@ configured"; the mode MUST instead yield inert paths with an empty home.
 - **THEN** the resolved home MUST be empty
 - **AND** it MUST NOT be the `RAD_HOME` path or `<user home>/.radicle`
 
-Note this scenario depends on a guarantee the `module-settings` capability
-owns: an unknown stored mode is sanitised to `explore` on read, and `explore`
-resolves no home. The `MUST NOT` above therefore holds by composition rather
-than by anything in this capability, and would be violated by a change to that
-fallback — outside this spec entirely. It is stated here because the resolved
-home is what a reader of this capability is asking about, but the cross-
-capability dependency is the point: whoever changes the sanitising fallback
-must re-check this scenario.
-
 ### Requirement: The absent-profile sentence is chosen by the mode that asked
 
 `NodePaths` MUST carry an optional `absentProfileReason`. When the home holds no

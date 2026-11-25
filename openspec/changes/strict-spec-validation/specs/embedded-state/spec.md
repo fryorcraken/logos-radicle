@@ -386,7 +386,8 @@ reaches something able to carry it out; otherwise it MUST NOT be enabled, and
 the surface MUST say why. The setup and start requests reach a host; a restart
 request does not, so the not serving state MUST name its action while leaving it
 not enabled, and MUST state that restarting is not yet available from here, not
-that it failed. This MUST be keyed on whether the request is hosted.
+that it failed or cannot be done. This MUST be keyed on whether the request is
+hosted.
 
 #### Scenario: An unhosted action is named but not enabled, and says so
 

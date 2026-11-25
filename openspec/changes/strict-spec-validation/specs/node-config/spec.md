@@ -95,12 +95,14 @@ refused by name when passed in a write.
 
 ### Requirement: Addresses are the two spellings the crate distinguishes
 
-`connect` entries MUST each carry a node id, as `<node id>@<host>:<port>`.
-`externalAddresses` and `listen` entries MUST each be a bare `<host>:<port>`
-with no node id.
+`connect` entries MUST each carry a node id, in the form
+`<node id>@<host>:<port>`. `externalAddresses` entries MUST each be a bare
+`<host>:<port>` with no node id. The two spellings are not interchangeable, and
+a value in the wrong one MUST be refused on write rather than stored.
 
-A value in the wrong spelling MUST be refused on write rather than stored, and
-the refusal MUST name the value that was rejected and state which spelling was
+`listen` entries MUST each be a bare `<host>:<port>`.
+
+A refusal MUST name the value that was rejected and state which spelling was
 expected.
 
 #### Scenario: A connect address without a node id is refused
