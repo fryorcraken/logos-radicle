@@ -72,14 +72,10 @@ string rather than a bare `/.radicle`, which would name the filesystem root.
 `resolveSocket` MUST return the configured socket when it is non-empty;
 otherwise the `RAD_SOCKET` value when that is non-empty; otherwise
 `<runtime dir>/radicle-<profile>.sock` when a runtime directory is given;
-otherwise `<home>/node/control.sock`. The runtime directory is preferred
-because it is short by construction, scoped to the user's session and cleaned
-up on logout. The home-derived form is a fallback and MUST be retained,
-because it is where a hand-run `rad` node places its socket and `local` mode
-MUST still find it when no runtime directory exists. When the profile name is
-empty the runtime-directory form MUST be `<runtime dir>/radicle.sock`. When
-neither a runtime directory nor a home is available the result MUST be the
-empty string.
+otherwise `<home>/node/control.sock`, a fallback that MUST be retained. When the
+profile name is empty the runtime-directory form MUST be
+`<runtime dir>/radicle.sock`. When neither a runtime directory nor a home is
+available the result MUST be the empty string.
 
 #### Scenario: An explicit socket wins over every other source
 
@@ -145,11 +141,10 @@ empty string.
 
 `resolvePaths` MUST reject a resolved socket path whose length plus a
 terminating NUL exceeds the 108-byte `sun_path` capacity, by reporting a
-non-empty problem. A path of exactly 107 bytes MUST therefore be accepted and a
-path of 108 bytes MUST be refused. The cap MUST NOT be applied to the home: a
-home of any length MUST NOT produce a problem. The check MUST run at resolution time rather than at the
-point of connection, so that a preflight surface can report it without a live
-profile or a running node.
+non-empty problem: a path of exactly 107 bytes MUST be accepted and one of 108
+bytes refused. The cap MUST NOT be applied to the home, and a home of any length
+MUST NOT produce a problem. The check MUST run at resolution time rather than
+at the point of connection.
 
 #### Scenario: A path exactly at the cap is accepted and one byte over is refused
 
@@ -217,9 +212,7 @@ Setting `radSocket` to a non-empty value whose length plus a terminating NUL
 exceeds the same 108-byte capacity MUST be refused with an `{"error":"..."}`
 reply naming the path, its byte length and the 107-byte limit, and the value
 MUST NOT be persisted. An empty value MUST be accepted, meaning "resolve from
-the environment". This check is not redundant with the resolution-time one: a
-socket path can also arrive from `RAD_SOCKET`, which the settings store never
-sees, and a resolution-time check alone would let a bad value persist.
+the environment".
 
 #### Scenario: An over-long socket setting is refused
 
@@ -319,13 +312,10 @@ MUST return the empty string rather than a path relative to nothing.
 ### Requirement: Embedded mode must never resolve the user's own Radicle home
 
 When the selected mode is `embedded`, the home handed to path resolution MUST
-be the embedded home and the resolution MUST NOT be able to fall through to
-`RAD_HOME` or `<user home>/.radicle`. Because an empty configured home is
-exactly what home resolution treats as "not configured", an unresolvable
-embedded home MUST NOT be passed through to resolution; instead the mode MUST
-yield inert paths with an empty home. Embedded promises an identity separate
-from any node the user already runs; a resolution that could reach the user's
-profile would expose their signing key and put two nodes on one git storage.
+be the embedded home, and the resolution MUST NOT be able to fall through to
+`RAD_HOME` or `<user home>/.radicle`. An unresolvable embedded home MUST NOT be
+passed through to resolution, which reads an empty configured home as "not
+configured"; the mode MUST instead yield inert paths with an empty home.
 
 #### Scenario: An unresolvable embedded home is inert rather than the user's home
 
@@ -357,15 +347,6 @@ profile would expose their signing key and put two nodes on one git storage.
 - **WHEN** the persisted mode is a value this module does not map to a home
 - **THEN** the resolved home MUST be empty
 - **AND** it MUST NOT be the `RAD_HOME` path or `<user home>/.radicle`
-
-Note this scenario depends on a guarantee the `module-settings` capability
-owns: an unknown stored mode is sanitised to `explore` on read, and `explore`
-resolves no home. The `MUST NOT` above therefore holds by composition rather
-than by anything in this capability, and would be violated by a change to that
-fallback — outside this spec entirely. It is stated here because the resolved
-home is what a reader of this capability is asking about, but the cross-
-capability dependency is the point: whoever changes the sanitising fallback
-must re-check this scenario.
 
 ### Requirement: A store reports the paths it was given rather than re-reading the environment
 
@@ -410,16 +391,12 @@ cannot be resolved at all MUST be unavailable.
 
 ### Requirement: The absent-profile sentence is chosen by the mode that asked
 
-`NodePaths` MUST carry an optional `absentProfileReason`, and when the home
-holds no profile that sentence MUST be returned verbatim in preference to
-either default. It MUST take precedence over the empty-home default as well as
-over the missing-profile default, because the case most needing a mode-specific
-sentence — embedded with no data directory — is the case where the home is
-empty. The default sentence for a resolved but profile-less home MUST name the
-path and advise installing Radicle and running `rad auth`; that advice is
-correct for a home the user manages and wrong for the embedded one, whose
-premise is that `rad auth` is never run and whose empty home is the state
-before the wizard has run rather than a misconfiguration.
+`NodePaths` MUST carry an optional `absentProfileReason`. When the home holds no
+profile, that sentence MUST be returned verbatim in preference to either
+default: the empty-home default as well as the missing-profile default.
+
+The default sentence for a resolved but profile-less home MUST name the path
+and advise installing Radicle and running `rad auth`.
 
 #### Scenario: A supplied reason replaces the rad auth advice
 
@@ -492,15 +469,8 @@ running" from "we could never have talked to it".
 A node MUST be reported as running only when the resolved socket path is
 non-empty, is within the kernel's `sun_path` capacity, exists on disk, and
 accepts a connection. A socket file that exists but accepts no connection MUST
-NOT be reported as a running node, because the file can outlive the daemon. A
-store with no profile MUST report the node as not running.
-
-Two properties here are about a syscall **not** being made — that a store with
-no profile, and a path over the cap, are not probed at all. Neither is
-observable through this interface, so neither is stated as a requirement: what
-is required is the reported outcome, which a test can check. The
-never-probe behaviour is a matter for review, and for the code comment that
-explains why a truncated path must not reach `connect()`.
+NOT be reported as a running node. A store with no profile MUST report the node
+as not running.
 
 #### Scenario: A missing socket means the node is not running
 

@@ -12,16 +12,11 @@ on write, and when a change reaches a running node.
 
 The module MUST expose node configuration through its own pair of methods,
 `getNodeConfig` and `setNodeConfig`, and MUST NOT route it through `getSettings`
-or `setSetting`.
-
-The two surfaces describe different things and live in different files. The
-module settings describe the module — which node it is pointed at, where git is
-— and live in `<XDG data home>/radicle-module/settings.json`. The node
-configuration describes the node itself and lives in `<radicle home>/config.json`,
-a file the node owns and reads at start.
+or `setSetting`. The node configuration is `<radicle home>/config.json`, a file
+the node owns and reads at start.
 
 `getSettings` MUST continue to return exactly the five keys the
-`module-settings` capability names, and MUST NOT gain a node-configuration key.
+`module-settings` capability names, with no node-configuration key, and
 `setSetting` MUST continue to refuse any key outside those five.
 
 #### Scenario: The settings surface is unchanged by this capability
@@ -40,41 +35,17 @@ a file the node owns and reads at start.
 
 ### Requirement: The exposed fields are the ones the crate has
 
-`getNodeConfig` MUST report exactly these fields, and `setNodeConfig` MUST
-accept exactly these fields:
+`getNodeConfig` MUST report, and `setNodeConfig` MUST accept, exactly these
+fields, each spelled as the node's `config.json` spells it:
 
-- `alias` — the node's alias, a string.
-- `listen` — the socket addresses the node binds, an array of strings.
-- `externalAddresses` — the node's own public addresses, an array of strings.
-- `connect` — the peers to connect to at start and keep connected, an array of
-  strings.
-- `peers` — the peer-set discipline, one of the strings `static` or `dynamic`.
+- `alias`, a string;
+- `listen`, the addresses the node binds, an array of strings;
+- `externalAddresses`, its public addresses, an array of strings;
+- `connect`, the peers it keeps connected, an array of strings;
+- `peers`, `static` or `dynamic`.
 
-Each MUST be spelled in the reply exactly as the node's `config.json` spells it,
-so a value read here and a value read from that file cannot disagree about a
-name.
-
-`getNodeConfig` MUST additionally report two **derived** members, which are not
-configuration fields and MUST NOT be accepted by `setNodeConfig`:
-`inboundReachable` and `restartRequired`, each specified by its own requirement
-below.
-
-A field the module does not expose MUST NOT appear in a `getNodeConfig` reply,
-and MUST be refused by name when passed to `setNodeConfig`.
-
-A successful `setNodeConfig` MUST return the whole configuration object, in the
-same shape `getNodeConfig` returns, rather than only the fields that changed —
-so a caller re-renders from one reply instead of holding a stale view of the
-fields it did not just set. `setNodeConfig` MUST accept a subset of the fields
-and MUST leave the fields it was not given unchanged.
-
-The `peers` field is a discipline, not a list: the addresses live in `connect`.
-A caller MUST NOT be able to submit addresses through `peers`. A value other
-than `static` or `dynamic` MUST be refused with a message naming both.
-
-`peers` set to `static` with an empty `connect` MUST be refused rather than
-stored: it configures a node to maintain connections to nobody, which reaches
-no peers and reports no error at any later point.
+A field the module does not expose MUST NOT appear in a reply, and MUST be
+refused by name when passed in a write.
 
 #### Scenario: Every exposed field is present in a reply
 
@@ -134,12 +105,8 @@ no peers and reports no error at any later point.
 
 `connect` entries MUST each carry a node id, in the form
 `<node id>@<host>:<port>`. `externalAddresses` entries MUST each be a bare
-`<host>:<port>` with no node id.
-
-The two spellings are not interchangeable, and a value in the wrong one MUST be
-refused on write rather than stored: the crate parses these as distinct types,
-so a mismatched value fails at the node's next start, which is the deferred
-failure this module's validation-on-write rule exists to prevent.
+`<host>:<port>` with no node id. The two spellings are not interchangeable, and
+a value in the wrong one MUST be refused on write rather than stored.
 
 `listen` entries MUST each be a bare `<host>:<port>`.
 
@@ -210,19 +177,14 @@ A refused alias MUST leave the stored alias unchanged.
 
 ### Requirement: Inbound is off by default and its cost is stated
 
-A node configuration that has never set `listen` MUST report `listen` as an
-empty array, and the node MUST bind no port.
+A configuration that has never set `listen` MUST report it as an empty array,
+and the node MUST bind no port. `getNodeConfig` MUST report `inboundReachable`,
+false exactly when `listen` is empty.
 
-`getNodeConfig` MUST report `inboundReachable`, false exactly when `listen` is
-empty. A node with no listen address is outbound-only: it can fetch from peers
-and announce to them, but peers cannot fetch from it.
-
-Turning inbound on is an explicit act. `setNodeConfig` MUST NOT add a listen
-address on its own — not when `externalAddresses` is set, not when `connect` is
-set, and not when the node is started.
-
-A view MUST state what leaving inbound off costs, in words naming that peers
-cannot fetch from this node, wherever it offers the choice.
+`setNodeConfig` MUST NOT add a listen address on its own — not when
+`externalAddresses` or `connect` is set, and not when the node is started. A
+view offering the choice MUST state that with inbound off, peers cannot fetch
+from this node.
 
 #### Scenario: A configuration that never set listen is outbound-only
 
@@ -320,16 +282,10 @@ it is live.
 
 `setNodeConfig` MUST change only the fields the call names, and MUST leave every
 other field of `config.json` as it found it — including fields this module does
-not expose, and including fields a newer build of the `radicle` crate wrote that
-this build does not know.
+not expose, and keys no field of this build's configuration type corresponds to.
 
-This does not hold by default. A write MUST preserve a key even when no field of
-this build's configuration type corresponds to it, so that a change of one field
-never becomes the deletion of another.
-
-A write MUST leave the file parseable as a node configuration. A write that
-cannot be completed MUST leave the previous file intact rather than a truncated
-one.
+A write MUST leave the file parseable as a node configuration, and a write that
+cannot be completed MUST leave the previous file intact rather than truncated.
 
 #### Scenario: An unrelated known field survives a write
 
@@ -356,17 +312,9 @@ one.
 `getNodeConfig` and `setNodeConfig` MUST act on the home the mode in force
 resolved, and MUST NOT take a home as a parameter.
 
-A home parameter crosses the boundary from a sandboxed view, and would be a way
-for a caller to rewrite the configuration of a node the module does not own.
-
-In `explore`, which resolves no home, both MUST return `{"error":"..."}` naming
-the mode rather than failing obscurely, and `setNodeConfig` MUST write nothing
-anywhere.
-
-In `local`, the resolved home is the user's own. Writing there changes the
-configuration of a node this module did not create and does not run.
-`setNodeConfig` MUST refuse in `local`, naming the mode; `getNodeConfig` MUST
-succeed, because reading the user's configuration is what lets a view show it.
+In `explore`, both MUST return `{"error":"..."}` naming the mode, and
+`setNodeConfig` MUST write nothing anywhere. In `local`, `setNodeConfig` MUST
+refuse, naming the mode, and `getNodeConfig` MUST succeed.
 
 #### Scenario: Neither method takes a home
 
@@ -410,15 +358,10 @@ succeed, because reading the user's configuration is what lets a view show it.
 
 `getNodeConfig` MUST return `{"error":"..."}` when the resolved home holds no
 `config.json`, naming the home and stating that no identity has been created
-there.
-
-It MUST NOT return a set of defaults for a home that has none: defaults
-presented as a configuration are indistinguishable on screen from a real one,
-and a view would offer to edit a node that does not exist.
+there, and MUST NOT return a set of defaults for it.
 
 `setNodeConfig` MUST refuse likewise, and MUST NOT bring a home or a
-configuration into existence. Creating a configuration is identity creation's
-job.
+configuration into existence.
 
 #### Scenario: An empty embedded home has no configuration
 
@@ -492,3 +435,45 @@ previously displayed refusal.
 - **WHEN** the view is displaying a refusal message
 - **AND** a subsequent write is accepted
 - **THEN** the view MUST no longer report an error
+
+### Requirement: A configuration write returns the whole configuration
+
+A successful `setNodeConfig` MUST return the whole configuration object, in the
+shape `getNodeConfig` returns, rather than only the fields that changed. It MUST
+accept a subset of the fields, and MUST leave the fields it was not given
+unchanged.
+
+#### Scenario: Two fields set at once are both reported back
+
+- **WHEN** `setNodeConfig` accepts a call naming `alias` and
+  `externalAddresses`
+- **THEN** the reply's `alias` and `externalAddresses` MUST be the values
+  submitted
+- **AND** its `listen`, `connect` and `peers` MUST hold the values they held
+  before the call
+
+### Requirement: The derived members are reported and never written
+
+`getNodeConfig` MUST additionally report two derived members,
+`inboundReachable` and `restartRequired`. They are not configuration fields,
+and `setNodeConfig` MUST refuse either by name.
+
+#### Scenario: inboundReachable cannot be written either
+
+- **WHEN** `setNodeConfig` is called with the field `inboundReachable`
+- **THEN** the reply MUST be `{"error":"..."}`
+- **AND** the message MUST contain the text `inboundReachable`
+
+### Requirement: The peer discipline is a discipline, and is checked
+
+`peers` MUST be `static` or `dynamic`, and a caller MUST NOT be able to submit
+addresses through it: any other value MUST be refused with a message naming
+both. `peers` set to `static` with an empty `connect` MUST be refused rather
+than stored.
+
+#### Scenario: A dynamic node with nobody to connect to is accepted
+
+- **WHEN** `setNodeConfig` sets `peers` to `dynamic` against a configuration
+  whose `connect` is empty
+- **THEN** the reply MUST NOT be an error
+- **AND** a subsequent `getNodeConfig` reply's `peers` MUST be `dynamic`
