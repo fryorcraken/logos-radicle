@@ -73,14 +73,30 @@ with the specs split to meet it.
   the proposal names `--specs`, and a change folder on a piece branch is
   mid-edit by design until the `closer` validates it.
 
-**Guards, and what breaks without each:**
+**Guard, and what breaks without it:**
 
 - **`--strict`.** Without it the step passes `main` as it stands today, with
   73 warnings: measured as exit 0 against exit 1 with the flag.
+
+**Environment pins, not measured guards.** Nothing below has been shown to turn
+the step red when removed; each fixes something the step would otherwise
+inherit.
+
 - **`setup-node`.** Without it the step runs on whatever Node the runner image
   ships, which this repo does not choose and the CLI's `engines` may reject.
-  Which Node `ubuntu-latest` ships was not measured; Node 24 matches
-  `ui-specs`.
+  Which Node `ubuntu-latest` ships was not measured, so whether the step fails
+  without this is unknown.
+- **Node 24, not the `engines` floor of 22.20.** The floor would satisfy the
+  CLI equally. 24 is the version `ui-specs` already sets up, so the workflow
+  holds one Node version to bump rather than two that drift.
+- **`--no-interactive`.** Read from the CLI's source, not measured: with
+  `--specs` the command takes the bulk path, where interactivity decides one
+  thing, whether an `ora` spinner is drawn (`runBulkValidation` in
+  `dist/commands/validate.js`). `isInteractive` already answers no when `CI` is
+  set (`dist/utils/interactive.js`), so on a runner the flag changes nothing. It
+  is there for the reason `OPENSPEC_TELEMETRY` is: the step does not depend on
+  the CLI detecting CI, and a reproduction from a terminal prints what CI
+  prints.
 
 ### 2. The CLI is pinned exactly, once, in `ci.yml`
 
@@ -108,10 +124,26 @@ document was measured with.
 update, and an agent's newer local CLI can reject what CI passes. Bumping is a
 one-line commit, which is the point.
 
-**Not pinned: the CLI's own dependencies.** `npx` resolves their ranges fresh
-on each run. A `package.json` and lockfile for one tool was not taken: the
-rules under test live in the CLI's own code, which the pin fixes, and
-`ui-specs` installs sitometres the same way.
+**Not pinned: the CLI's own dependencies.** Of the 13 direct dependencies
+2.1.1 declares, 11 are caret ranges and two (`skills`, `cross-spawn`) are exact
+(`npm view @fission-ai/openspec@2.1.1 dependencies`), and `npx` resolves the
+ranges fresh on each run with no lockfile. So the pin fixes the CLI, not
+everything that decides a verdict: the length rule is the CLI's own code, but
+the spec schemas it validates against are `zod` schemas
+(`dist/core/schemas/*.schema.js`), and `yaml` is the parser behind the CLI's
+project configuration (`dist/core/project-config.js`), so a minor release of
+either can move what passes with no commit here. A
+compromised release of any ranged dependency also runs in `Lint`, bounded by
+the job's read-only token, no secrets and no install scripts in the resolved
+tree (the security review measured all three).
+
+A `package.json` and lockfile for one tool, installed with `npm ci`, was
+considered and not taken: it adds two files and a bump path for every
+transitive release, for a step whose worst case is a red `Lint` that names
+the failing rule in its log. `ui-specs` installs sitometres the same way. The
+comment beside the step says the dependencies are unpinned, so it does not
+claim the gate is frozen. If a dependency release ever moves a verdict, the
+lockfile is the remedy.
 
 **Telemetry:** the step sets `OPENSPEC_TELEMETRY=0`, which the CLI's telemetry
 and its version check both honour (`dist/telemetry/opt-out.js`). Both already
@@ -134,7 +166,8 @@ and a directory with no `spec.md` is not a spec the CLI considers. Whether the
 gate must also prove it read every directory is a decision about what the gate
 promises, so it is reported to the `spec-writer` rather than built. The blind
 spot is written beside the step in `ci.yml`, in `docs/OPENSPEC-ARCHIVE.md`, and
-in Risks below.
+in Risks below. Those say the gap exists; none of them tracks closing it, which
+is an issue's job, not this document's.
 
 ### 4. Where the reasoning cut from the specs lives
 
@@ -167,6 +200,107 @@ command, then restore the tree (`git reset --hard` and `git clean` of the
 archived folder), leaving the archive to the `closer`. Measured: 9 passed,
 0 failed after the trial archive; 0 passed, 9 failed before it.
 
+### 6. One `MUST` dropped: `local` mode finding the home-derived socket
+
+**Chosen:** `node-paths`' "Socket precedence prefers the runtime directory over
+the home" no longer says, as a rule of its own, that `local` mode MUST still
+find the home-derived socket when no runtime directory exists. It is the one
+live `MUST` this change keeps in no requirement; the spec-test review diffed
+every `MODIFIED` requirement against its live text sentence by sentence and
+found no other.
+
+The requirement's subject is `resolveSocket`, a function of its inputs, and
+everything else in it, scenarios included, is stated in those inputs. The
+dropped sentence was the one about a caller. What it asked of `resolveSocket`
+the requirement still says: with no runtime directory the result is
+`<home>/node/control.sock`, "a fallback that MUST be retained", and the
+scenario "Without a runtime directory the socket falls back under the home"
+pins that answer.
+
+**Alternatives:**
+
+- **Keep the sentence.** Rejected because it is the only clause in the
+  requirement a reader cannot check against `resolveSocket`'s scenarios, so it
+  read as covered while nothing covered it (below).
+- **Move it into "Without a runtime directory the socket falls back under the
+  home"** as a `local`-mode step. Rejected here because that scenario is in
+  `resolveSocket`'s terms; a `local`-mode step is a different scenario, and
+  adding one is a spec change this change, which promises no new behaviour,
+  should not make on its own initiative.
+
+**What it costs, measured:** no scenario, live or delta, pins the caller's half
+of the dropped sentence, that `local` mode hands `resolveSocket` an empty
+runtime directory when `XDG_RUNTIME_DIR` is unset (`resolvePathsFromEnv` in
+`radicle/src/local_store.cpp`, reading it with `envOr`). Under `radicle/tests/`
+the only test that sets `XDG_RUNTIME_DIR` is `test_local_writer.cpp`'s, to a
+value; none unsets it and asserts the home-derived socket. The live sentence
+had no scenario either, so the drop removes a statement and no test. A scenario
+for it is reported to the `spec-writer` rather than written here.
+
+### 7. Where the live text was wrong, the delta follows the code
+
+The deltas are not all byte-for-byte copies of the live text they replace, and
+the scenarios are not all unchanged. Most `MODIFIED` requirements keep every
+scenario byte for byte; three `embedded-state` scenarios each change one step,
+and the requirement text listed below is corrected rather than only cut. Each
+correction resolves a defect the live spec already carried, toward what the
+code and its tests already do, so no implementation changes. The review that
+found them is the spec-test review's; the corrections are the `spec-writer`'s.
+
+- **The state conditions disagreed with the order they are read in.** The live
+  spec renders the first state, in the order blocked, no identity, stopped,
+  starting, start failed, not serving, running and empty, whose condition
+  holds, and gave `stopped` as "the node reports neither running nor serving".
+  Read literally, that holds in the ordinary case of a refused start, which
+  reports `running:false`, so start failed could never be rendered there; yet
+  the live spec's own scenario "A refused automatic start is reported as a
+  refusal" requires exactly that. The defect is the live spec's; the first
+  delta carried it across unchanged. The `ADDED` "Each
+  embedded state has one condition" now gives `stopped` as "neither `running`
+  nor `serving`, and the last `startNode` not refused", and `starting` as "a
+  `startNode` outstanding, with `running` or `serving`". The order is unchanged.
+- **Why `starting` needs a running report, rather than `stopped` excluding an
+  outstanding start.** The second fix would also make the order consistent,
+  and would change what the code must do. `EmbeddedState.qml`'s `current`
+  tests `!running && !serving` before `startPending`, so while a start is
+  outstanding and the node still reports `running:false` it renders `stopped`.
+  Two tests in `tst_embedded_state.qml` pin that, with `startPending` true:
+  `test_no_action_is_named_while_a_start_is_outstanding` (`:336`) and
+  `test_an_outstanding_start_withholds_a_hosted_start_control` (`:406`; `:372`
+  before the tester's last pass inserted a test above it). That is the live
+  order read literally, so the spec now says it.
+- **Three `MODIFIED` scenarios change one step each to agree.** "The reply
+  clears the outstanding start, not the request" and "The start action is
+  withheld while a start is outstanding" gain, in their **GIVEN**, the node
+  status their requirement already assumed: `running:true`, `serving:false`.
+  "A stopped node with an unencrypted key starts by itself" said the rendered
+  state MUST be the starting one over a node reporting `running:false`; it now
+  says the state stays stopped while that call is outstanding and the node
+  still reports `running:false`. The tests for the changed steps are
+  `test_the_reply_clears_the_outstanding_start_not_the_request`
+  (`tst_embedded_state.qml`) and the outstanding-start leg of
+  `test_an_unencrypted_stopped_node_is_started_without_being_asked`
+  (`tst_embedded_panel.qml`), both from the tester's last pass.
+- **"Each state MUST carry its own action" sat beside states that name none.**
+  The `ADDED` "Each state names its own next action" lists the four states that
+  name an action and the four that name none, which is `EmbeddedState.qml`'s
+  `actionKind`.
+- **Optional wording.** `embedded-state`'s "MUST be permitted" for the
+  empty-list placeholder obliged nothing and is dropped; `embedded-setup`'s
+  lower-case "what it may do, what it must state" becomes the `MUST` it stood
+  for.
+- **A term the live text left undefined.** `embedded-header`'s rule is keyed on
+  whether a mode "has an identity"; the split-out requirement defines it as
+  deriving the `local` method prefix, which is how `SourceState.qml` decides
+  it (see that capability's entry below).
+
+**Alternative:** carry every scenario and condition verbatim and report the
+defects for a later change. Rejected because the split made them worse: the
+`ADDED` condition list restated `stopped` without the order's context, so the
+contradiction a reader of the live spec had to assemble across two paragraphs
+became one list. A delta that promotes a contradiction it has been shown is
+not a neutral carry.
+
 ## Reasoning carried out of the specs
 
 Each entry is reasoning that sat in the requirement it names before this
@@ -195,7 +329,17 @@ the spec's; nothing here adds to it.
   line, not for the routing. The definition is what this change adds to the
   requirement, and the scenario pins the relationship (shown in `local` and
   `embedded`, not in `explore` or an unrecognised string) rather than a mode
-  nobody has written, which no input can be.
+  nobody has written, which no input can be. **Mutation evidence: none for the
+  new test.** The mutation the `SourceState.qml` comment names (`current ===
+  "local"` rewritten as `mode === "local"`) was run against the three older
+  tests it lists; neither it nor "every mode but Explore" has been run against
+  `test_the_identity_is_shown_in_exactly_the_modes_that_derive_local`, because
+  no pod that worked on this change had a Qt 6 `qmltestrunner`. By reading,
+  the first reddens its `embedded` case and the second its unrecognised-string
+  cases. The test is also pinned on a copy of `Main.qml`'s header binding,
+  because `Main.qml` cannot be instantiated in a component test, and
+  `local.yaml` never runs Embedded with an identity, so no layer sees a change
+  to the binding itself.
 - **The header identity is copied by taking it.** The one thing anyone does
   with a DID is paste it — into `rad id update --allow`, or a message asking a
   delegate to authorise this node — so copying is what the display serves. A
@@ -553,9 +697,8 @@ the spec's; nothing here adds to it.
   up on logout. The home-derived form is kept because it is where a hand-run
   `rad` node places its socket. The live requirement also said, as a rule of its
   own, that `local` mode must still find that socket when no runtime directory
-  exists. The delta drops that sentence, the one `MUST` in this change not kept
-  in any requirement, because the precedence it restated already returns the
-  home-derived socket in exactly that case.
+  exists; the delta drops that sentence, and Decision 6 argues it and records
+  what no scenario pins as a result.
 - **The 108-byte sun_path cap constrains the socket alone.** At resolution rather
   than at connection, so a preflight surface can report it without a live
   profile or a running node.
@@ -572,7 +715,11 @@ the spec's; nothing here adds to it.
   `explore` resolving no home. A change to that fallback, outside this
   capability entirely, would break the scenario's `MUST NOT`, so whoever changes
   it must re-check this one. It sits in `node-paths` because the resolved home
-  is what a reader of this capability is asking about.
+  is what a reader of this capability is asking about. The trap is also written
+  where the next person to change the fallback will be standing: beside it in
+  `SettingsStore::load()` (`radicle/src/settings_store.cpp`), naming both
+  scenarios that hold through it and the test that sees the second,
+  `a_persisted_mode_this_build_does_not_know_does_not_alias_the_local_profile`.
 - **The absent-profile sentence is chosen by the mode that asked.** It
   outranks the empty-home default too, because the case most needing a
   mode-specific sentence, embedded with no data directory, is the case where the
@@ -670,13 +817,15 @@ the spec's; nothing here adds to it.
   measures length, not content. Review is the only check.
 - **[A behaviour dropped while splitting a requirement passes]** → The
   validator cannot tell a lost `MUST`. That is the spec-test and design
-  reviewers' read, against `git diff --no-index` of each pair.
+  reviewers' read, against `git diff --no-index` of each pair. The one drop
+  this change makes on purpose is Decision 6's.
 - **[The pinned CLI ages]** → A rule a newer CLI enforces passes CI; bump the
   pin deliberately. The `closer`'s local `validate <change> --strict` runs on
   whatever CLI the agent has, so a newer rule tends to surface there first.
 - **[An npm registry outage turns `Lint` red]** → npm's error is in the step log.
-- **[A compromised release of one of the CLI's dependencies reaches `Lint`]** →
-  Accepted, as for `ui-specs`; a lockfile is the remedy if it bites.
+- **[A release of one of the CLI's ranged dependencies moves a verdict, or is
+  compromised and runs in `Lint`]** → Accepted, as for `ui-specs` (Decision 2);
+  a lockfile is the remedy if it bites.
 
 ## Migration Plan
 

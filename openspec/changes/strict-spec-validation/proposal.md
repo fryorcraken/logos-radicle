@@ -29,7 +29,8 @@ the limit.
 - **Reasoning after a requirement's last scenario leaves too**, although the
   length rule does not measure it: one passage in `node-paths`' "Embedded mode
   must never resolve the user's own Radicle home", one in `source-modes`' "A
-  mode that cannot start asks its node for nothing". No scenario step changes.
+  mode that cannot start asks its node for nothing". Removing them changes no
+  scenario step.
 - **No behaviour changes.** Every `MUST` and `MUST NOT` in the live specs is
   still asserted, in the requirement that held it or in one split from it,
   except where a bullet below resolves a defect in the live wording, and with
@@ -99,5 +100,8 @@ no change to what the module does:
 - **Tests**: three existing `embedded-state` scenarios change a step, as above,
   and the tests pinning them are revisited against the new text. The 37
   `ADDED` requirements each carry a new scenario, which a test has to pin.
-- **No code in `radicle/` or `radicle-ui/` changes**, unless a new scenario
-  finds the code does not do what the live contract already required.
+- **No behaviour in `radicle/` or `radicle-ui/` changes.** Two source files
+  change a comment and nothing else: `SourceState.qml`'s `modeHasIdentity`
+  comment, which claimed a rule the code does not have, and
+  `settings_store.cpp`'s unknown-mode fallback, which now names the two
+  scenarios outside its file that hold only through it.

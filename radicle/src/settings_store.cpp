@@ -250,6 +250,16 @@ nlohmann::json SettingsStore::load() const
     // Nothing is REWRITTEN on disk here: this is a read. The stored string stays
     // as the user (or the newer build) left it, so switching back to a build
     // that understands it loses nothing.
+    //
+    // **Two contracts outside this file hold only through this line.**
+    // `node-paths`' scenario "An unrecognised mode resolves nothing" is a
+    // MUST NOT that `node-paths` itself does nothing to enforce: it holds
+    // because an unknown mode arrives there as `explore`, which resolves no
+    // home. `source-modes`' "An unknown mode on disk grants no local access"
+    // is the same fact seen from `getCapabilities`, and
+    // `a_persisted_mode_this_build_does_not_know_does_not_alias_the_local_profile`
+    // in `test_radicle_impl.cpp` is the test that sees it. Changing the
+    // fallback means re-checking both scenarios, not only this file's tests.
     if (!isKnownMode(defaults[kKeyMode].get<std::string>()))
         defaults[kKeyMode] = kModeExplore;
 

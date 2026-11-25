@@ -123,7 +123,8 @@ measured on `@fission-ai/openspec` 2.1.1:
   and fails `Lint` once archived.
 - **Prose after a requirement's scenarios**, which the length rule does not
   count: it measures the text between the heading and the first scenario.
-- **A declined promotion**, above, and **a self-contradiction**, just above.
+- **A declined promotion** (step 1 of "What archive does") and **a
+  self-contradiction** ("A spec can contradict itself").
 
 **A change that fixes the live specs through a delta is red on `Lint` until its
 archive commit.** The gate reads `openspec/specs/` as the branch holds it, and a

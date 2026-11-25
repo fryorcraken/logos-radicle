@@ -180,10 +180,8 @@ QtObject {
     /// `test_a_mode_with_no_identity_displays_nothing` and
     /// `test_having_an_identity_is_derived_rather_than_listed`, the last
     /// reporting `embedded:no` where it must report `embedded:yes`. Verified by
-    /// mutation rather than argued. The scenario test added after that
-    /// mutation, `test_the_identity_is_shown_in_exactly_the_modes_that_derive_local`,
-    /// expects `[embedded]:local:shown` and so reads as a fourth; that one has
-    /// not been run under the mutation.
+    /// mutation rather than argued. The rule is also pinned, on what the header
+    /// displays, by `test_the_identity_is_shown_in_exactly_the_modes_that_derive_local`.
     readonly property bool modeHasIdentity: current === "local"
 
     /// Emitted when the user PICKS a different mode — on the click, while the

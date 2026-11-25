@@ -117,8 +117,9 @@ jobs:
           [ "$fail" -eq 0 ] && echo "ok: layout imports present"
 
       # The OpenSpec CLI below declares `engines: node >= 22.20.0`, and the
-      # runner's preinstalled Node is not a version this repo chose. Same
-      # version as the ui-specs job.
+      # runner's preinstalled Node is not a version this repo chose. 24 rather
+      # than the floor because it is the version the ui-specs job already
+      # sets up, so the workflow has one Node to bump.
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -129,9 +130,13 @@ jobs:
       # past the CLI's 500-character limit fail this job rather than print a
       # line nobody reads.
       #
-      # The CLI is pinned exactly, here and nowhere else, so an upstream
-      # release cannot change what this gate rejects without a commit saying
-      # so. Run the same command from the repo root to reproduce a failure;
+      # The CLI is pinned exactly, here and nowhere else, so a new CLI release
+      # cannot change what this gate rejects without a commit saying so. Its
+      # own dependencies are NOT pinned: npx resolves their caret ranges fresh
+      # on every run, zod (which runs the spec schemas) and yaml among them,
+      # so a release of one of those can still move a verdict. Accepted, as
+      # for ui-specs; the strict-spec-validation design.md, Decision 2, says
+      # why. Run the same command from the repo root to reproduce a failure;
       # `openspec` takes its root from the cwd.
       #
       # What a green here does NOT prove: that every capability directory was
@@ -149,6 +154,8 @@ jobs:
         env:
           # Telemetry and the CLI's version check both honour this. CI turns
           # them off by detection already; setting it does not depend on that.
+          # `--no-interactive` below is the same kind of belt: with `--specs`
+          # its one effect is no spinner, which `CI` being set also gives.
           OPENSPEC_TELEMETRY: "0"
         run: npx --yes @fission-ai/openspec@2.1.1 validate --specs --strict --no-interactive
 

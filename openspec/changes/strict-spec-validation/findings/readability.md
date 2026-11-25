@@ -30,7 +30,7 @@ a test (none could be run in this pod: no Qt 6 runner, compiler or Nix).
 
 ## Findings
 
-- [ ] **`dev-writer`** — `radicle-ui/src/qml/SourceState.qml:183-186` — a code comment records the status of a test run, and in words that read as something else
+- [x] **`dev-writer`** — `radicle-ui/src/qml/SourceState.qml:183-186` — a code comment records the status of a test run, and in words that read as something else
       **Scenario:** the new last sentence says the scenario test "added after
       that mutation ... expects `[embedded]:local:shown` and so reads as a
       fourth; that one has not been run under the mutation." Three problems for
@@ -48,3 +48,12 @@ a test (none could be run in this pod: no Qt 6 runner, compiler or Nix).
       **Severity:** low; a readability and document-truth defect, not a
       correctness one. The rest of the rewritten comment is accurate against
       the code.
+      **Fixed** in the commit "Act on the dev-writer review findings in
+      strict-spec-validation", with the clause the finding gives: the
+      sentence now reads "The rule is also pinned, on what the header
+      displays, by
+      `test_the_identity_is_shown_in_exactly_the_modes_that_derive_local`."
+      The run status, the history and "a fourth" are gone from the
+      component; whether that test has been run under a mutation is now in
+      `tasks.md` group 3 and `design.md`'s `embedded-header` entry. Comment
+      only; no test can fail without it.

@@ -69,11 +69,24 @@ licence to change behaviour quietly.
 - [x] 3.7 `source-modes`: 1 scenario pinned.
 
 "Pinned" here means a test exists that, read against the code, can fail for the
-reason the scenario names. The pod that wrote them has no Qt runner, C/C++
-compiler or Nix, so their first execution was CI's: run `45560729970` on
-`645235f`, where every test this group added or changed passed (29 QML, 4 Rust,
-7 C++, each found by name in its job's log). That shows they pass, not that
-they can fail; the mutations the `tester` named have not been run anywhere.
+reason the scenario names. No pod that worked on this change had a Qt 6 runner,
+a C/C++ compiler or Nix, so every execution of these tests is CI's. Run
+`45560729970` on `645235f` passed the first version of them; the tester's
+review-round revisions came after it, so whether the suite as it stands passes
+is PR #98's latest run (`gh pr checks 98`), not that one. A pass shows a test
+passes, not that it can fail: no mutation the `tester` or the spec-test review
+named has been run anywhere, including the two against
+`test_the_identity_is_shown_in_exactly_the_modes_that_derive_local` (design.md,
+the `embedded-header` entry).
+
+The three `embedded-state` scenarios whose step changed (design.md,
+Decision 7) are pinned by
+`test_the_reply_clears_the_outstanding_start_not_the_request`, by the
+outstanding-start leg of
+`test_an_unencrypted_stopped_node_is_started_without_being_asked`, and, for
+"The start action is withheld while a start is outstanding", by
+`test_no_action_is_named_while_a_start_is_outstanding`, which already set
+`running` before expecting `starting`.
 
 ## Workflow follow-up
 

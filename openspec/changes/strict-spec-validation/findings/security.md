@@ -48,7 +48,7 @@ parses markdown a PR author controls (`openspec/specs/**`).
 
 ## Findings
 
-- [ ] **`dev-writer`** — `.github/workflows/ci.yml:132-135` — "pinned exactly ... so an upstream release cannot change what this gate rejects" is not true of the transitive dependencies
+- [x] **`dev-writer`** — `.github/workflows/ci.yml:132-135` — "pinned exactly ... so an upstream release cannot change what this gate rejects" is not true of the transitive dependencies
       **Scenario:** `npx --yes @fission-ai/openspec@2.1.1` pins the CLI, but its
       `dependencies` are caret ranges resolved fresh on every run, with no
       lockfile and no integrity check beyond npm's own: `zod ^4.4.3`, `yaml
@@ -66,3 +66,21 @@ parses markdown a PR author controls (`openspec/specs/**`).
       (a committed lockfile and `npm ci`, or a vendored copy).
       **Severity:** low. **Measured:** dependency ranges read from
       `npm view`; the install resolved 66 packages with no install scripts.
+      **Fixed, by softening the comment; the tree stays unpinned, on
+      purpose**, in the commit "Act on the dev-writer review findings in
+      strict-spec-validation". The comment beside the step now says the CLI
+      is pinned so a new *CLI* release cannot move what the gate rejects,
+      that its own dependencies are not pinned and resolve their caret
+      ranges fresh each run, `zod` (which runs the spec schemas) and `yaml`
+      among them, so a release of one can still move a verdict, and that
+      this is accepted, pointing at Decision 2. Decision 2's "Not pinned"
+      paragraph had claimed the rules live in the CLI's own code, which the
+      pin fixes; it now says the length rule is the CLI's but the schemas
+      run on `zod` (`dist/core/schemas/*.schema.js`), gives the measured
+      ranges (`npm view @fission-ai/openspec@2.1.1 dependencies` today: 13
+      direct, 11 caret ranges, `skills` and `cross-spawn` exact; the two
+      ranged ones this finding does not list are `@inquirer/core` and
+      `@inquirer/prompts`), and records
+      the lockfile with `npm ci` as considered and not taken, with why. The
+      Risks entry now covers a verdict moving as well as a compromise.
+      Comment and prose only; no test can fail without it.
