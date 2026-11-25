@@ -9,9 +9,8 @@ whenever the mode in force has one and the reported DID is non-empty, in
 The DID MUST be displayed in full, including its `did:key:` prefix, and MUST be
 the one the backend reported rather than a truncation or a placeholder.
 
-Where the mode in force has no identity, as `explore` has none, or its reported
-DID is empty, the header MUST display nothing rather than a blank slot or a
-placeholder.
+Where the mode has no identity, as in `explore`, or its reported DID is empty,
+nothing MUST be displayed: no blank slot and no placeholder.
 
 #### Scenario: Embedded shows its DID as Local does
 
