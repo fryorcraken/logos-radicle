@@ -13,11 +13,14 @@ module reports success with a well-formed DID.
 
 - The rule that a short read of entropy fails moves out of "Creation yields a
   distinct identity per home" into a requirement of its own, which also covers
-  a source that reports an error, and states what a failed draw leaves behind:
-  an error reply, no key material, and a home a later creation can complete.
+  a source that cannot be opened or reports an error, and states what a failed
+  draw leaves behind: an error reply that carries the source's own error text,
+  no key material, and a home a later creation can complete.
 - A second new requirement says what "short" does not mean: a seed whose 32
   bytes arrive across several reads, or after an interrupted read, is a full
-  read, and the key is derived from exactly those bytes.
+  read. The seed is the first 32 bytes the source supplies, and nothing past
+  them is read, so a draw from the operating system's source, which never
+  ends, still finishes.
 - "Creation yields a distinct identity per home" is scoped to creation through
   `createEmbeddedIdentity` and the FFI boundary, and gains the statement that
   neither accepts an entropy source as an argument, so the operating system's

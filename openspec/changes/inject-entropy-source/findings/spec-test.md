@@ -40,7 +40,7 @@ interruption table, the compiled-signature pin, and the home-stays-Empty
 scenario are each judged by reading to be able to fail for the reason they
 name.
 
-- [ ] **`spec-writer`** — "A seed supplied in pieces is a full read": "the
+- [x] **`spec-writer`** — "A seed supplied in pieces is a full read": "the
       signing key MUST be derived from exactly the 32 bytes the source supplied".
       **Answer to the tester's question: yes, a spec line is needed.** The
       production source, `/dev/urandom`, never ends, so it always supplies more
@@ -56,6 +56,17 @@ name.
       **Scenario:** an implementation that reads a source to its end and then takes
       the first 32 satisfies the spec as written and hangs in production.
       **Measured:** mutation 1 above. Severity: medium.
+      **Outcome (`spec-writer`): fixed in the spec.** The requirement now says
+      the seed is the first 32 bytes the source supplies, in order, and that
+      once they are supplied the backend MUST NOT read from the source again,
+      whether it would supply more, end or fail. Two scenarios added: "A source
+      longer than a seed uses its first 32 bytes" (48 bytes then end of input;
+      node id equals that of the first 32 in one read) and "Nothing past the
+      32nd byte is read" (32 bytes then a read error on every further read;
+      `created:true`, the same node id, and no read received after the 32nd
+      byte). The test that fails without the behaviour is the `tester`'s entry
+      below; the `NO SPEC` on `a_source_longer_than_a_seed_uses_its_first_32_bytes`
+      is now covered by the first scenario.
 - [ ] **`tester`** — no test pins that the draw stops at 32 bytes. Once the
       spec-writer's line lands, add a scripted source that supplies 32 bytes and
       then reports `Step::Fail` (and one that supplies 32 then yields more than
@@ -66,7 +77,7 @@ name.
       **Scenario:** a draw that reads on past byte 32 passes every scripted test
       and is caught only as a hang in the `/dev/urandom` tests.
       **Measured:** mutation 1 above; scripted tests all green. Severity: medium.
-- [ ] **`spec-writer`** — an unmarked unspecified behaviour. `a_source_that_cannot_be_opened_creates_no_key`
+- [x] **`spec-writer`** — an unmarked unspecified behaviour. `a_source_that_cannot_be_opened_creates_no_key`
       pins that a source which cannot be opened fails with the entropy message and
       writes no key, and `a_source_that_fails_mid_read_creates_no_key` /
       the unopenable test pin that the source's own error text is carried in the
@@ -79,6 +90,19 @@ name.
       declines. **Scenario:** an implementation that reports a failed open as a
       generic error without the entropy wording, or drops the cause, meets the
       spec and fails these tests. Severity: low.
+      **Outcome (`spec-writer`): fixed in the spec; the tested behaviour was the
+      right choice.** "A failed entropy draw creates no key" now names a source
+      that cannot be opened among the failures, and requires the error to
+      include the text of any error that opening or reading the source
+      reported. Carrying the cause is safe: `findings/security.md` records that
+      the production opener's error names only the `/dev/urandom` constant and
+      no secret. Added scenario "A source that cannot be opened creates no key"
+      (error, entropy wording, the opening error's text, no `created`/`nodeId`,
+      no file under `keys`), and the mid-read scenario gains "MUST include the
+      text of the read error". Both tests the entry names now assert spec'd
+      behaviour, so no `NO SPEC:` comment is needed. The production opener's
+      own path-naming wording is not specified: a test cannot make
+      `/dev/urandom` unopenable, so it would be an untestable scenario.
 - [ ] **`tester`** — "No caller can choose the entropy source" is pinned for the
       Rust entry point (type-checked function pointer) and the checked-in header
       (mutation 2 killed), but not for `createEmbeddedIdentity` in the C++ module,
