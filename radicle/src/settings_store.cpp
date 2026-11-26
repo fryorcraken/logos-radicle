@@ -105,6 +105,63 @@ bool isKnownKey(const std::string& key)
     return false;
 }
 
+/// The deepest member a write carries forward, counted in arrays and objects
+/// on the member's deepest path (`[]` is 1). `dump()` recurses once per level,
+/// so a member that the parser, which does not recurse, accepted at any depth
+/// could overflow the stack when written back. The number is far above
+/// anything a settings value of any build needs and far below what a thread's
+/// stack holds; `design.md` has the argument.
+constexpr size_t kMaxKeptDepth = 128;
+
+/// Whether `value` nests deeper than `limit`. Walks with a stack of its own
+/// rather than recursing, and stops at the first level past `limit`, so a
+/// member a million levels deep is answered after `limit + 1` of them and
+/// cannot overflow the call stack the way `dump()` did.
+bool nestsDeeperThan(const nlohmann::json& value, size_t limit)
+{
+    std::vector<std::pair<const nlohmann::json*, size_t>> pending{{&value, 0}};
+    while (!pending.empty()) {
+        const auto [node, above] = pending.back();
+        pending.pop_back();
+        if (!node->is_structured()) continue;
+        const size_t depth = above + 1;
+        if (depth > limit) return true;
+        for (const auto& child : *node) pending.emplace_back(&child, depth);
+    }
+    return false;
+}
+
+/// Remove from `object` every member nested deeper than `limit`.
+void dropMembersNestedDeeperThan(nlohmann::json& object, size_t limit)
+{
+    for (auto it = object.begin(); it != object.end();) {
+        if (nestsDeeperThan(*it, limit))
+            it = object.erase(it);
+        else
+            ++it;
+    }
+}
+
+/// The settings object as the file's text: one member per line, each value
+/// written compactly.
+///
+/// Not `dump(2)`, which indents every level of a nested value by its depth,
+/// so a kept member's text grows with the square of how deep it nests. For
+/// the flat, all-string object this module writes for itself the two are the
+/// same text.
+std::string serialise(const nlohmann::json& object)
+{
+    if (object.empty()) return "{}";
+    std::string text = "{";
+    const char* separator = "\n  ";
+    for (const auto& [key, value] : object.items()) {
+        text += separator;
+        text += nlohmann::json(key).dump() + ": " + value.dump();
+        separator = ",\n  ";
+    }
+    return text + "\n}";
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -331,7 +388,7 @@ bool SettingsStore::save(const nlohmann::json& settings) const
     {
         std::ofstream out(temp, std::ios::trunc);
         if (!out) return false;
-        out << settings.dump(2) << "\n";
+        out << serialise(settings) << "\n";
         out.flush();
         if (!out.good()) {
             ::unlink(temp.c_str());
@@ -419,6 +476,13 @@ nlohmann::json SettingsStore::set(const std::string& key, const std::string& val
     // another instance's write is lost. `validate` can run a git binary, so
     // reading first held the window open for as long as that probe took.
     auto stored = readStored();
+
+    // A member nested deeper than `kMaxKeptDepth` is dropped, not kept, and
+    // the write goes ahead. Writing it back is what cannot be done safely, and
+    // refusing would leave every later write refused too, the same dead end as
+    // refusing an unreadable file. At that depth it holds no string, so no
+    // read of this build reports anything from it.
+    dropMembersNestedDeeperThan(stored, kMaxKeptDepth);
     stored[key] = value;
     if (!save(stored))
         return makeError("could not write settings to " + m_path);

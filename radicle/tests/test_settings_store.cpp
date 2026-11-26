@@ -66,6 +66,14 @@ struct ScratchSettings {
     }
 };
 
+/// An array nested `depth` deep, written as text: `[` that many times, then
+/// `]` that many times. Text rather than a built `nlohmann::json`, so a test
+/// states the file's depth without asking the library to construct it.
+std::string nestedArray(size_t depth)
+{
+    return std::string(depth, '[') + std::string(depth, ']');
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -637,6 +645,78 @@ LOGOS_TEST(the_first_write_creates_a_file_holding_only_that_key)
 
     LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"remoteSeed":"https://a.example"})"));
     LOGOS_ASSERT_EQ(store.get(SettingsStore::kKeyMode), std::string(SettingsStore::kModeExplore));
+}
+
+// ---------------------------------------------------------------------------
+// "A settings write drops a member nested too deep to keep". The cap is 128:
+// the two tests either side of it are what pin the number, since a cap of 127
+// fails the first and a cap of 129 the second. The 100000-deep one is the
+// crash: a write that serialised such a member recursively overflowed the
+// stack and took the host process with it.
+// ---------------------------------------------------------------------------
+
+LOGOS_TEST(a_member_exactly_128_deep_is_kept)
+{
+    const std::string deep = nestedArray(128);
+    ScratchSettings s("write-deep-128");
+    s.write(R"({"mode":"turbo","deep":)" + deep + "}");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"turbo","deep":)" + deep + R"(,"radHome":"/home/u/.radicle"})"));
+}
+
+LOGOS_TEST(a_member_129_deep_is_dropped_and_the_rest_kept)
+{
+    // `turbo` beside it, so a write that answered a too-deep member by
+    // treating the whole file as unreadable, and kept only the key written,
+    // is told apart from one that drops that member alone.
+    ScratchSettings s("write-deep-129");
+    s.write(R"({"mode":"turbo","deep":)" + nestedArray(129) + "}");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"turbo","radHome":"/home/u/.radicle"})"));
+}
+
+// NO SPEC: the spec leaves the file's whitespace open. This pins that a kept
+// nested member is written compactly, so the file a write leaves grows with
+// what it holds and not with how deep that nests. Indented, every level is a
+// line of its own indented by its depth, so the text grows with the square of
+// the depth.
+LOGOS_TEST(a_kept_nested_member_does_not_grow_the_file_with_its_depth)
+{
+    const std::string original = R"({"mode":"turbo","deep":)" + nestedArray(128) + "}";
+    ScratchSettings s("write-deep-size");
+    s.write(original);
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    // The member is still there, so the size below is not small for want of it.
+    LOGOS_ASSERT_TRUE(s.onDisk().contains("deep"));
+    LOGOS_ASSERT_TRUE(s.contents().size() < 2 * original.size());
+}
+
+LOGOS_TEST(a_member_nested_far_deeper_still_lets_the_write_complete)
+{
+    // Last of the depth tests on purpose: before the cap, this one ended the
+    // test binary with a stack overflow, and the ones above still reported.
+    ScratchSettings s("write-deep-100000");
+    s.write(R"({"mode":"turbo","deep":)" + nestedArray(100000) + "}");
+    SettingsStore store{s.path()};
+
+    const auto reply = store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle");
+
+    LOGOS_ASSERT_FALSE(isError(reply));
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyRadHome].get<std::string>(),
+                    std::string("/home/u/.radicle"));
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"turbo","radHome":"/home/u/.radicle"})"));
 }
 
 LOGOS_TEST(all_three_modes_are_accepted)
