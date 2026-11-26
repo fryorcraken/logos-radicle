@@ -378,18 +378,32 @@ pub fn init_profile_with_entropy<R: Read>(
     passphrase: &str,
     open_entropy: impl FnOnce() -> std::io::Result<R>,
 ) -> String {
-    match init_profile_inner(home, alias, passphrase, open_entropy) {
-        Ok(v) => v,
-        Err(e) => crate::local::error(e),
-    }
+    // The order is the point of this body. The seed is drawn after every
+    // refusal, so a refused call never opens the source, and before `create`
+    // runs `Home::new`, so a failed draw — like every refusal — leaves the
+    // filesystem exactly as it found it rather than an empty Radicle home
+    // with no key in it.
+    let reply = admit(home, alias, passphrase).and_then(|request| {
+        let seed = draw_seed(open_entropy)?;
+        create(request, seed)
+    });
+    reply.unwrap_or_else(crate::local::error)
 }
 
-fn init_profile_inner<R: Read>(
-    home: &str,
-    alias: &str,
-    passphrase: &str,
-    open_entropy: impl FnOnce() -> std::io::Result<R>,
-) -> Result<String, String> {
+/// A call to create an identity that has passed every refusal, carrying what
+/// creation needs in the form it needs it.
+struct Admitted<'a> {
+    home: &'a str,
+    alias: Alias,
+    /// `None` writes the key unencrypted; see `init_profile`'s doc comment.
+    passphrase: Option<Passphrase>,
+}
+
+/// Refuse a call that must not create anything, or admit it.
+///
+/// Every refusal of identity creation is here, and nothing here touches the
+/// filesystem except to read it, so a refused call leaves it as it found it.
+fn admit<'a>(home: &'a str, alias: &str, passphrase: &str) -> Result<Admitted<'a>, String> {
     if home.is_empty() {
         return Err("no home given to create the profile in".to_string());
     }
@@ -464,23 +478,34 @@ fn init_profile_inner<R: Read>(
         .map_err(|e| format!("'{alias}' is not a usable alias: {e}"))?;
 
     // Empty means unencrypted, matching ssh-keygen and the crate's own
-    // env::passphrase(). See the doc comment.
-    let encrypted = !passphrase.is_empty();
-    let passphrase = if encrypted {
-        Some(Passphrase::from(passphrase.to_string()))
-    } else {
+    // env::passphrase(). See `init_profile`'s doc comment.
+    let passphrase = if passphrase.is_empty() {
         None
+    } else {
+        Some(Passphrase::from(passphrase.to_string()))
     };
 
-    // The seed is drawn after every refusal, so a refused call never opens the
-    // source, and before `Home::new`, so a failed draw — like every refusal
-    // above — leaves the filesystem exactly as it found it rather than an
-    // empty Radicle home with no key in it.
-    let seed = draw_seed(open_entropy)?;
+    Ok(Admitted {
+        home,
+        alias,
+        passphrase,
+    })
+}
 
-    // `Home::new` creates the directory tree. It runs after both refusals above
-    // so that a bad alias or an occupied home does not leave a half-made home
-    // behind for the next attempt to trip over.
+/// Create the identity an admitted call asked for, from `seed`.
+///
+/// `Home::new` creates the directory tree, and it is the first write of the
+/// whole call: it is reached only with a request `admit` let through and a
+/// seed already drawn, so a bad alias, an occupied home or a failed draw does
+/// not leave a half-made home behind for the next attempt to trip over.
+fn create(request: Admitted<'_>, seed: Seed) -> Result<String, String> {
+    let Admitted {
+        home,
+        alias,
+        passphrase,
+    } = request;
+    let encrypted = passphrase.is_some();
+
     let home_path = std::path::PathBuf::from(home);
     let radicle_home = Home::new(&home_path)
         .map_err(|e| format!("could not create a Radicle home at {home}: {e}"))?;
