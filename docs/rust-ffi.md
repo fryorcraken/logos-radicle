@@ -225,6 +225,21 @@ naming a direct dependency rewrites the lock and invalidates that hash even
 when the package is already in the graph transitively. Eight lines of
 `File::read_exact` is what `getrandom` does on Linux anyway.
 
+**A test of the draw goes through `init_profile_with_entropy`, never through
+`init_profile`.** `/dev/urandom` cannot be made to short-read, fail or chunk on
+demand, so a test that reaches the draw only through the production source
+cannot fail for the reason it names — replacing `read_exact` with a lenient
+`read` once left every test in `tests/profile_init.rs` green, because two
+half-zeroed seeds still differ in their random half. The seam takes the
+source's *opener*, and `init_profile` is it with `/dev/urandom` fixed; the
+`extern "C"` entry point calls `init_profile`, so no C caller can choose the
+source. A test asserting which key came out compares against a node id the
+crate's own `Profile::init` derives from the same bytes, not against a second
+call through the seam, which would agree with itself while ignoring its
+input. The draw runs after every refusal and before `Home::new`; the
+reasoning is in the `inject-entropy-source` change's `design.md`
+(`openspec/changes/archive/` once it has merged).
+
 **The marker for "a profile is here" is `keys/radicle.pub`, not the directory
 existing** — and it is deliberately a *different* question from
 `LocalStore::available()`, which looks for `storage/`. That one asks "can I

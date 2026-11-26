@@ -1,7 +1,7 @@
 ## Stages
 
 - [x] spec — `spec-writer`
-- [ ] design + code — `dev-writer`
+- [x] design + code — `dev-writer`
 - [ ] tests — `tester`
 - [ ] review: correctness — `code-reviewer`
 - [ ] review: security — `code-reviewer`
@@ -12,3 +12,55 @@
 - [ ] findings all ticked, `findings/` deleted — `closer`
 - [ ] `openspec validate --strict`, then `archive` — `closer`
 - [ ] CI green, title/body checked, PR merged — `closer`
+
+# Tasks
+
+## 1. The injectable entropy draw
+
+- [x] 1.1 Replace `os_seed()` with `draw_seed(open)`, which opens its source
+      through the opener it is given and fills exactly 32 bytes with
+      `read_exact`; verified by `a_source_that_ends_after_16_bytes_creates_no_key`
+      and `a_source_that_fails_mid_read_creates_no_key`, both red under the
+      archived lenient-`read` mutation
+- [x] 1.2 Give every failure of the draw the prefix "the entropy for a new key
+      could not be read", including an unopenable source; verified by
+      `a_source_that_cannot_be_opened_creates_no_key`, red with the old
+      open-failure message restored
+- [x] 1.3 Add `init_profile_with_entropy`, and make `init_profile` that
+      function with the `/dev/urandom` opener fixed; verified by the eight
+      scripted-source tests going red when the seam ignores its argument
+- [x] 1.4 Draw the seed after every refusal and before `Home::new`; verified by
+      `a_failed_draw_creates_no_home_directory` (red with the draw moved after
+      `Home::new`) and `a_refused_home_never_opens_the_entropy_source` (red with
+      the source opened before validation)
+- [x] 1.5 Pin that a chunked or interrupted source is a full read and that the
+      key comes from exactly the bytes supplied, against a node id the crate's
+      own `Profile::init` derives; verified by
+      `a_seed_supplied_one_byte_per_read_is_used_whole` and
+      `an_interrupted_read_is_retried_not_failed`
+- [x] 1.6 Pin that a failed draw leaves the home Empty and completable; verified
+      by `a_failed_draw_leaves_the_home_completable`
+- [x] 1.7 Production still reads `/dev/urandom` and still yields distinct
+      identities; verified by `two_homes_get_two_different_identities` and the
+      rest of the pre-existing `tests/profile_init.rs`, unchanged and green
+- [ ] 1.8 No caller can choose the entropy source — **satisfied by
+      construction, not by a test**: `radicle_local_init_profile` and
+      `createEmbeddedIdentity` keep their signatures, `radicle_ffi.h` is
+      unchanged, and `init_profile_with_entropy` is not `extern "C"`, so
+      cbindgen emits nothing for it. Left for the `tester` to decide whether a
+      signature check earns a test
+
+## 2. Documentation
+
+- [x] 2.1 Record in `docs/rust-ffi.md` that a test of the draw goes through
+      `init_profile_with_entropy` and compares against a crate-derived node id;
+      verified by reading the paragraph after "The seed comes from
+      `/dev/urandom`"
+- [x] 2.2 Record the decisions, alternatives and the mutation each guard kills
+      in `design.md`; verified by each Decision carrying a "What breaks
+      without it" naming the tests
+
+## 3. Gates
+
+- [x] 3.1 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and
+      `cargo test` for `radicle/rust-ffi/` pass from this tree

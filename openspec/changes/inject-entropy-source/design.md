@@ -74,6 +74,22 @@ Alternatives considered:
   entropy comes from, which is what "No caller can choose the entropy source"
   forbids.
 
+**What breaks without it:** making the seam ignore its argument and draw from
+`/dev/urandom` regardless turns eight tests red — every test that hands it a
+scripted source except the refused-home one. The three that compare node ids
+(`a_seed_supplied_one_byte_per_read_is_used_whole`,
+`an_interrupted_read_is_retried_not_failed`,
+`a_source_longer_than_a_seed_uses_its_first_32_bytes`) compare against an id
+the `radicle` crate's own `Profile::init` derives from the same bytes, not
+against a second call through the seam, which would agree with itself while
+ignoring its input.
+
+That "No caller can choose the entropy source" holds is satisfied by
+construction rather than by a test: `radicle_local_init_profile` and
+`createEmbeddedIdentity` keep their three- and two-argument signatures, and
+`init_profile_with_entropy` is not `extern "C"`, so cbindgen emits nothing for
+it and `radicle_ffi.h` is unchanged.
+
 ### 2. Inject an opener, not an open reader
 
 The seam takes `impl FnOnce() -> io::Result<impl Read>` rather than an
@@ -89,6 +105,13 @@ keeps the open exactly where it was relative to every refusal.
 It also makes the open failure testable: an opener returning `Err` is the one
 way to show that an unopenable source yields the entropy message, which was
 the message the old code got wrong.
+
+**What breaks without it:** opening the source in `init_profile_with_entropy`,
+before `init_profile_inner` validates anything, turns
+`a_refused_home_never_opens_the_entropy_source` red, and nothing else. The test
+records whether its opener was called; its message assertion alone stays green
+under that mutation, because the eagerly opened result is not consumed until
+the draw and the refusal still wins.
 
 ### 3. The seed is drawn before `Home::new`, after every refusal
 
@@ -117,9 +140,14 @@ default implementation does: it loops until the buffer is full, retries
 first. Hand-writing that loop would be a second copy of std to get wrong.
 
 **What breaks without it:** replacing `read_exact` with a single `read` that
-discards the count — the archived task's mutation — turns red the short-source
-and failing-source tests (no error comes back) and the one-byte-per-read test
-(the key is derived from 1 real byte and 31 zeros).
+discards the count — the archived task's mutation — turns six tests red:
+`a_source_that_ends_after_16_bytes_creates_no_key`,
+`a_source_that_fails_mid_read_creates_no_key`,
+`a_failed_draw_leaves_the_home_completable` and
+`a_failed_draw_creates_no_home_directory` (each gets `created:true` from a
+half-zeroed seed), and `a_seed_supplied_one_byte_per_read_is_used_whole` and
+`an_interrupted_read_is_retried_not_failed` (each gets a key from the first
+read's bytes and zeros).
 
 ### 5. One message prefix for every failure of the draw
 
@@ -131,6 +159,10 @@ short one. The short-read cause is ours rather than std's `UnexpectedEof` text
 
 The production opener wraps `File::open`'s error with the path, so an
 unopenable `/dev/urandom` still says which source it was.
+
+**What breaks without it:** restoring the old open-failure message ("could not
+open the system random source: …") turns
+`a_source_that_cannot_be_opened_creates_no_key` red.
 
 ## Risks / Trade-offs
 

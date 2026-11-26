@@ -1090,9 +1090,11 @@ fn a_source_longer_than_a_seed_uses_its_first_32_bytes() {
 /// an entropy failure.
 ///
 /// The occupied-home refusal must name the overwrite whatever the source would
-/// have done. An implementation that opened the source before validating —
-/// the shape design.md's Decision 2 rules out — reports the entropy message
-/// here instead.
+/// have done; that half is the spec's. The `opened` flag is design.md's
+/// Decision 2, and it is the half that does the work: an implementation that
+/// opens the source before validating but holds the error until the draw still
+/// reports the refusal correctly, and only the flag sees it. Verified by that
+/// mutation, which leaves the message assertion green and turns the flag red.
 #[test]
 fn a_refused_home_never_opens_the_entropy_source() {
     let (dir, home) = fresh_home("entropy-refused");
