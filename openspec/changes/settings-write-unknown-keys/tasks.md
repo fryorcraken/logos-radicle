@@ -71,13 +71,38 @@ the sandbox, not this change.
 
 ## 5. The MODIFIED requirement
 
-- [x] 5.1 "A settings file that cannot be read yields defaults" changed only in
-      wording; its four scenarios are the existing store tests
+- [x] 5.1 "A settings file that cannot be read yields defaults" changed in
+      wording, and now requires the no-path refusal to name `XDG_DATA_HOME`
+      and `HOME`, which the message `set()` already returned does; no code
+      changed for it. Its four scenarios are the existing store tests
       (`a_missing_settings_file_yields_defaults_rather_than_an_error`,
       `a_corrupted_settings_file_yields_defaults_rather_than_a_dead_module`,
       `unknown_keys_in_the_file_are_ignored_rather_than_surfaced`,
       `a_store_with_no_path_still_reports_defaults_rather_than_failing`),
       verified passing unchanged.
+
+## 6. A write drops a member nested too deep to keep
+
+- [x] 6.1 Name the five keys once (`kKnownKeys`, `isKnownKey()`), have
+      `normalised()` build its defaults from them and `set()` refuse against
+      them, and read the file only after every refusal, in a commit that
+      changes no behaviour; verified by the suite passing unchanged apart
+      from the two sandbox socket-path tests.
+- [x] 6.2 Write the three depth scenarios' tests and run them against the code
+      without the cap; verified by watching
+      `a_member_129_deep_is_dropped_and_the_rest_kept` fail and
+      `a_member_nested_far_deeper_still_lets_the_write_complete` end the test
+      binary with SIGSEGV. `a_member_exactly_128_deep_is_kept` passed there,
+      as it must, and was watched failing against a cap of 127 instead.
+- [x] 6.3 Drop every member deeper than 128 in `set()`, with a depth walk that
+      keeps its own stack; verified by the three depth tests passing, and by
+      a recursive full-depth check, run as a mutation, crashing the binary in
+      the 100000-deep test (`design.md`, Decision 9).
+- [x] 6.4 Write each member's value compactly rather than with `dump(2)`;
+      verified by the `NO SPEC:` test
+      `a_kept_nested_member_does_not_grow_the_file_with_its_depth` failing
+      against `dump(2)` and passing after, and by every existing file test
+      passing unchanged.
 
 ## Workflow follow-up
 

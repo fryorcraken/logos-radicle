@@ -34,7 +34,7 @@ Clean, by reading (only the nesting and read-only cases below were probed):
   from the `const auto&` loop, and `readStored` is the old file handling.
   A 100000-deep nested value in the file reads without a crash.
 
-- [ ] **`dev-writer`** — `radicle/src/settings_store.cpp:404-405` — a write over a file holding a deeply nested unknown member crashes the host process
+- [x] **`dev-writer`** — `radicle/src/settings_store.cpp:404-405` — a write over a file holding a deeply nested unknown member crashes the host process
       **Scenario:** the settings file is `{"x":[[[[ ... ]]]]}` with the array
       nested 100000 deep (a 200 KB file, an unknown key `x`). `setSetting("radHome", "/h")`
       reads it (`parse` is iterative and copes), assigns, and `save` calls
@@ -68,8 +68,17 @@ Clean, by reading (only the nesting and read-only cases below were probed):
       128 kept, 129 dropped, and 100000 completing with the rest kept. Reads
       are unchanged, since a member that deep holds no string. Note the depth
       check itself must not recurse per level, or it crashes where `dump` did.
+      **Fixed** in `21a6656`: `set()` drops every member deeper than 128
+      (`dropMembersNestedDeeperThan`, `kMaxKeptDepth`) before assigning, and
+      `nestsDeeperThan()` walks with its own stack, stopping one level past
+      the cap. `a_member_nested_far_deeper_still_lets_the_write_complete`
+      ended the test binary with SIGSEGV (exit 139) before the fix and passes
+      after; `a_member_129_deep_is_dropped_and_the_rest_kept` failed before;
+      `a_member_exactly_128_deep_is_kept` failed against a cap of 127. A
+      recursive full-depth check, run as a mutation, crashed the binary in the
+      100000-deep test. Reasoning in `design.md`, Decision 9.
 
-- [ ] **`dev-writer`** — `radicle/src/settings_store.cpp:319` — `dump(2)` of a preserved nested member writes output quadratic in its depth
+- [x] **`dev-writer`** — `radicle/src/settings_store.cpp:319` — `dump(2)` of a preserved nested member writes output quadratic in its depth
       **Scenario:** `{"x":[[[ ... ]]]}` nested 10000 deep is a 20 KB file;
       `setSetting("radHome", "/h")` replaces it with a 200,040,027-byte file
       (indentation grows with depth), and at 1000 deep a 2 KB file becomes a
@@ -89,3 +98,11 @@ Clean, by reading (only the nesting and read-only cases below were probed):
       roughly 128 times its compact size, and a file can hold many. The file's
       whitespace stays outside the contract, so how the kept members are
       serialised is the dev-writer's choice; no requirement is added on size.
+      **Fixed** in `21a6656`: `save()` writes through `serialise()`, one
+      member per line with each value compact, which is the same text as
+      `dump(2)` for the flat all-string files this module writes and linear
+      in a nested member's size. The `NO SPEC:` test
+      `a_kept_nested_member_does_not_grow_the_file_with_its_depth` (a
+      128-deep member; the rewritten file must stay under twice the
+      original's size) failed against `dump(2)` and passes after; every
+      existing file test passed unchanged. `design.md`, Decision 6.

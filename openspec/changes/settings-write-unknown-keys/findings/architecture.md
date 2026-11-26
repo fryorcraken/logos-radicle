@@ -10,10 +10,24 @@ Clean areas, in prose:
 - **Comments.** The comments added in `set()`, `normalised()` and the header say why (the downgrade promise, why the reply is not the file, why defaults are not written out), not what. The one I would change is below.
 - **Tests as structure.** Each test parses the file in the test itself rather than through the store; the helpers (`ScratchSettings::onDisk`, `settingsOnDisk`) are small and local to the two executables, so the near-duplicate across the two files is not worth a shared header.
 
-- [ ] **`dev-writer`** — `radicle/src/settings_store.cpp:384-412` and `design.md:212-216` — the read in `set()` still precedes `validate()`, so the design's claim that the lost-update window is "narrower than before" is not true of this code
+- [x] **`dev-writer`** — `radicle/src/settings_store.cpp:384-412` and `design.md:212-216` — the read in `set()` still precedes `validate()`, so the design's claim that the lost-update window is "narrower than before" is not true of this code
       **Scenario:** `set()` does `readStored()` (line 384), then `validate(key, value)` (line 393), then `save(stored)` (line 405). For `gitPath`, `validate()` runs `LocalReader::gitProbe`, which executes the named binary; for `remoteSeed` and the rest it is instant. The old `set()` was `load()`, `contains`, `validate`, `save`, in the same order, so the read-to-save span is the same as before. Instance A reads the file, spends the probe's duration validating a `gitPath`, while instance B writes `remoteSeed`; A then renames its copy over the file and B's key is gone. That is exactly the outcome the Risks entry says is "narrower than before", and is not.
       **Fix, either:** read after the last refusal (the unknown-key test needs only the five keys, not the file's contents, so `stored` can be read between the `m_path.empty()` check and the assignment, which actually does shrink the window to read-assign-save), or correct the Risks entry to say the window is unchanged. Severity low; a design-claim accuracy problem with a cheap code fix, not a regression (the old code lost strictly more). Genuine defect in the document, stylistic only in the code.
+      **Fixed** in `6c43102`, by the first of the two fixes: `set()` now reads
+      the file after the unknown-key, `validate()` and empty-path refusals,
+      so the window is read, assign, drop, save and excludes the git probe.
+      The Risks entry in `design.md` now says that, and Decision 2 records
+      why. No test can see the window (it is a race between two processes);
+      what the tests do pin is that moving the read changed nothing else,
+      since the suite passed unchanged on that commit.
 
-- [ ] **`dev-writer`** — `radicle/src/settings_store.cpp:390` — "is this key one of the five?" is answered by building the whole normalised view and discarding it
+- [x] **`dev-writer`** — `radicle/src/settings_store.cpp:390` — "is this key one of the five?" is answered by building the whole normalised view and discarding it
       **Scenario:** `if (!normalised(stored).contains(key))` runs the defaults literal, the per-member copy loop over `stored` and the mode fallback, only to ask a membership question whose answer does not depend on `stored` at all; `normalised(stored)` is then computed a second time at line 412 for the reply. A reader has to open `normalised()` and read down to its `defaults` literal to learn that this line means "known key", and the comment at 388-389 ("whose keys are exactly the five this store knows") states an invariant the code does not name or enforce (nothing but the literal in a 90-line function keeps it true). The first `normalised(stored)` also pays for the stored object's member loop, so a large hand-edited file does needless work on a refused write.
       **Suggested shape, not required:** a named predicate (`isKnownKey(key)`) beside `isKnownMode`, backed by the same single list `normalised()` builds its defaults from, so the key set is stated once and the check reads as what it is. Severity low; stylistic preference, not a defect.
+      **Fixed** in `6c43102`, in the suggested shape: `isKnownKey()` backed by
+      `kKnownKeys`, the one list `normalised()` also builds its defaults
+      from. A file-local function in `settings_store.cpp` rather than a member
+      beside `isKnownMode`, so the header and the public interface do not
+      widen. The same change as `readability.md`'s second entry; `design.md`
+      Decision 2 names the two alternatives (`stored.contains`,
+      `normalised(stored).contains`) and why each was ruled out.
