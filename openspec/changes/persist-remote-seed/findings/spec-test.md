@@ -162,3 +162,124 @@ apply.
       including the `remoteReachable` and `remoteApiVersion` `getCapabilities`
       reports for it. New scenario "A failed probe leaves the seed in force
       reachable". The `NO SPEC:` marker can go.
+
+## Round 2
+
+Reviewed: the current delta `specs/module-settings/spec.md` and `proposal.md`
+against `radicle/tests/test_radicle_impl.cpp`, `test_seed_client.cpp` and
+`test_settings_store.cpp` at HEAD `35f8d35`, and `gh issue view 55`. `openspec
+validate persist-remote-seed --strict` passes.
+
+**Coverage (part 1).** Every scenario of the five new requirements and the
+MODIFIED one has a test that can fail, at the right layer (the C++ core suite,
+which sees the whole `setRemoteSeed` call, the settings file and the event
+sink). The restart scenarios use a second instance over one file with a default
+`SeedClient`, after asserting the file absent. The "no event" assertions have
+their control in `an_accepted_seed_emits_one_remote_seed_changed_naming_it`. The
+two-trailing-slash test pins the request URL, the reply, capabilities, settings
+and the event against written-out strings. `a_failure_status_is_a_failed_probe_whatever_its_body`
+and `a_success_that_is_not_a_seed_index_is_a_failed_probe` check
+`requested.back()` names the new host, so the refusal is the probe's. I found
+no scenario without a test and none untestable as written.
+
+**The tester's question: `{"apiVersion":"6.2.0","error":"x"}` as a 2xx body.**
+The spec's text says the seed answers: the definition is a 2xx status and a body
+that is a JSON object whose `apiVersion` is a string, every other outcome is a
+failed probe, and nothing mentions an `error` member. No test pins it either
+way. **Measured:** I added a temporary test driving exactly that body at status
+200 and asserting acceptance; it failed on `!(out.contains("error"))`
+(`test_radicle_impl.cpp:1033` in that build). The command was
+`nix build ./radicle#checks.x86_64-linux.unit-tests -L --out-link result-test`,
+and the result was read in full from `nix log
+/nix/store/hxh8pmb6xvlqnaqhccdany5h9a915idx-logos-radicle-tests-0.2.3.drv`:
+200 passed, 3 failed, the three being my test and the two sandbox
+socket-path-cap failures the overlay names (`starting_a_node_with_no_embedded_identity_says_so_in_the_modes_own_words`,
+`embedded_mode_reads_and_writes_its_own_home_and_leaves_the_local_one_alone`).
+So the code refuses a seed the spec says answers, and no test notices.
+
+**Mutations (part 2).** One, the temporary test above, a mutation of the suite
+rather than of the code. Restored (`git checkout` of the file); nothing is left
+in the tree. I judged the rest by reading: a string-`apiVersion` check mutated
+to "any object" is killed by the `{}` and `{"apiVersion":6}` rows; stripping
+only one trailing slash by the two-slash test; emitting on refusal or with the
+typed URL by the event assertions; mutate-then-restore by
+`a_failed_probe_leaves_the_seed_in_force_reachable`.
+
+**NO SPEC (part 3).** One marker is left, `a_store_with_no_path_says_why_it_cannot_write`
+(`test_settings_store.cpp:669`). It is honest: the live "A store with no path
+reports defaults and refuses to write" scenario requires the refusal and is
+silent on its wording, so the marker names a real gap, a low one, and I do not
+raise it again. The four round 1 markers are gone and each of those behaviours
+is now a scenario. The one unmarked behaviour I found is the first box below
+the question.
+
+**Spec soundness (part 5).** The delta is self-consistent: "A seed
+setRemoteSeed refuses changes nothing" and "A malformed seed URL is refused
+before any request" overlap on shape refusals without contradicting, and every
+requirement's text is under the strict limit. The issue's three "Done when"
+items are pinned and the proposal's extra refusals are recorded decisions, not
+stale scope. Part 4 does not apply. `proposal.md` says "No UI change", while
+the branch changed `radicle-ui/src/qml/Main.qml` by 6 lines added and 6
+removed since round 1; I did not read it and raise no box on it, but whoever
+owns that claim should confirm the edit changes no behaviour, since a UI change
+would need a UI test.
+
+- [ ] **`spec-writer`** — `specs/module-settings/spec.md`, "A seed answers its
+      probe only with a Radicle seed index"
+      **Scenario:** a 2xx reply `{"apiVersion":"6.2.0","error":"x"}` is, by the
+      text, an answer: an object, a string `apiVersion`, nothing excluding
+      `error`. The code refuses it. The module's one failure shape is
+      `{"error":"..."}`, so a body carrying an `error` member reads as a failure
+      to every caller that checks for one, and the code's refusal may be the
+      intended behaviour. Decide it and say it: either add "and no `error`
+      member" to what answers (and to the list of failed probes), or state that
+      such a body answers and have the code follow.
+      **Measured:** temporary test at status 200 with that body failed on
+      `!(out.contains("error"))`; 200 passed, 3 failed, two being the sandbox
+      failures (command and log above). **Severity:** medium, because the spec
+      is the gate on what gets persisted and today the text and the code
+      disagree.
+
+- [ ] **`tester`** — `test_radicle_impl.cpp`, after the spec-writer entry above
+      lands
+      **Scenario:** no test pins a 2xx body that is an object with a string
+      `apiVersion` and an `error` member, so an implementation can answer or
+      refuse it and stay green. Add a scenario-named test for whichever way the
+      spec goes, with the body above, asserting the reply, `getSettings()`,
+      `getCapabilities()` and the event. **Severity:** medium, paired with the
+      entry above.
+
+- [ ] **`tester`** — `every_url_set_setting_refuses_is_refused_by_set_remote_seed_though_it_would_answer`
+      (`test_radicle_impl.cpp`)
+      **Scenario:** "A malformed seed URL is refused before any request" says
+      the refusal is without a request and carries `setSetting`'s reason, for
+      every URL `setSetting` refuses. The scenarios name only a missing scheme
+      and `https://`/`http://`, and those two tests check `fake.requested` and the
+      message. The six rows of this loop (`ftp://`, `//host`, leading space,
+      `https:/host`, `https:host`, `HTTPS://`) check neither. An implementation
+      that screens only for a missing `://` sends the request for `ftp://seed...`,
+      sees it answer, and is refused later by the store, so this loop stays
+      green while the requirement is broken for those rows. Assert
+      `fake.requested.empty()` and the control's own message in the loop. **Not
+      measured:** reasoned from the test body; I did not mutate the code, which I
+      may not read. **Severity:** low-medium.
+
+- [ ] **`tester`** — `a_failure_status_is_a_failed_probe_whatever_its_body` and
+      the success rows (`test_radicle_impl.cpp`)
+      **Scenario:** the definition is "a 2xx status" and "any other status" is
+      a failed probe, but the only successful status ever driven is 200 and the
+      only failures are 404, 500 and a transport error. An implementation that
+      accepts only `status == 200` refuses a seed answering 201, which the spec
+      says answers, and one that accepts `status < 400` accepts a 3xx the spec
+      says fails. `FakeSeed::replyStatus` already takes a value: add a 201 with
+      a seed index (accepted) and a 301 with a seed index (refused, nothing
+      stored). **Severity:** low.
+
+- [ ] **`tester`** — `an_error_status_surfaces_the_seeds_own_message`
+      (`test_seed_client.cpp`)
+      **Scenario:** it pins that a seed's own error text reaches the caller, and
+      no scenario of any spec describes that. It is written as the control for
+      the next test, which the delta's "A failure status is a failed probe
+      whatever its body" does cover. Either mark it `NO SPEC:` with what was
+      chosen, as the project's rule requires, or fold it into the control role
+      its comment gives it. **Severity:** low.
