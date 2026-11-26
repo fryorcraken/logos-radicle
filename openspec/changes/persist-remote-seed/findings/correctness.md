@@ -119,3 +119,77 @@ are the only defects found; the mutation is left in the tree (see hand-off).
       behaviour for the `spec-writer` to decide, and is in the hand-back as
       such. No issue tracks it yet (#63 covers a read leaving the file alone,
       not a write); filing one is a `gh issue` write, left to the runner.
+
+## Round 2
+
+Dimension reviewed: **correctness** only, against the spec as it now stands
+(`git diff 1973b69 HEAD`, concentrating on `SeedClient::probe`/`getJson`,
+`setRemoteSeed`, `SettingsStore::set`'s no-path message). Method: read the
+diff, then a throwaway test through `nix build
+./radicle#checks.x86_64-linux.unit-tests` (the log read from `nix log`, since
+the tool result truncates). Baseline is the same two socket-cap failures as
+round 1; nothing new fails except the probe below.
+
+Clean areas: the three round 1 fixes hold. The dual shape check
+(`seedUrl` and `candidate.seedUrl()`) refuses `https://` and `http://` before
+any request, and cannot reject a URL the store would accept: `validate`'s only
+`remoteSeed` rule is the scheme prefix, and normalisation only removes trailing
+`/`, so a URL that passes as typed fails as stored only when it was nothing but
+a scheme plus slashes. `probe()` clears `m_apiVersion`/`m_nid` first and is
+called only on the candidate (its sole caller is `setRemoteSeed`), so the
+clearing cannot wipe what the seed in force learned. `nid()` is empty for an
+absent or non-string `nid`. The `getJson` change closes the
+`{"error":5}` throw (`parsed["error"].get<std::string>()` on a non-string),
+and a non-2xx status never reaches the index check. `SettingsStore::set`'s
+empty-path branch comes after `validate` and the unknown-key refusal, so it
+changes no earlier refusal; its comment's claim that only an unset `XDG_DATA_HOME`
+and `HOME` give an empty path matches `settingsPathFor`. `openspec validate
+persist-remote-seed --strict` passes. A scheme-plus-host-less URL that carries a
+path (`https:///x`) passes both shape checks, as the spec requires (it says
+"`setSetting` would refuse"); that is consistent, not a defect.
+
+**The tester's open question, answered.** A 2xx body
+`{"apiVersion":"6.2.0","error":"x"}` is a JSON object with a string
+`apiVersion`. The spec, as written, says that answers: "A seed answers its
+probe only with a Radicle seed index" lists the failures exhaustively ("Every
+other outcome is a failed probe ... a transport error, any other status, a body
+that is not JSON, JSON that is not an object, or an object with no string
+`apiVersion`"), and an `error` member is none of them. So under the spec the
+call must be accepted, and the code is the side that disagrees: `getJson`
+returns the parsed body for a 2xx, and `probe()` then asks `isError(index)`,
+which is true for any object with an `error` key, whatever else it carries.
+
+- [ ] **`dev-writer`** — `radicle/src/seed_client.cpp:142-143` (`probe()`) —
+      a 2xx index that carries an `error` member is refused although the spec
+      says a body with a string `apiVersion` answers, and the refusal is not
+      `{"error":"..."}`
+      **Scenario:** `setRemoteSeed("https://other.example.test")` with a
+      settings file carrying `https://kept.example.test` and the probe
+      succeeding with 2xx and the body `{"apiVersion":"6.2.0","error":"x"}`
+      (also `{"apiVersion":"6.2.0","error":5}`). The spec's "A body carrying a
+      string apiVersion answers" requires a reply with no `error` member and
+      `remoteSeed` stored; the call instead returns the seed's own body
+      unchanged, `{"apiVersion":"6.2.0","error":"x"}`, which is neither the
+      acceptance nor the `{"error":"..."}` shape the failure scenarios require
+      (for `"error":5` the `error` member is not even a string, so a caller
+      reading `.error` as text gets a number). Nothing is stored and no event
+      is emitted, so state is intact; it is the reply and the verdict that are
+      wrong. The cause is that `isError` conflates "the transport reported a
+      failure" with "the seed's JSON happens to have an `error` key", and
+      `probe()` returns `index` itself on the first.
+      **Measured:** a throwaway test, `setRemoteSeed` over a fake answering
+      `/api/v1` with `{"apiVersion":"6.2.0","error":"x"}`: reply
+      `{"apiVersion":"6.2.0","error":"x"}`, stored `remoteSeed` still
+      `https://kept.example.test`, and `ASSERT failed: !(parse(raw).contains("error"))`
+      (the second body was not reached because the assertion aborts the test).
+      No existing test covers a 2xx index with an `error` member; the
+      `{"error":5}` test is on a 500. Severity: low, because a real seed's
+      index does not carry `error`; but the code and spec disagree on a body
+      the spec names, so one of them changes. Either route is small: have
+      `probe()` decide on the shape of a 2xx body (`is_object` plus string
+      `apiVersion`) before asking `isError`, keeping a transport failure
+      distinct from a body with an `error` key, or, if refusing such a seed is
+      the intent, have the `spec-writer` add "and no `error` member" to the
+      requirement and a scenario for it, and have the refusal reply be
+      `makeError(...)` rather than the seed's body. Whichever is chosen, the
+      refusal must not hand the seed's raw body back as the reply.
