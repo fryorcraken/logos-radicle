@@ -105,6 +105,37 @@ LOGOS_TEST(a_transport_error_with_no_timeout_reports_the_network_error_string)
     LOGOS_ASSERT_EQ(out.error, std::string("Connection refused"));
 }
 
+/// The success range is 2xx, which `setRemoteSeed`'s probe leans on ("a seed
+/// answers only on a 2xx status"): the module tests drive that through a fake
+/// transport that decides `ok` for itself, so this is the one place the real
+/// rule is pinned. Both ends of the range, in the status either side of each,
+/// and a redirect, which is not followed here and so is not an answer.
+/// The expectations are written out, not derived from the status.
+LOGOS_TEST(only_a_2xx_status_is_a_success)
+{
+    struct Row { int status; bool ok; };
+    const Row rows[] = {
+        {199, false}, {200, true}, {201, true}, {204, true}, {299, true},
+        {300, false}, {301, false}, {302, false}, {304, false},
+        {400, false}, {404, false}, {500, false},
+    };
+
+    for (const auto& row : rows) {
+        HttpResponse out;
+        out.status = row.status;
+        HttpOutcomeInputs in;
+        in.timedOut = false;
+        in.networkErrorPresent = false;
+        in.status = row.status;
+
+        applyHttpOutcome(out, in);
+
+        LOGOS_ASSERT_EQ(out.ok, row.ok);
+        // A failure says so, and a success carries no error.
+        LOGOS_ASSERT_EQ(out.error.empty(), row.ok);
+    }
+}
+
 LOGOS_TEST(a_non_2xx_status_with_no_timeout_or_transport_error_reports_http_status)
 {
     HttpResponse out;

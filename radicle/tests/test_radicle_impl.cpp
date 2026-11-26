@@ -1076,6 +1076,59 @@ LOGOS_TEST(a_failure_status_is_a_failed_probe_whatever_its_body)
     }
 }
 
+/// "A seed answers its probe only with a Radicle seed index" says a 2xx status,
+/// not a 200: every other success status answers when the body is an index.
+/// The status 200 is the only success the tests above drive, so an
+/// implementation that tested `status == 200` would refuse these.
+LOGOS_TEST(a_2xx_status_other_than_200_answers_the_probe)
+{
+    for (const int status : {201, 202, 299}) {
+        logos_test::EventCapture events;
+        const auto path = settingsCarryingSeed("seed-2xx-status", "https://kept.example.test");
+        FakeSeed fake;
+        fake.replyStatus = status;
+        fake.replies["/api/v1"] = kSeedIndex;
+        auto impl = makeRadicleImpl(fakeSeedClient(fake, "https://kept.example.test"),
+                                    LocalStore{}, SettingsStore{path});
+
+        const auto out = parse(impl.setRemoteSeed("https://other.example.test"));
+        LOGOS_ASSERT_FALSE(out.contains("error"));
+        LOGOS_ASSERT_EQ(out["seed"].get<std::string>(), std::string("https://other.example.test"));
+        LOGOS_ASSERT_EQ(parse(impl.getSettings())["remoteSeed"].get<std::string>(),
+                        std::string("https://other.example.test"));
+        LOGOS_ASSERT_EQ(events.all("remoteSeedChanged").size(), size_t(1));
+    }
+}
+
+/// The other side of the same definition: "another status" is a failed probe,
+/// so a redirect is refused even when the body it carries is a seed index. A
+/// check of `status < 400` would accept these. The control is the test above,
+/// which shows this very body answering at a 2xx status.
+LOGOS_TEST(a_3xx_status_is_a_failed_probe_even_with_a_seed_index_body)
+{
+    for (const int status : {301, 302, 304}) {
+        logos_test::EventCapture events;
+        const auto path = settingsCarryingSeed("seed-3xx-status", "https://kept.example.test");
+        FakeSeed fake;
+        fake.replyStatus = status;
+        fake.replies["/api/v1"] = kSeedIndex;
+        auto impl = makeRadicleImpl(fakeSeedClient(fake, "https://kept.example.test"),
+                                    LocalStore{}, SettingsStore{path});
+
+        const auto out = parse(impl.setRemoteSeed("https://other.example.test"));
+        LOGOS_ASSERT_TRUE(out.contains("error"));
+        LOGOS_ASSERT_TRUE(out["error"].is_string());
+        LOGOS_ASSERT_FALSE(out["error"].get<std::string>().empty());
+        LOGOS_ASSERT_EQ(out.size(), size_t(1));
+        LOGOS_ASSERT_CONTAINS(fake.requested.back(), std::string("other.example.test"));
+        LOGOS_ASSERT_EQ(parse(impl.getCapabilities())["remoteSeed"].get<std::string>(),
+                        std::string("https://kept.example.test"));
+        LOGOS_ASSERT_EQ(parse(impl.getSettings())["remoteSeed"].get<std::string>(),
+                        std::string("https://kept.example.test"));
+        LOGOS_ASSERT_TRUE(events.all("remoteSeedChanged").empty());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // "A seed URL carrying credentials is refused": by `setSetting`, and so by
 // `setRemoteSeed` before any request. The secret is one string, `s3cr3t`, so

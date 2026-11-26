@@ -455,6 +455,11 @@ LOGOS_TEST(a_transport_failure_becomes_an_error_object)
 
 /// A seed's own error message is surfaced when its error body carries one.
 /// Also the control for the test below: it shows the body is read at all.
+// NO SPEC: no scenario says a failure status's own message reaches the caller
+// (the spec requires only a non-empty string `error` from a failed probe); this
+// pins that the seed's message is surfaced, as every remote* call does, and is
+// kept as the control for the next two tests, which pass without it if the body
+// is never read.
 LOGOS_TEST(an_error_status_surfaces_the_seeds_own_message)
 {
     SeedClient client("https://example.test");
