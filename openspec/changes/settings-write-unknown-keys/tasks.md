@@ -1,7 +1,7 @@
 ## Stages
 
 - [x] spec — `spec-writer`
-- [ ] design + code — `dev-writer`
+- [x] design + code — `dev-writer`
 - [ ] tests — `tester`
 - [ ] review: correctness — `code-reviewer`
 - [ ] review: security — `code-reviewer`
@@ -12,3 +12,67 @@
 - [ ] findings all ticked, `findings/` deleted — `closer`
 - [ ] `openspec validate --strict`, then `archive` — `closer`
 - [ ] CI green, title/body checked, PR merged — `closer`
+
+# Tasks
+
+Every task below is verified by the core unit tests,
+`nix build ./radicle#checks.x86_64-linux.unit-tests -L --out-link result-test`,
+read for the named tests rather than the count. Two embedded-node tests fail
+in the specflow pod on the 107-byte socket cap of the Nix build path; that is
+the sandbox, not this change.
+
+## 1. Make the change easy
+
+- [x] 1.1 Split `SettingsStore::load()` into `readStored()` (the file's object
+      as on disk) and a pure `normalised(stored)`, with `load()` their
+      composition, in a commit of its own; verified by the suite passing
+      unchanged on that commit.
+
+## 2. A write changes only the key it names
+
+- [x] 2.1 Write the file-on-disk tests for "A settings write changes only the
+      key it names" and run them against the old `set()`; verified by
+      watching them fail (the list is `design.md`, Decision 7).
+- [x] 2.2 Make `set()` read the stored object, assign the one key and save
+      that object, refusing before anything is written; verified by
+      `a_write_of_one_key_keeps_an_unknown_mode_and_an_unknown_key`,
+      `a_write_keeps_a_known_key_whose_value_is_not_a_string`,
+      `writing_the_key_that_held_an_uninterpretable_value_replaces_only_that_value`
+      and `a_refused_write_leaves_the_file_as_it_was` passing.
+- [x] 2.3 Pin the seed picker's path; verified by
+      `a_seed_stored_by_set_remote_seed_keeps_the_files_other_members`
+      passing.
+
+## 3. The reply is the settings as read
+
+- [x] 3.1 Return `normalised(stored)` from an accepted `set()`; verified by
+      `the_reply_is_the_normalised_view_while_the_file_keeps_its_members`
+      (store) and
+      `a_settings_write_replies_with_what_get_settings_reports_not_the_file`
+      (module boundary) passing.
+
+## 4. A write over an unreadable file
+
+- [x] 4.1 Verified by
+      `a_write_over_a_file_that_is_not_json_replaces_it_with_only_the_key_written`,
+      `a_write_over_json_that_is_not_an_object_replaces_it_with_only_the_key_written`
+      and `the_first_write_creates_a_file_holding_only_that_key` passing. The
+      "cannot be read" case (a file that exists but cannot be opened) is
+      covered by the same branch of `readStored()` as an absent file (the
+      `std::ifstream` fails to open), and has no test of its own: a mode-000
+      file is still readable by root, so such a test would pass or fail
+      depending on who runs the suite. Left to the `tester` to judge.
+
+## 5. The MODIFIED requirement
+
+- [x] 5.1 "A settings file that cannot be read yields defaults" changed only in
+      wording; its four scenarios are the existing store tests
+      (`a_missing_settings_file_yields_defaults_rather_than_an_error`,
+      `a_corrupted_settings_file_yields_defaults_rather_than_a_dead_module`,
+      `unknown_keys_in_the_file_are_ignored_rather_than_surfaced`,
+      `a_store_with_no_path_still_reports_defaults_rather_than_failing`),
+      verified passing unchanged.
+
+## Workflow follow-up
+
+- The closer archives the change once every review row is ticked.

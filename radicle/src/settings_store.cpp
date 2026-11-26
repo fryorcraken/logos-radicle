@@ -228,7 +228,7 @@ nlohmann::json SettingsStore::normalised(const nlohmann::json& stored)
         // launch and never again. Weighed against a first-run user who cannot
         // reach anything at all, that is not close.
         //
-        // This also makes the file self-consistent: `load()` below sends an
+        // This also makes the file self-consistent: the fallback below sends an
         // uninterpretable stored mode to Explore too. Two different questions —
         // "what should a NEW user get" and "what should a user whose stored
         // choice is unreadable get" — that happen to have the same answer, for
@@ -273,7 +273,9 @@ nlohmann::json SettingsStore::normalised(const nlohmann::json& stored)
     //
     // Nothing is REWRITTEN on disk here: this is a read. The stored string stays
     // as the user (or the newer build) left it, so switching back to a build
-    // that understands it loses nothing.
+    // that understands it loses nothing. A write keeps it too, unless the
+    // write is of `mode` itself: `set()` saves the file's own object, not this
+    // normalised one.
     //
     // **Two contracts outside this file hold only through this line.**
     // `node-paths`' scenario "An unrecognised mode resolves nothing" is a
@@ -366,12 +368,26 @@ std::string SettingsStore::get(const std::string& key) const
 
 nlohmann::json SettingsStore::set(const std::string& key, const std::string& value)
 {
-    auto settings = load();
+    // The file as it is, not as a read reports it. Saving the normalised view
+    // instead is what this function used to do, and it lost, on the first
+    // write after a newer build or a hand edit, every member that view leaves
+    // out: a mode this build cannot interpret (saved as `explore`), every key
+    // it does not know, and any known key holding a non-string value. The read
+    // side promises an uninterpretable mode stays as it was found; a write
+    // that rewrote it would break that promise one click later.
+    //
+    // A file that is absent, unreadable or not a JSON object reads as an empty
+    // object, so the write replaces it with the one key written rather than
+    // refusing: the write is the user's way out of a file this build cannot
+    // read. Nothing else is added — defaults written out would read, to a
+    // later build, as choices the user made.
+    auto stored = readStored();
 
     // An unknown key is refused rather than stored. Silently accepting one
     // gives the user a setting that appears saved and does nothing, which is
-    // strictly worse than being told the name is wrong.
-    if (!settings.contains(key))
+    // strictly worse than being told the name is wrong. Judged against the
+    // normalised view, whose keys are exactly the five this store knows.
+    if (!normalised(stored).contains(key))
         return makeError("unknown setting '" + key + "'");
 
     const auto refusal = validate(key, value);
@@ -385,11 +401,15 @@ nlohmann::json SettingsStore::set(const std::string& key, const std::string& val
         return makeError("settings cannot be saved: there is no settings file, because "
                          "neither XDG_DATA_HOME nor HOME is set");
 
-    settings[key] = value;
-    if (!save(settings))
+    stored[key] = value;
+    if (!save(stored))
         return makeError("could not write settings to " + m_path);
 
-    return settings;
+    // The reply is the settings as a read reports them, not the file: a view
+    // re-renders from it, and must see what `getSettings` will, without a
+    // sixth key or a mode it has no segment for. Derived from the object just
+    // written rather than read back, so it describes this write.
+    return normalised(stored);
 }
 
 nlohmann::json SettingsStore::validate(const std::string& key, const std::string& value)

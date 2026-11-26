@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <sys/stat.h>
 
@@ -38,6 +39,29 @@ struct ScratchSettings {
     {
         std::ofstream out(path(), std::ios::trunc);
         out << contents;
+    }
+
+    /// No file at `path()`. The directory is named per test and nothing cleans
+    /// it, so a test that asserts what a first write creates must not inherit
+    /// the file an earlier run left.
+    void remove() const { std::remove(path().c_str()); }
+
+    /// The file's raw text, so a test can compare it byte for byte.
+    std::string contents() const
+    {
+        std::ifstream in(path());
+        std::stringstream buffer;
+        buffer << in.rdbuf();
+        return buffer.str();
+    }
+
+    /// The file as JSON, parsed here rather than through the store: an
+    /// assertion about what is on disk must not ask the code under test what
+    /// it wrote. A file that does not parse comes back as a discarded value,
+    /// which equals no object an assertion names.
+    nlohmann::json onDisk() const
+    {
+        return nlohmann::json::parse(contents(), nullptr, false);
     }
 };
 
@@ -380,6 +404,166 @@ LOGOS_TEST(the_store_reports_exactly_five_keys_before_and_after_each_write)
     LOGOS_ASSERT_EQ(afterSeed.size(), size_t(5));
 
     LOGOS_ASSERT_EQ(store.all().size(), size_t(5));
+}
+
+// ---------------------------------------------------------------------------
+// What a write does to the file. "A settings write changes only the key it
+// names": every assertion below is about the file ON DISK, parsed by the test
+// itself, because the store's reply is the normalised view and would hide
+// exactly what these tests are about. Each test writes its starting file by
+// hand, so nothing an earlier run left in the directory can stand in for it.
+//
+// The mutation these exist for is the shape `set()` had before this change:
+// `auto settings = load(); settings[key] = value; save(settings);`, which saves
+// the normalised view. Every test below except the refused-write one went red
+// under it: the unknown mode is saved as `explore`, the unknown and non-string
+// members are dropped or defaulted, and the defaults the file never held are
+// added. The refused-write test guards a save that runs before a refusal
+// returns, which the old shape did not do either.
+// ---------------------------------------------------------------------------
+
+LOGOS_TEST(a_write_of_one_key_keeps_an_unknown_mode_and_an_unknown_key)
+{
+    // The file a newer build, or a hand edit, leaves: a mode this build cannot
+    // interpret and a key it does not know, beside a seed it does.
+    ScratchSettings s("write-keeps-unknown");
+    s.write(R"({"mode":"turbo","remoteSeed":"https://a.example","futureKey":"x"})");
+    SettingsStore store{s.path()};
+
+    // A key the file does not hold, so the write is "unrelated" to every member
+    // it must keep.
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"turbo","remoteSeed":"https://a.example","futureKey":"x",)"
+        R"("radHome":"/home/u/.radicle"})"));
+}
+
+LOGOS_TEST(a_write_keeps_a_known_key_whose_value_is_not_a_string)
+{
+    // Two non-string values of two different JSON types. `load()` defaults
+    // both to "", so a write that saved the normalised view would write
+    // `"radSocket":""` and `"gitPath":""` here.
+    ScratchSettings s("write-keeps-non-string");
+    s.write(R"({"mode":"local","radSocket":5,"gitPath":null})");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRemoteSeed, "https://b.example")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"local","radSocket":5,"gitPath":null,"remoteSeed":"https://b.example"})"));
+}
+
+LOGOS_TEST(writing_the_key_that_held_an_uninterpretable_value_replaces_only_that_value)
+{
+    // The other half of "keeps what it did not name": the member it DOES name
+    // is replaced, even when it held a value this build cannot read. A write
+    // that kept every existing member verbatim, its own included, would leave
+    // `turbo` here.
+    ScratchSettings s("write-replaces-named");
+    s.write(R"({"mode":"turbo","futureKey":"x"})");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal)));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"mode":"local","futureKey":"x"})"));
+}
+
+LOGOS_TEST(a_refused_write_leaves_the_file_as_it_was)
+{
+    // Compared byte for byte, not only as JSON: the file is written with
+    // spacing this module would never produce, so a refused write that
+    // rewrote it with the same members would still show here.
+    const std::string original = "{ \"mode\" : \"turbo\",  \"futureKey\" : \"x\" }";
+    ScratchSettings s("write-refused");
+    s.write(original);
+    SettingsStore store{s.path()};
+
+    // Refused by validation: `remote` is a word of this module's vocabulary but
+    // not a mode.
+    LOGOS_ASSERT_TRUE(isError(store.set(SettingsStore::kKeyMode, "remote")));
+    LOGOS_ASSERT_EQ(s.contents(), original);
+
+    // Refused as a key the store does not know.
+    LOGOS_ASSERT_TRUE(isError(store.set("noSuchSetting", "y")));
+    LOGOS_ASSERT_EQ(s.contents(), original);
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"mode":"turbo","futureKey":"x"})"));
+}
+
+LOGOS_TEST(the_reply_is_the_normalised_view_while_the_file_keeps_its_members)
+{
+    ScratchSettings s("write-reply-normalised");
+    s.write(R"({"mode":"turbo","remoteSeed":"https://a.example","futureKey":"x"})");
+    SettingsStore store{s.path()};
+
+    const auto reply = store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle");
+
+    LOGOS_ASSERT_FALSE(isError(reply));
+    // Exactly the five keys: `futureKey` is the file's, not the reply's.
+    LOGOS_ASSERT_EQ(reply.size(), size_t(5));
+    LOGOS_ASSERT_FALSE(reply.contains("futureKey"));
+    // `turbo` is reported as explore, as every read reports it.
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyMode].get<std::string>(),
+                    std::string(SettingsStore::kModeExplore));
+    // Values that came from the file and from this write, so a reply built
+    // from defaults alone, or from the file before the write, fails here.
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyRemoteSeed].get<std::string>(),
+                    std::string("https://a.example"));
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyRadHome].get<std::string>(),
+                    std::string("/home/u/.radicle"));
+    // What the next read reports, which is what getSettings dumps.
+    LOGOS_ASSERT_EQ(reply, store.all());
+
+    // And the file differs from the reply in exactly those members.
+    const auto disk = s.onDisk();
+    LOGOS_ASSERT_EQ(disk[SettingsStore::kKeyMode].get<std::string>(), std::string("turbo"));
+    LOGOS_ASSERT_EQ(disk["futureKey"].get<std::string>(), std::string("x"));
+}
+
+LOGOS_TEST(a_write_over_a_file_that_is_not_json_replaces_it_with_only_the_key_written)
+{
+    ScratchSettings s("write-over-not-json");
+    s.write("{ this is not json at all");
+    SettingsStore store{s.path()};
+
+    const auto reply = store.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
+
+    // The file's state is no reason to refuse: the write is the user's way out
+    // of a file this build cannot read.
+    LOGOS_ASSERT_FALSE(isError(reply));
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyMode].get<std::string>(),
+                    std::string(SettingsStore::kModeLocal));
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"mode":"local"})"));
+}
+
+LOGOS_TEST(a_write_over_json_that_is_not_an_object_replaces_it_with_only_the_key_written)
+{
+    // Valid JSON naming a mode, so a write that tried to carry an array's
+    // contents forward, or refused a file that parsed, is told apart.
+    ScratchSettings s("write-over-array");
+    s.write(R"(["mode","turbo"])");
+    SettingsStore store{s.path()};
+
+    const auto reply = store.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
+
+    LOGOS_ASSERT_FALSE(isError(reply));
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"mode":"local"})"));
+}
+
+LOGOS_TEST(the_first_write_creates_a_file_holding_only_that_key)
+{
+    // No defaults written out for keys the file never held: an empty
+    // `radHome` on disk is indistinguishable from one the user chose to
+    // clear, and a later build's default would then never reach this user.
+    ScratchSettings s("write-first");
+    s.remove();
+    LOGOS_ASSERT_FALSE(std::ifstream(s.path()).good());
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRemoteSeed, "https://a.example")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"remoteSeed":"https://a.example"})"));
+    LOGOS_ASSERT_EQ(store.get(SettingsStore::kKeyMode), std::string(SettingsStore::kModeExplore));
 }
 
 LOGOS_TEST(all_three_modes_are_accepted)

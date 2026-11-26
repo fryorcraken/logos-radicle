@@ -102,6 +102,16 @@ public:
     /// -> the full settings object on success, `{"error":"..."}` on refusal.
     /// Returning everything rather than just the changed key means a caller
     /// re-renders from one reply and cannot show a stale view of the rest.
+    ///
+    /// **Changes only the member `key` names.** Every other member of the file
+    /// keeps its JSON value, including ones this build cannot use (a newer
+    /// build's mode or key, a non-string value), and nothing else is added, so
+    /// a newer build's settings survive this build's writes. A file that is
+    /// absent, unreadable or not a JSON object is replaced by one holding only
+    /// `key`. A refusal writes nothing.
+    ///
+    /// The reply is NOT the file: it is the normalised view `all()` reports
+    /// next, the five keys with an uninterpretable mode as `explore`.
     nlohmann::json set(const std::string& key, const std::string& value);
 
     /// The per-key rule `set()` applies to `value`, without storing anything.
