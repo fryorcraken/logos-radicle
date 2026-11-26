@@ -36,9 +36,19 @@ agree with the bodies.
       `a_refused_write_leaves_the_file_as_it_was`; the suite passed unchanged
       on that commit (two sandbox socket-path failures only).
 
-- [ ] **`tester`** — `radicle/tests/test_settings_store.cpp:411-427` — the section comment records a mutation result that `design.md` does not back for three of the tests
+- [x] **`tester`** — `radicle/tests/test_settings_store.cpp:411-427` — the section comment records a mutation result that `design.md` does not back for three of the tests
       **Scenario:** the block says "Every test below except the refused-write one went red" under the old `set()`. `design.md` Decision 7 lists the tests watched failing, and `the_file_layout_does_not_change_what_a_write_keeps`, `a_member_the_file_names_twice_is_kept_once_with_its_last_value` and `a_write_over_a_file_that_exists_but_cannot_be_opened_replaces_it` are in neither that list nor the "stayed green" paragraph. The comment is either an unmeasured claim for those three or `design.md` is out of date; a later reader cannot tell which. A measured result recorded in a code comment is also the self-invalidating-state shape the repo's "Keeping documents true" rule warns against: it is true on the day it is written and silent when a test is added.
       **Severity:** minor. Either measure the three and extend Decision 7, or drop the count from the comment and keep only the reason the tests exist.
+      **Fixed (tester):** took the second option. The section comment no longer says
+      which tests went red; it keeps the reason the tests exist (the old
+      normalise-then-save shape), names the refused-write test as the one that
+      guards a different mutation, and points at `design.md` Decision 7 for the
+      measured list. I did not re-run the old-shape mutation myself: the
+      design-review box in `design-review.md` records it measured on the final
+      code (16 red besides the two sandbox tests, `a_refused_write_leaves_the_file_as_it_was`
+      green), which backs the three tests this box asked about, and the count
+      is now in one place instead of two. A comment cannot fail, so no test
+      fails without this; the tree builds and the suite is unchanged by it.
 
 - [x] **`dev-writer`** — `radicle/src/settings_store.h:106-114`, `radicle/src/settings_store.cpp:371-383`, `:179-192` — the rule "an absent, unreadable or non-object file is replaced by one holding only the key" is written out three times
       **Scenario:** the `set()` header doc, the `set()` body comment and the `readStored()` header each restate the unreadable-file behaviour and the reason (a write is the way out). A future change to that rule has three places to update, and `design.md` Decision 4 holds a fourth. The `set()` body comment is the longest and mostly repeats the header.

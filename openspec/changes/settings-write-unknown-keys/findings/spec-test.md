@@ -85,6 +85,18 @@ file is not stated.
       the scenario's form, and remove the now-stale `NO SPEC:` comment. The
       implementation's current message already satisfies the amended
       scenario; no code change is needed.
+      **Outcome (tester): fixed in the test.** `a_store_with_no_path_says_why_it_cannot_write`
+      now removes every `XDG_DATA_HOME` from the message before asserting it
+      still contains `HOME`, the scenario's form. Mutated to a message that
+      names `XDG_DATA_HOME` and not `HOME` (`"... because XDG_DATA_HOME is not
+      set"`): the new test went red with the message printed, and the old
+      plain `contains("HOME")` would have passed it, since `HOME` is inside
+      `XDG_DATA_HOME`. The stale marker is gone from that test. One
+      `NO SPEC:` marker remains, narrowed to what is still unspecified: the
+      trailing-space check moved to its own test,
+      `the_refusal_of_a_store_with_no_path_does_not_end_on_a_space`, because a
+      marker must not be dropped and the spec still says nothing on how the
+      sentence ends. It stayed green under the HOME mutation, as it should.
 
 **Parts 4 and 5.** No requirement moved between capabilities. The spec is
 self-consistent and testable; the one defect is the box above.

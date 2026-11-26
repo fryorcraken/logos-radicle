@@ -77,6 +77,22 @@ Clean, by reading (only the nesting and read-only cases below were probed):
       `a_member_exactly_128_deep_is_kept` failed against a cap of 127. A
       recursive full-depth check, run as a mutation, crashed the binary in the
       100000-deep test. Reasoning in `design.md`, Decision 9.
+      **Tester, on the dev's note that the 100000-deep test cannot tell a
+      recursive check that returns early from one that never recurses:**
+      confirmed by mutation, and judged not a defect. A recursive
+      `nestsDeeperThan` that stops at the cap (at most 129 frames) left every
+      test green, the 100000-deep one included. Its behaviour is the same and
+      it is safe, so no test over the write's behaviour could or should
+      separate them; the walk is chosen in `design.md` Decision 9 for not
+      depending on an early return being kept, which a test cannot see. What
+      the tests could be blind to, and now are not: the depth tests used arrays
+      only, so a depth that skipped objects or followed one child passed them.
+      Added `a_member_of_nested_objects_counts_its_objects_toward_its_depth`,
+      `a_member_alternating_arrays_and_objects_counts_both_toward_its_depth`,
+      `a_member_is_as_deep_as_its_deepest_path_wherever_that_path_sits` and
+      `a_member_with_two_branches_is_as_deep_as_one_of_them_not_both`. Against
+      `is_array()` in place of `is_structured()` the first two went red, against
+      a walk of the first child only the third did.
 
 - [x] **`dev-writer`** — `radicle/src/settings_store.cpp:319` — `dump(2)` of a preserved nested member writes output quadratic in its depth
       **Scenario:** `{"x":[[[ ... ]]]}` nested 10000 deep is a 20 KB file;
@@ -106,3 +122,10 @@ Clean, by reading (only the nesting and read-only cases below were probed):
       128-deep member; the rewritten file must stay under twice the
       original's size) failed against `dump(2)` and passes after; every
       existing file test passed unchanged. `design.md`, Decision 6.
+      **Tester, on the dev's note that the twice-the-size bound is loose:**
+      it was. A `serialise()` that writes a line break after every `[` left a
+      probe test of the old bound (`size < 2 * original`) green and failed the
+      replacement. The bound is now `size <= original + 100`, the 100 being
+      the one member a write adds plus the layout of three members, written
+      into the test and not taken from the writer's output. The `NO SPEC:`
+      marker stays.
