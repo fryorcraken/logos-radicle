@@ -33,3 +33,26 @@ and thin entries only.
 - [x] **`dev-writer`** — `design.md:56-74` — the guard claim for the shape check is partly unverified prose: "only that test" turns red.
       With the shape check removed, `a_url_with_no_scheme_is_refused_before_any_request_and_says_why` fails on `fake.requested.empty()`, but its earlier `LOGOS_ASSERT_CONTAINS(..., "http://")` can pass on the store's own wrapped message, so the failing assertion is the request count, not the reason. State which assertion goes red, so the entry does not imply the reported reason is pinned independently of the no-request check. Suggestion.
       **Fixed** in "Fold the review findings into design.md", re-measured: with the shape check disabled, 196 passed, 4 failed — `a_url_with_no_scheme_is_refused_before_any_request_and_says_why` and the new `a_scheme_with_no_host_is_refused_before_any_request`, both on `fake.requested.empty()`, plus the two sandbox failures. The message assertions (now both `http://` and `https://`) stayed green, exactly as you said, because the wrapped store refusal names both schemes. "Shape before probe" now says the request count pins the order and the message assertions pin the reason only while that order holds.
+
+## Round 2
+
+Reviewed the tree at `35f8d35` against `git diff 1973b69 HEAD`: `setRemoteSeed`
+(both shape forms asked, candidate client, `m_seed.nid()` in the reply),
+`SeedClient::probe` and `getJson`, `SettingsStore::set`'s empty-path message,
+the header contracts, and `design.md`'s new entries, against `gh issue view 55`
+read fresh. The code takes every new decision: the shape rule is asked of the
+given and the normalised form, `probe` is the only place the index bar is
+applied (and `setRemoteSeed` its only caller, so the stricter bar reaches
+nothing else), `getJson`'s `is_string()` check is where the recorded "every
+`remote*` call goes through it" says it is, and the reply's `nid` is the
+client's. The issue's "Done when" items stay met. The findings are gaps and
+a thin entry; none is a contradiction.
+
+- [ ] **`dev-writer`** — `design.md` "What answering the probe means" and `seed_client.cpp:139-140` — "`probe` clears `apiVersion` and `nid` before it asks" is a decision with no test behind it.
+      The entry says it "keeps `probe` honest on its own" because the candidate's `setSeedUrl` already cleared them, which also makes it unreachable through `setRemoteSeed`: deleting the two `clear()` lines changes no `setRemoteSeed` outcome. `test_seed_client.cpp` has one `probe` test, the success case (`probe_records_the_api_version_the_seed_advertises`), and none that probes a client that already holds an answer and then gets a failing or non-index reply. So the header contract added in `seed_client.h` ("leaves `reachable()` false and `apiVersion()` / `nid()` empty" on any failure) is asserted nowhere at the `SeedClient` level, and neither is `m_reachable = false` on the non-index path. A choice pinned by nothing was made by accident. Either add the `SeedClient` test (probe a good seed, switch the reply to `[]`, assert the three accessors) and record the mutation evidence, or drop the clears and the contract sentence. Gap.
+
+- [ ] **`dev-writer`** — `design.md` "What answering the probe means" — the bar is the gate on what gets persisted, and its entry lacks the alternatives and the cost.
+      Recorded: what was chosen, why persisting raised the bar, where it lives (`probe`, not `setRemoteSeed`), the guards. Missing: the alternatives the bar was picked from (object only; object with a string `apiVersion`; also requiring a `nid`; a `Content-Type` check) and what ruled each out, and what the bar forecloses. It does foreclose: a real seed whose index lacks a string `apiVersion` can no longer be picked in the UI at all, where before it could be adopted for the session, and the entry says only that "not measured is that every real seed's `/api/v1` carries" one. Say that the escape is `setSetting("remoteSeed", …)`, which stores any well-shaped URL without a probe, and that this is the cost of the bar if the assumption is wrong. Suggestion.
+
+- [ ] **`dev-writer`** — `design.md` Risks "The two doors store the seed in different forms" — a trap of a built subsystem recorded only in the document that will be archived.
+      The divergence (`setSetting("remoteSeed","https://x/")` stores the slash and adopts `https://x`, so `getSettings().remoteSeed` and `getCapabilities().remoteSeed` disagree; `setRemoteSeed` stores the normalised form) is what the next toucher of `setRemoteSeed` or `setSetting` needs, and neither `radicle_impl.h` comment says it: the `setRemoteSeed` paragraph on how the doors differ (`radicle_impl.h:237-239`) names shape and network only, and `setSetting`'s says nothing. Add one sentence there. The first round's hand-back asked the runner to name the divergence in #65; whether that has been done is not visible from the tree, so the runner should confirm it. Gap.
