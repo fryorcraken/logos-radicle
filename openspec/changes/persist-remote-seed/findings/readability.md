@@ -111,7 +111,7 @@ Findings:
       so a failed pick would make a working seed read as unreachable"), with no
       reference to a previous revision. Comment only; no test can see it.
 
-- [ ] **`tester`** — `radicle/tests/test_radicle_impl.cpp` (comment above
+- [x] **`tester`** — `radicle/tests/test_radicle_impl.cpp` (comment above
       `a_failed_probe_stores_nothing_and_keeps_the_seed_in_force`) — "The rollback this
       milestone protects" names a milestone and a mechanism that no longer exist
       **Scenario:** the test sits under the heading's "a seed it refuses changes
@@ -120,3 +120,15 @@ Findings:
       which a reader cannot resolve. Same for `a_seed_that_answers_but_cannot_be_stored…`
       ("Before this change the seed was adopted…"). State what the test pins, not what
       it used to guard. **Severity:** low; stylistic.
+      **Fixed.** The two comments the entry quotes ("The rollback this milestone
+      protects", "Before this change the seed was adopted…") were already gone from
+      `test_radicle_impl.cpp` at the start of this pass (rewritten in
+      `e01c1e1`); `git grep -i` for `rollback`, `before this change`, `this
+      replaced` and `this milestone protects` over the three test files returns
+      nothing. Two comments of the same shape remained on the section 3 tests and
+      are rewritten to say what each pins: `a_success_that_is_not_a_seed_index…`
+      ("Each of these was once adopted for the session…") and
+      `a_failure_status_is_a_failed_probe…` ("which once made the call throw…").
+      Comment-only; no test can see it. Pre-existing "this milestone" and "used to"
+      comments elsewhere in the file (lines predating this change) are not this
+      piece's and are left.

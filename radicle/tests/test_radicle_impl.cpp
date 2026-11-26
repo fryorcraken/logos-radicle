@@ -926,16 +926,29 @@ LOGOS_TEST(the_probe_is_one_get_of_the_normalised_url_with_every_trailing_slash_
 
 /// "The reply carries what the probe learned". Values distinct from
 /// `kSeedIndex`'s, so a reply that came from anywhere but this probe differs.
-LOGOS_TEST(the_reply_carries_the_api_version_and_nid_the_probe_learned)
+LOGOS_TEST(the_reply_carries_the_api_version_the_probe_learned)
 {
     FakeSeed fake;
     fake.replies["/api/v1"] = R"({"apiVersion":"7.1.4","nid":"z6MkChosen"})";
     auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{},
-                                SettingsStore{freshSettingsPath("seed-reply-fields")});
+                                SettingsStore{freshSettingsPath("seed-reply-api-version")});
 
     const auto out = parse(impl.setRemoteSeed("https://chosen.example.test"));
     LOGOS_ASSERT_FALSE(out.contains("error"));
     LOGOS_ASSERT_EQ(out["apiVersion"].get<std::string>(), std::string("7.1.4"));
+}
+
+/// A separate test from the one above so that a reply wrong in one field does
+/// not hide the other being wrong too.
+LOGOS_TEST(the_reply_carries_the_nid_the_probe_learned)
+{
+    FakeSeed fake;
+    fake.replies["/api/v1"] = R"({"apiVersion":"7.1.4","nid":"z6MkChosen"})";
+    auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{},
+                                SettingsStore{freshSettingsPath("seed-reply-nid")});
+
+    const auto out = parse(impl.setRemoteSeed("https://chosen.example.test"));
+    LOGOS_ASSERT_FALSE(out.contains("error"));
     LOGOS_ASSERT_EQ(out["nid"].get<std::string>(), std::string("z6MkChosen"));
 }
 
