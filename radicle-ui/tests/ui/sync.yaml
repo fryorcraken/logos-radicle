@@ -72,6 +72,7 @@ steps:
         - "root.syncing === false"
         - "root.updateAvailable === false"
         - "root.syncLabel === 'Download All'"
+        - "root.navError === ''"
 
   # ---- a commit for the poll to compare against ---------------------------
   #
@@ -232,10 +233,15 @@ steps:
   # left in flight (the `repo-sync` spec's "A cancel settles every request it
   # stops"). The poll was answered behind those requests, so this holds as
   # soon as nothing else is asked; the wait is for the event loop, not for a
-  # backlog.
+  # backlog. Nothing was shown as an error before the sync started, so none
+  # may be showing now either: a request a cancel stopped is not a failure
+  # (the same spec's "A cancel raises no error"). The final step checks it
+  # again, but by then a second sync has run.
   - name: the busy strip clears after the cancel
     wait_for:
-      state: "root.navBusy === false"
+      state:
+        - "root.navBusy === false"
+        - "root.navError === ''"
     timeout: 30s
 
   # NO SPEC: "Update" is a colour and a label, never a gate. Re-syncing is never

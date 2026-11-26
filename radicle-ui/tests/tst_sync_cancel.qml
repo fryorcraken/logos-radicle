@@ -243,6 +243,35 @@ Item {
             compare(source.viewerBodyLength, "content of f59".length);
         }
 
+        // The same file, opened after the cancel rather than before it. The
+        // sync had discovered f59 and held it back; a cancel that left f59
+        // marked as already being fetched would make this open wait for a
+        // reply that is never coming.
+        function test_a_file_the_cancelled_sync_had_queued_opens_after_the_cancel() {
+            makeRepo(60, 0);
+            startAndAnswerRoot();
+            source.cancelSync();
+            source.openEntry({ name: "f59", kind: "blob", path: "f59" });
+            node.serveAll();
+            compare(source.viewerTitle, "f59");
+            compare(source.viewerBodyLength, "content of f59".length);
+        }
+
+        // A request the sync did not make is not the sync's to stop, whenever
+        // it is made: here a directory, listed after the cancel while the
+        // cancelled sync's own reads are still with the node.
+        function test_a_directory_opened_after_the_cancel_lists() {
+            makeRepo(60, 10);
+            startAndAnswerRoot();
+            source.cancelSync();
+            // d9 is far beyond the bound in the sync's walk, so no read of it
+            // was ever handed over: this request is the only one for it.
+            source.openEntry({ name: "d9", kind: "tree", path: "d9" });
+            node.serveAll();
+            compare(source.path, "d9");
+            compare(source.entryNames, "f0,f1,f2");
+        }
+
         function test_a_file_the_sync_is_already_fetching_still_opens() {
             makeRepo(60, 0);
             startAndAnswerRoot();
@@ -255,11 +284,21 @@ Item {
             compare(source.viewerBodyLength, "content of f0".length);
         }
 
-        function test_a_sync_after_a_cancel_downloads_everything() {
+        // Run twice: the next sync starts once the node has answered what the
+        // cancelled one left with it, or while those requests are still ahead
+        // of everything the next sync asks for.
+        function test_a_sync_after_a_cancel_downloads_everything_data() {
+            return [
+                { tag: "after the node has drained", drainFirst: true },
+                { tag: "while the cancelled sync's reads are still with the node", drainFirst: false }
+            ];
+        }
+
+        function test_a_sync_after_a_cancel_downloads_everything(data) {
             var total = makeRepo(30, 5);
             startAndAnswerRoot();
             source.cancelSync();
-            node.serveAll();
+            if (data.drainFirst) node.serveAll();
 
             source.syncAll();
             node.serveAll();
@@ -311,24 +350,33 @@ Item {
             source.cancelSync();
             // What is with the node now belongs to the cancelled sync.
             var old = node.queue.slice();
+            verify(old.length > 0, "the cancelled sync must still have reads with the node");
+            // The cancelled sync's answered root listing is in the cache, so
+            // the next sync walks it at once and has a full queue of its own
+            // BEFORE the old replies arrive. Without that the old replies
+            // would be served ahead of the next sync's first read, and a slot
+            // wrongly freed by one of them would have nothing to dispatch.
             source.syncAll();
 
-            // Serve one request at a time and, after each, count the NEW
-            // sync's reads that are with the node unanswered. A late reply
-            // from the cancelled sync that was taken as one of the new sync's
-            // own would let it put a fifth read out.
-            var most = 0;
-            while (node.queue.length > 0) {
-                node.serveNext();
-                var mine = 0;
+            // Count the NEW sync's reads that are with the node unanswered,
+            // now and after each request served. A late reply from the
+            // cancelled sync that was taken as one of the new sync's own
+            // would let it put a fifth read out.
+            function mineWithTheNode() {
+                var n = 0;
                 for (var i = 0; i < node.queue.length; i++) {
                     var r = node.queue[i];
                     if (old.indexOf(r) < 0 && (r.method === "GetTree" || r.method === "GetBlob"))
-                        mine++;
+                        n++;
                 }
-                if (mine > most) most = mine;
+                return n;
             }
-            verify(most > 0, "the new sync must have asked for something");
+            var most = mineWithTheNode();
+            verify(most > 0, "the new sync must have asked for something before any old reply arrived");
+            while (node.queue.length > 0) {
+                node.serveNext();
+                most = Math.max(most, mineWithTheNode());
+            }
             verify(most <= bound, "the new sync had " + most + " reads with the node at once");
             compare(source.syncedOnce, true);
         }
