@@ -174,7 +174,30 @@ bool SettingsStore::modeIsStartable(const std::string& mode)
     return false;
 }
 
+nlohmann::json SettingsStore::readStored() const
+{
+    if (m_path.empty()) return nlohmann::json::object();
+
+    std::ifstream in(m_path);
+    if (!in) return nlohmann::json::object();
+
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+
+    // A corrupted settings file reads as holding nothing, not as an error. The
+    // alternative is a module that refuses to start because of a file the user
+    // cannot see and did not knowingly write.
+    auto parsed = nlohmann::json::parse(buffer.str(), nullptr, false);
+    if (parsed.is_discarded() || !parsed.is_object()) return nlohmann::json::object();
+    return parsed;
+}
+
 nlohmann::json SettingsStore::load() const
+{
+    return normalised(readStored());
+}
+
+nlohmann::json SettingsStore::normalised(const nlohmann::json& stored)
 {
     nlohmann::json defaults{
         // **Explore, because the default is what a user with NO settings file
@@ -218,21 +241,7 @@ nlohmann::json SettingsStore::load() const
         {kKeyRemoteSeed, ""},
     };
 
-    if (m_path.empty()) return defaults;
-
-    std::ifstream in(m_path);
-    if (!in) return defaults;
-
-    std::stringstream buffer;
-    buffer << in.rdbuf();
-
-    // A corrupted settings file yields defaults, not an error. The alternative
-    // is a module that refuses to start because of a file the user cannot see
-    // and did not knowingly write.
-    auto parsed = nlohmann::json::parse(buffer.str(), nullptr, false);
-    if (parsed.is_discarded() || !parsed.is_object()) return defaults;
-
-    for (auto& [key, value] : parsed.items()) {
+    for (const auto& [key, value] : stored.items()) {
         if (defaults.contains(key) && value.is_string()) defaults[key] = value;
     }
 

@@ -163,6 +163,19 @@ public:
     static bool isKnownMode(const std::string& mode);
 
 private:
+    /// The settings file's JSON object exactly as it is on disk, members this
+    /// build does not know included. An empty object when there is no path, no
+    /// file, a file that cannot be read, or one that does not parse as an
+    /// object: all four hold no setting this store can use.
+    nlohmann::json readStored() const;
+
+    /// What the store reports for `stored`: the five keys, a default for each
+    /// that `stored` does not hold as a string, and `explore` for a mode this
+    /// build does not know. Pure, so a reply can be derived from the object
+    /// just written rather than from a second read of the file.
+    static nlohmann::json normalised(const nlohmann::json& stored);
+
+    /// `normalised(readStored())`: what every read reports.
     nlohmann::json load() const;
     bool save(const nlohmann::json& settings) const;
 
