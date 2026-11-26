@@ -353,6 +353,14 @@ nlohmann::json SettingsStore::set(const std::string& key, const std::string& val
     const auto refusal = validate(key, value);
     if (isError(refusal)) return refusal;
 
+    // An empty path is not a failed write but no place to write at all, and
+    // "could not write settings to " followed by nothing names no cause. The
+    // only way production gets one is `settingsPathFor` finding neither
+    // variable, so the message names them.
+    if (m_path.empty())
+        return makeError("settings cannot be saved: there is no settings file, because "
+                         "neither XDG_DATA_HOME nor HOME is set");
+
     settings[key] = value;
     if (!save(settings))
         return makeError("could not write settings to " + m_path);

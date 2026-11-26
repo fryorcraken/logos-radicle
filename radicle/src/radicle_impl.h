@@ -219,13 +219,20 @@ public:
      * the next start adopts it. Affects only `remote*` calls.
      * -> {"seed":"<url>","apiVersion":"6.2.0","nid":"z6Mk..."}
      *
+     * `seed` is the URL with its trailing slashes removed, which is also what
+     * is stored, put in force and carried by the one `remoteSeedChanged`.
+     * `nid` is "" when the seed's index carries none, or one that is not a
+     * string.
+     *
      * The seed must pass, in order: non-empty; the shape `setSetting` checks
-     * (`http://` or `https://`), before any request is made; a probe of
-     * `/api/v1`; and the settings write. Any failure is `{"error":"..."}` and
-     * changes nothing — not the seed in force, not the stored seed, and no
+     * (`http://` or `https://`), of the URL as given and as it will be stored,
+     * before any request is made; a probe of `/api/v1` answered with 2xx and a
+     * JSON object carrying a string `apiVersion`; and the settings write. Any
+     * failure is `{"error":"..."}` and changes nothing — not the seed in force
+     * or what was learned about it, not the stored seed, and no
      * `remoteSeedChanged` is emitted. A seed that answers but cannot be stored
-     * (a module with no settings path) is refused rather than adopted for the
-     * session only.
+     * (a module with no settings path, or a settings file that cannot be
+     * written) is refused rather than adopted for the session only.
      *
      * `setSetting("remoteSeed", …)` is the other way into the same stored key,
      * and the difference is deliberate: it checks shape only and never touches

@@ -453,6 +453,43 @@ LOGOS_TEST(a_transport_failure_becomes_an_error_object)
     LOGOS_ASSERT_CONTAINS(res["error"].get<std::string>(), "network unreachable");
 }
 
+/// A seed's own error message is surfaced when its error body carries one.
+/// Also the control for the test below: it shows the body is read at all.
+LOGOS_TEST(an_error_status_surfaces_the_seeds_own_message)
+{
+    SeedClient client("https://example.test");
+    client.setTransport([](const std::string&) {
+        HttpResponse res;
+        res.status = 404;
+        res.error = "HTTP 404";
+        res.body = R"({"error":"repository rad:zTEST was not found"})";
+        return res;
+    });
+
+    const auto res = client.getRepo("rad:zTEST");
+    LOGOS_ASSERT_TRUE(isError(res));
+    LOGOS_ASSERT_CONTAINS(res["error"].get<std::string>(), "was not found");
+}
+
+/// An error body whose `error` is not a string is not a message to surface,
+/// and must still come back as the one failure shape rather than throwing:
+/// every `remote*` call, and `setRemoteSeed`'s probe, go through here.
+LOGOS_TEST(an_error_status_whose_error_is_not_a_string_still_becomes_an_error_object)
+{
+    SeedClient client("https://example.test");
+    client.setTransport([](const std::string&) {
+        HttpResponse res;
+        res.status = 500;
+        res.error = "HTTP 500";
+        res.body = R"({"error":5})";
+        return res;
+    });
+
+    const auto res = client.getRepo("rad:zTEST");
+    LOGOS_ASSERT_TRUE(isError(res));
+    LOGOS_ASSERT_CONTAINS(res["error"].get<std::string>(), "HTTP 500");
+}
+
 LOGOS_TEST(an_unresolvable_ref_reports_which_ref_failed)
 {
     FakeSeed seed;

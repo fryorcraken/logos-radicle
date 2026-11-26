@@ -110,10 +110,14 @@ nlohmann::json SeedClient::getJson(const std::string& path)
     if (!res.ok) {
         m_reachable = false;
         // The seed reports its own errors as JSON; surface that message when
-        // present, since it is far more useful than a bare status code.
+        // present, since it is far more useful than a bare status code. Only a
+        // STRING `error` is a message: the body is the seed's, so anything else
+        // there falls back to the status rather than throwing out of a call
+        // whose contract is to reply.
         if (!res.body.empty()) {
             auto parsed = nlohmann::json::parse(res.body, nullptr, false);
-            if (!parsed.is_discarded() && parsed.is_object() && parsed.contains("error")) {
+            if (!parsed.is_discarded() && parsed.is_object() && parsed.contains("error")
+                && parsed["error"].is_string()) {
                 return makeError(parsed["error"].get<std::string>());
             }
         }
@@ -132,11 +136,23 @@ nlohmann::json SeedClient::getJson(const std::string& path)
 
 nlohmann::json SeedClient::probe()
 {
+    m_apiVersion.clear();
+    m_nid.clear();
+
     nlohmann::json index = getJson("");
     if (isError(index)) return index;
 
-    if (index.contains("apiVersion") && index["apiVersion"].is_string())
-        m_apiVersion = index["apiVersion"].get<std::string>();
+    // Any JSON at all is not enough: a mistyped URL that lands on some other
+    // JSON API answers 200 too, and `setRemoteSeed` stores what this accepts.
+    // A Radicle seed index is an object carrying a string `apiVersion`.
+    if (!index.is_object() || !index.contains("apiVersion")
+        || !index["apiVersion"].is_string()) {
+        m_reachable = false;
+        return makeError(m_seedUrl + " answered, but not as a Radicle seed: /api/v1 "
+                         "did not reply with an apiVersion");
+    }
+
+    m_apiVersion = index["apiVersion"].get<std::string>();
     if (index.contains("nid") && index["nid"].is_string())
         m_nid = index["nid"].get<std::string>();
 

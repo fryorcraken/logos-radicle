@@ -19,7 +19,7 @@ Mutation: probing `m_seed` instead of `candidate` is caught, by two tests
 unstorable and trailing-slash paths behave as the spec says. The probes below
 are the only defects found; the mutation is left in the tree (see hand-off).
 
-- [ ] **`dev-writer`** — `radicle/src/radicle_impl.cpp:494` (reached after the
+- [x] **`dev-writer`** — `radicle/src/radicle_impl.cpp:494` (reached after the
       store and adopt at `:480-489`) — a seed whose `/api/v1` answers valid JSON
       that is not an object makes `setRemoteSeed` throw after it has stored and
       adopted the seed
@@ -45,8 +45,20 @@ are the only defects found; the mutation is left in the tree (see hand-off).
       (`origin/main` has it at the same expression); what is new is that it now
       runs after a durable write. Requiring `index.is_object()` before the store
       is the natural check; no test covers a non-object probe reply.
+      **Fixed** in "Refuse a seed that is not a Radicle index, and shape-check
+      the stored URL". `SeedClient::probe` refuses a reply that is not a JSON
+      object with a string `apiVersion` (the spec's new "A seed answers its
+      probe only with a Radicle seed index"), so the check sits before the
+      store, and the reply's `nid` comes from `SeedClient::nid()` rather than
+      `index.value(...)`. Regression test
+      `a_success_that_is_not_a_seed_index_is_a_failed_probe` covers `[]`,
+      `null`, `"ok"`, `42`, `{}`, `{"apiVersion":6}` and `not json`, asserting
+      refusal, the kept seed in force and stored, and no event; watched failing
+      first with "type_error.306 cannot use value() with array". Under the fix
+      the suite is 198 passed, 2 failed, the two being the socket-cap sandbox
+      failures named above.
 
-- [ ] **`dev-writer`** — `radicle/src/radicle_impl.cpp:458-460` and
+- [x] **`dev-writer`** — `radicle/src/radicle_impl.cpp:458-460` and
       `radicle/src/seed_client.cpp:25-29` — the shape rule is applied to the URL
       as typed, but the store is asked about the URL after the client strips
       trailing slashes, so `https://` passes the shape check, costs a request,
@@ -69,6 +81,14 @@ are the only defects found; the mutation is left in the tree (see hand-off).
       request on a degenerate input; no state damage). A genuine defect against
       the recorded decision, not a style point. Checking the shape of what will
       be stored (`candidate.seedUrl()`) as well as what was typed closes it.
+      **Fixed** in "Refuse a seed that is not a Radicle index, and shape-check
+      the stored URL", as suggested and as the spec's new "A malformed seed URL
+      is refused before any request" now requires: the candidate is built
+      first (no request), and `SettingsStore::validate` is asked of both the
+      given URL and `candidate.seedUrl()` before the probe. Regression test
+      `a_scheme_with_no_host_is_refused_before_any_request` (`https://` and
+      `http://`; error naming both schemes, no request, stored seed kept, no
+      event) was watched failing first on `fake.requested.empty()`.
 
 - [ ] **`dev-writer`** — `radicle/src/radicle_impl.cpp:480-481` via
       `radicle/src/settings_store.cpp:343-361` — a seed pick now rewrites the

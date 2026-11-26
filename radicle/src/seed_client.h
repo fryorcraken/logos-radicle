@@ -17,6 +17,14 @@ namespace radicle {
  *
  * Every method returns a JSON object. On failure that object is
  * `{"error":"..."}`, so callers have exactly one failure shape to check.
+ *
+ * **Keep this a value type.** `RadicleImpl::setRemoteSeed` copies the client
+ * in force, probes the copy and only then moves it in, so that a refused seed
+ * leaves the original untouched. That holds only while a copy shares nothing
+ * mutable with its source beyond the stateless transport: a member such as a
+ * shared response cache or an in-flight request handle would let the
+ * candidate's probe reach the client in force, or would stop the copy
+ * compiling far from the edit that broke it.
  */
 class SeedClient {
 public:
@@ -35,9 +43,18 @@ public:
 
     /// Last observed API version from `/api/v1` ("" until probed).
     const std::string& apiVersion() const { return m_apiVersion; }
+    /// Last observed node id from `/api/v1`; "" until probed, and "" when the
+    /// index carried none or carried one that is not a string.
+    const std::string& nid() const { return m_nid; }
     bool reachable() const { return m_reachable; }
 
     /// Fetch `/api/v1` and cache apiVersion + nid. -> the index object.
+    ///
+    /// The seed answers only with a 2xx reply whose body is a JSON object
+    /// carrying a string `apiVersion`. Anything else — a transport error, any
+    /// other status, a body that is not JSON, JSON that is not an object, an
+    /// object with no string `apiVersion` — is `{"error":"..."}`, and leaves
+    /// `reachable()` false and `apiVersion()` / `nid()` empty.
     nlohmann::json probe();
 
     nlohmann::json listRepos(const std::string& query, int64_t page, int64_t perPage);

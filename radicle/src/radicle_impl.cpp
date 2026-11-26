@@ -448,26 +448,33 @@ std::string RadicleImpl::setSetting(const std::string& key, const std::string& v
 
 std::string RadicleImpl::setRemoteSeed(const std::string& seedUrl)
 {
+    // Refused here rather than left to the shape rule, which accepts an empty
+    // `remoteSeed`: through `setSetting` an empty value clears the stored seed,
+    // but there is no seed at "" to probe, so here it can only be a mistake.
     if (seedUrl.empty())
         return dump(radicle::makeError("seed URL is required"));
-
-    // The same shape rule `setSetting` applies, asked of the same function,
-    // and asked FIRST: a URL the store would refuse is not worth a network
-    // round trip, and the caller should hear the shape's reason rather than
-    // whatever the transport makes of a URL with no scheme.
-    const auto shape =
-        radicle::SettingsStore::validate(radicle::SettingsStore::kKeyRemoteSeed, seedUrl);
-    if (radicle::isError(shape)) return dump(shape);
 
     // Everything below works on a CANDIDATE client, and the one in force is
     // replaced only once the seed has both answered and been stored. So every
     // refusal leaves the seed in force exactly as it was — its URL, and what
-    // was last learned about it (reachable, apiVersion) — with no rollback to
-    // get right. The rollback this replaced re-set the old URL, which also
-    // cleared that state, so a failed pick made a working seed read as
-    // unreachable.
+    // was last learned about it (reachable, apiVersion) — with no restore to
+    // get right. Setting the old URL back would not be one anyway:
+    // `SeedClient::setSeedUrl` clears that state, so a failed pick would make
+    // a working seed read as unreachable.
     radicle::SeedClient candidate = m_seed;
     candidate.setSeedUrl(seedUrl);
+
+    // The same shape rule `setSetting` applies, asked of the same function,
+    // and asked before any request: a URL the store would refuse is not worth
+    // a network round trip, and the caller should hear the shape's reason
+    // rather than whatever the transport makes of it. Asked of the URL as
+    // typed AND as it will be stored, which the client has normalised:
+    // `https://` passes as typed and is `https:` once its slashes are gone.
+    for (const std::string& form : {seedUrl, candidate.seedUrl()}) {
+        const auto shape =
+            radicle::SettingsStore::validate(radicle::SettingsStore::kKeyRemoteSeed, form);
+        if (radicle::isError(shape)) return dump(shape);
+    }
 
     const nlohmann::json index = candidate.probe();
     if (radicle::isError(index)) return dump(index);
@@ -476,7 +483,7 @@ std::string RadicleImpl::setRemoteSeed(const std::string& seedUrl)
     // module cannot store is refused, not adopted for the session. Adopting it
     // anyway is exactly the silent loss at the next start this write exists to
     // end. Stored as the client normalised it (no trailing slash), so this,
-    // `getCapabilities().remoteSeed` and the reply's `seed` all agree.
+    // `getCapabilities().remoteSeed` and the reply's `seed` agree.
     const auto stored =
         m_settings.set(radicle::SettingsStore::kKeyRemoteSeed, candidate.seedUrl());
     if (radicle::isError(stored)) {
@@ -491,7 +498,7 @@ std::string RadicleImpl::setRemoteSeed(const std::string& seedUrl)
     return dump(nlohmann::json{
         {"seed",       m_seed.seedUrl()},
         {"apiVersion", m_seed.apiVersion()},
-        {"nid",        index.value("nid", "")},
+        {"nid",        m_seed.nid()},
     });
 }
 

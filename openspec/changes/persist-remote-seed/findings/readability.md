@@ -26,7 +26,7 @@ Clean areas:
 
 Findings:
 
-- [ ] **`dev-writer`** — `radicle/src/radicle_impl.cpp:483-485` — the refusal for an
+- [x] **`dev-writer`** — `radicle/src/radicle_impl.cpp:483-485` — the refusal for an
       unstorable seed ends mid-sentence in the one case the design says is reachable
       **Scenario:** a module with no settings path (`SettingsStore{""}`, no
       `XDG_DATA_HOME` and no `HOME`, which `design.md` names as the only way to reach
@@ -38,6 +38,15 @@ Findings:
       left wondering"; here they are. Not a logic defect; a message nobody can act on.
       **Severity:** low (message quality). Either the store's message should name the
       empty-path case, or the wrapper should not splice a message that can end empty.
+      **Fixed** at the source, in "Refuse a seed that is not a Radicle index, and
+      shape-check the stored URL": `SettingsStore::set` with an empty path now
+      refuses with "settings cannot be saved: there is no settings file, because
+      neither XDG_DATA_HOME nor HOME is set", which `setSetting` and the
+      `setRemoteSeed` wrapper both pass on. The wrapper is unchanged. Regression test
+      `a_store_with_no_path_says_why_it_cannot_write` (`test_settings_store.cpp`,
+      marked `NO SPEC:`, since the spec does not say what the refusal says) was
+      watched failing first: "[could not write settings to ] does not contain
+      [XDG_DATA_HOME]".
 
 - [ ] **`dev-writer`** — `radicle-ui/src/qml/Main.qml:1015-1020` — comment says
       `setRemoteSeed` "reverts to the previous one if it does not answer", which is no
@@ -73,7 +82,7 @@ Findings:
       doc ("may run the configured git to check it") closes it. **Severity:** low;
       a missing "why/what a reader would ask".
 
-- [ ] **`dev-writer`** — `radicle/src/radicle_impl.cpp:465-468` — "The rollback this
+- [x] **`dev-writer`** — `radicle/src/radicle_impl.cpp:465-468` — "The rollback this
       replaced" narrates the diff rather than the code
       **Scenario:** once the old code is gone from history's front page, "this
       replaced" has no referent. The reason it is worth keeping is the mechanism:
@@ -82,6 +91,11 @@ Findings:
       a fact about `setSeedUrl` without reference to a previous revision, and is then
       still true and still useful beside the copy-then-move. **Severity:** low;
       stylistic.
+      **Fixed** in "Refuse a seed that is not a Radicle index, and shape-check the
+      stored URL": the comment now states the mechanism as a fact ("Setting the old
+      URL back would not be one anyway: `SeedClient::setSeedUrl` clears that state,
+      so a failed pick would make a working seed read as unreachable"), with no
+      reference to a previous revision. Comment only; no test can see it.
 
 - [ ] **`tester`** — `radicle/tests/test_radicle_impl.cpp` (comment above
       `a_failed_probe_stores_nothing_and_keeps_the_seed_in_force`) — "The rollback this

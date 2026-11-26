@@ -46,7 +46,7 @@ the fifth is a missing contract note.
       history belongs in `design.md`, which already has it. **Severity:** low,
       stylistic preference.
 
-- [ ] **`dev-writer`** — `radicle/src/radicle_impl.cpp:462-468`, `radicle/tests/test_radicle_impl.cpp` (the `a_failed_probe_stores_nothing_and_keeps_the_seed_in_force` doc comment, `a_seed_that_answers_but_cannot_be_stored_is_refused`, the `NO SPEC:` block above `a_failed_probe_leaves_the_seed_in_force_reachable`) — comments narrate the code this change replaced
+- [x] **`dev-writer`** — `radicle/src/radicle_impl.cpp:462-468`, `radicle/tests/test_radicle_impl.cpp` (the `a_failed_probe_stores_nothing_and_keeps_the_seed_in_force` doc comment, `a_seed_that_answers_but_cannot_be_stored_is_refused`, the `NO SPEC:` block above `a_failed_probe_leaves_the_seed_in_force_reachable`) — comments narrate the code this change replaced
       **Scenario:** "The rollback this replaced re-set the old URL…", "The
       rollback this milestone protects, now for…", "Before this change the seed
       was adopted for the session…". Each is true today and meaningless once the
@@ -57,6 +57,16 @@ the fifth is a missing contract note.
       (`setSeedUrl` clears `reachable`/`apiVersion`, so restoring the URL would
       also forget that the old seed answered) rather than as a diff against
       deleted code. **Severity:** low, stylistic preference.
+      **Fixed** in "Refuse a seed that is not a Radicle index, and shape-check
+      the stored URL", all four sites. `radicle_impl.cpp` states the
+      `setSeedUrl` property; in `test_radicle_impl.cpp` the
+      `a_failed_probe_stores_nothing…` doc says what it pins, the
+      `a_seed_that_answers_but_cannot_be_stored…` comment drops "Before this
+      change", and the block above `a_failed_probe_leaves_the_seed_in_force_reachable`
+      (now a requirement, no longer `NO SPEC:`) names the property and the
+      implementation it rules out. The two test comments are also the
+      `tester`'s box in `readability.md`, which is left for the `tester`.
+      Comments only; no test can see them.
 
 - [ ] **`dev-writer`** — `radicle/src/radicle_impl.cpp:441-443`, `radicle/src/radicle_impl.cpp:478-479`, `design.md` "The stored URL is the one in force" — the claim that stored, in-force and reported URLs "all agree" holds for one of the two doors only
       **Scenario:** `setSetting("remoteSeed", "https://x.example.test/")` stores
@@ -73,7 +83,7 @@ the fifth is a missing contract note.
       claim is scoped to `setRemoteSeed`. **Severity:** low; documentation
       accuracy, not a regression.
 
-- [ ] **`dev-writer`** — `radicle/src/seed_client.h:21-89`, `radicle/src/radicle_impl.cpp:469` — `setRemoteSeed` now depends on `SeedClient` staying a cheap, copyable value type, and the class does not say so
+- [x] **`dev-writer`** — `radicle/src/seed_client.h:21-89`, `radicle/src/radicle_impl.cpp:469` — `setRemoteSeed` now depends on `SeedClient` staying a cheap, copyable value type, and the class does not say so
       **Scenario:** `design.md` justifies the copy ("a URL, three cached
       fields and a `std::function` transport, so the copy is cheap and shares
       the transport"). `seed_client.h` carries no note of it. A later change
@@ -84,6 +94,12 @@ the fifth is a missing contract note.
       the class, "copied by `RadicleImpl::setRemoteSeed` to probe a candidate;
       keep it a value type", puts the constraint where the next editor of the
       class will read it. **Severity:** low.
+      **Fixed** in "Refuse a seed that is not a Radicle index, and shape-check
+      the stored URL": the class comment in `seed_client.h` now opens a "Keep
+      this a value type" paragraph naming `RadicleImpl::setRemoteSeed`'s copy
+      and the two ways a new member breaks it (shared mutable state reaching
+      the client in force, or a copy that stops compiling far from the edit).
+      Comment only; no test can see it.
 
 - [ ] **`dev-writer`** — `radicle/src/settings_store.h:109-119` — the public `validate` contract is incomplete about what it does
       **Scenario:** the doc says validation happens "without storing anything",
