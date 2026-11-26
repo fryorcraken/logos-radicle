@@ -53,10 +53,12 @@ system it does not:
 Each "What breaks without it" names the tests that go red under one mutation,
 run against this change's tree with
 `cargo test --manifest-path radicle/rust-ffi/Cargo.toml --test profile_init --no-fail-fast`
-and reverted with `git checkout` of the one file. A list of tests is the
-record, not a count, so a test added later shows up as missing from the list
-rather than silently making a number wrong. Re-run the mutation before trusting
-a list after the suite has changed.
+and reverted with `git checkout` of the one file. The one exception is
+`createEmbeddedIdentity`'s signature, which lives in the C++ module and is
+measured with that layer's command, named where it is used. A list of tests is
+the record, not a count, so a test added later shows up as missing from the
+list rather than silently making a number wrong. Re-run the mutation before
+trusting a list after the suite has changed.
 
 ## Decisions
 
@@ -82,8 +84,11 @@ function reaches C++ only if someone writes an `extern "C"` wrapper for it
 *and* a declaration in that header. `init_profile_with_entropy` has neither:
 it is a generic Rust function, not even a linkable symbol in the staticlib,
 and `radicle_local_init_profile` keeps its three `const char*` parameters.
-"No caller can choose the entropy source" is held by those two signatures, and
-both are pinned by a test rather than by review alone.
+The spec's "No caller can choose the entropy source" names two signatures,
+identity creation's across the FFI boundary and `createEmbeddedIdentity`'s
+across the module boundary, and each is pinned by a test rather than by review
+alone: the FFI one twice, as compiled and as declared in the header, and the
+module one by the type of the C++ member.
 
 Alternatives considered:
 
@@ -111,9 +116,21 @@ Alternatives considered:
 fourth parameter on the `extern "C"` function in `lib.rs` stops the
 `profile_init` test target compiling, at
 `the_init_entry_point_takes_home_alias_and_passphrase_and_nothing_else` and at
-`the_init_entry_point_is_guarded`'s three-argument call. `createEmbeddedIdentity`'s
-two-argument signature is on the C++ side, out of the Rust tests' sight, and is
-held by its callers passing two arguments.
+`the_init_entry_point_is_guarded`'s three-argument call.
+
+`createEmbeddedIdentity`'s two-argument signature is on the C++ side, out of
+the Rust tests' sight. Its callers passing two arguments do **not** hold it: a
+third parameter with a default value compiles at every existing call site.
+`createEmbeddedIdentity_takes_an_alias_and_a_passphrase_and_nothing_else`, in
+`radicle/tests/test_radicle_impl.cpp`, holds it with a `static_assert` that
+`decltype(&RadicleImpl::createEmbeddedIdentity)` is exactly
+`std::string (RadicleImpl::*)(const std::string&, const std::string&)`, and a
+call through that type. A defaulted third parameter fails the build at that
+assertion and nowhere else, and a third overload fails it there too, because
+the member's address becomes ambiguous; both are build failures rather than a
+red test, since the compiler is what reads a signature. Measured in the
+`tester`'s pass with `nix build ./radicle#checks.x86_64-linux.unit-tests`, each
+mutation restored with `git checkout`.
 
 **What breaks without the seam being live:** making `init_profile_with_entropy`
 ignore its opener and draw from `/dev/urandom` regardless turns red every test
@@ -122,14 +139,20 @@ that hands it a scripted source except `a_refused_home_never_opens_the_entropy_s
 `a_source_that_ends_after_16_bytes_creates_no_key`,
 `a_source_that_fails_mid_read_creates_no_key`,
 `a_read_error_of_the_end_of_file_kind_keeps_its_own_text`,
+`a_source_that_ends_early_says_so_instead_of_quoting_std`,
 `a_source_that_cannot_be_opened_creates_no_key`,
 `a_failed_draw_leaves_the_home_completable`,
 `a_failed_draw_creates_no_home_directory`,
 `a_source_short_of_32_bytes_at_any_length_creates_no_key`,
 `a_seed_supplied_one_byte_per_read_is_used_whole`,
 `an_interrupted_read_is_retried_not_failed`,
-`an_interruption_anywhere_in_the_draw_is_retried` and
-`a_source_longer_than_a_seed_uses_its_first_32_bytes`. The tests that compare
+`an_interruption_anywhere_in_the_draw_is_retried`,
+`a_source_longer_than_a_seed_uses_its_first_32_bytes`,
+`nothing_past_the_32nd_byte_is_read` and
+`production_seeds_differ_in_both_halves`. The last goes red at its
+precondition, the one call in it that scripts a source (the key read back off
+disk is not the seed it was given); its two production homes are drawn from
+`/dev/urandom` either way. The tests that compare
 node ids compare against an id the `radicle` crate's own `Profile::init`
 derives from the same bytes, not against a second call through the seam, which
 would agree with itself while ignoring its input.
@@ -202,7 +225,9 @@ wrong.
 The buffer is exactly `SEED_BYTES` long, so a source that would supply more is
 never asked for it: the first 32 bytes are the seed, and a longer source is not
 drained. That is what the spec's "A source longer than a seed uses its first 32
-bytes" and "Nothing past the 32nd byte is read" require.
+bytes" and "Nothing past the 32nd byte is read" require; the second is pinned by
+`nothing_past_the_32nd_byte_is_read`, whose fake counts the reads it is asked
+for after it has handed over 32 bytes.
 
 **What breaks without it:** replacing `read_exact` with a single `read` that
 discards the count — the archived task's mutation — turns red every test whose
@@ -211,13 +236,15 @@ source does not hand over all 32 bytes in its first read:
 `a_source_that_fails_mid_read_creates_no_key`,
 `a_read_error_of_the_end_of_file_kind_keeps_its_own_text`,
 `a_failed_draw_leaves_the_home_completable`,
-`a_failed_draw_creates_no_home_directory` and
-`a_source_short_of_32_bytes_at_any_length_creates_no_key` (each gets
-`created:true` from a partly zeroed seed), and
+`a_failed_draw_creates_no_home_directory`,
+`a_source_short_of_32_bytes_at_any_length_creates_no_key` and
+`a_source_that_ends_early_says_so_instead_of_quoting_std` (each gets
+`created:true` from a seed left partly or wholly zero), and
 `a_seed_supplied_one_byte_per_read_is_used_whole`,
-`an_interrupted_read_is_retried_not_failed` and
-`an_interruption_anywhere_in_the_draw_is_retried` (each gets the wrong key, or
-an interruption reported as a failure).
+`an_interrupted_read_is_retried_not_failed`,
+`an_interruption_anywhere_in_the_draw_is_retried` and
+`nothing_past_the_32nd_byte_is_read`, at its one-byte-per-read row (each gets
+the wrong key, or an interruption reported as a failure).
 
 ### 5. One message prefix for every failure of the draw, and the source's own words kept
 
@@ -257,10 +284,13 @@ open the system random source: …") turns
 `a_source_that_cannot_be_opened_creates_no_key` red, and nothing else. Rewording
 on the kind instead of on `EndObserved` turns
 `a_read_error_of_the_end_of_file_kind_keeps_its_own_text` red (watched failing
-against that code before the fix). **Making `EndObserved` never record an end
-turns nothing red**: every short-source test asserts the prefix and never the
-cause, so the "ended before supplying 32 bytes" text is not pinned. That is
-open with the `tester` under the correctness review.
+against that code before the fix). Making `EndObserved` never record an end,
+so that every short source quotes std's "failed to fill whole buffer", turns
+`a_source_that_ends_early_says_so_instead_of_quoting_std` red, and nothing
+else: the spec's scenarios assert the prefix, not the cause. That test carries
+`NO SPEC:`, because the spec requires a short source's error to say the
+entropy could not be read and says nothing of the cause's wording; the wording
+is this decision's choice, and is reported for the spec to decide.
 
 ## Risks / Trade-offs
 
