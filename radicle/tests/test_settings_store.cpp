@@ -12,6 +12,7 @@
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
+#include <unistd.h>
 
 using namespace radicle;
 
@@ -548,6 +549,78 @@ LOGOS_TEST(a_write_over_json_that_is_not_an_object_replaces_it_with_only_the_key
 
     LOGOS_ASSERT_FALSE(isError(reply));
     LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"mode":"local"})"));
+}
+
+LOGOS_TEST(a_write_over_a_file_that_exists_but_cannot_be_opened_replaces_it)
+{
+    // "Cannot be read", as distinct from absent and from not-JSON. A symlink
+    // that points at itself is the one such file whose state does not depend on
+    // who runs the suite: a mode-000 file is still readable by root, so a test
+    // built on it would pass or fail with the user. `open(2)` on it fails with
+    // ELOOP, so the store reads nothing; `rename(2)` replaces the link itself
+    // rather than following it, so the write has somewhere to land.
+    ScratchSettings s("write-over-unopenable");
+    s.remove();
+    LOGOS_ASSERT_EQ(::symlink(s.path().c_str(), s.path().c_str()), 0);
+    // The precondition, checked: were the file openable this test would be
+    // about a different branch of the reader.
+    LOGOS_ASSERT_FALSE(std::ifstream(s.path()).good());
+    SettingsStore store{s.path()};
+
+    // A non-default value, so the reply cannot be mistaken for the defaults.
+    const auto reply = store.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
+
+    // The file's state is no reason to refuse.
+    LOGOS_ASSERT_FALSE(isError(reply));
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyMode].get<std::string>(),
+                    std::string(SettingsStore::kModeLocal));
+    // Parsed through the same path, which only succeeds once the link is gone.
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"mode":"local"})"));
+}
+
+LOGOS_TEST(the_file_layout_does_not_change_what_a_write_keeps)
+{
+    // "The file's layout does not change what a write keeps". The starting file
+    // is laid out the way the module never writes it: a newline after `{` and
+    // after each `,`, a tab before each member, a space either side of each `:`,
+    // and a number spelled in exponent form. Several lines, so a reader that
+    // looked at the first line only, or a write that spliced text into the
+    // file, would lose or mangle a member here and not in the one-line files
+    // above.
+    ScratchSettings s("write-layout");
+    s.write("{\n\t\"futureKey\" : 1.5e3,\n\t\"mode\" : \"turbo\"}");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    // `1.5e3` is the file's spelling; the requirement is on the value, which
+    // equals 1500 however the writer spells it.
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"futureKey":1.5e3,"mode":"turbo","radHome":"/home/u/.radicle"})"));
+}
+
+LOGOS_TEST(a_member_the_file_names_twice_is_kept_once_with_its_last_value)
+{
+    // `futureKey` is not the key written, and its two values differ, so a write
+    // that kept the first, or both, is told apart from one that kept the last.
+    ScratchSettings s("write-duplicate");
+    s.write(R"({"futureKey":"a","mode":"turbo","futureKey":"b"})");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"turbo","futureKey":"b","radHome":"/home/u/.radicle"})"));
+
+    // The text, not the parse: a parse that takes the last value cannot see a
+    // file that still names the member twice, which is what a write that edits
+    // the file's text in place would leave.
+    const std::string text = s.contents();
+    size_t count = 0;
+    for (size_t at = text.find("\"futureKey\""); at != std::string::npos;
+         at = text.find("\"futureKey\"", at + 1))
+        ++count;
+    LOGOS_ASSERT_EQ(count, size_t(1));
 }
 
 LOGOS_TEST(the_first_write_creates_a_file_holding_only_that_key)
