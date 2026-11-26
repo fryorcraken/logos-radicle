@@ -224,7 +224,7 @@ removed since round 1; I did not read it and raise no box on it, but whoever
 owns that claim should confirm the edit changes no behaviour, since a UI change
 would need a UI test.
 
-- [ ] **`spec-writer`** — `specs/module-settings/spec.md`, "A seed answers its
+- [x] **`spec-writer`** — `specs/module-settings/spec.md`, "A seed answers its
       probe only with a Radicle seed index"
       **Scenario:** a 2xx reply `{"apiVersion":"6.2.0","error":"x"}` is, by the
       text, an answer: an object, a string `apiVersion`, nothing excluding
@@ -239,6 +239,20 @@ would need a UI test.
       failures (command and log above). **Severity:** medium, because the spec
       is the gate on what gets persisted and today the text and the code
       disagree.
+      **Outcome: fixed (spec): such a body is a failed probe.** Decided under
+      the owner's delegation. The requirement now takes a seed to answer only
+      on a 2xx JSON object holding a string `apiVersion` **and no `error`
+      member**, and requires every failed probe to reply with only an `error`
+      member, a non-empty string, never the seed's body relayed. New scenario
+      "A success carrying an error member is a failed probe" drives 2xx bodies
+      `{"apiVersion":"6.2.0","error":"x"}`, `…"error":null`, `…"error":""`,
+      `{"error":false}` and `{"error":5}`, asserting a non-empty string
+      `error`, no other member, both seeds unchanged and no event. "A failure
+      status is a failed probe whatever its body" gains `{"error":""}` and the
+      same two reply assertions, since an empty `error` reads as success in the
+      view's parser too. The code's refusal now meets the text on acceptance;
+      its relaying of the body does not, which is the `dev-writer` entries in
+      `correctness.md` and `security.md`. Reasons are in `proposal.md`.
 
 - [ ] **`tester`** — `test_radicle_impl.cpp`, after the spec-writer entry above
       lands
