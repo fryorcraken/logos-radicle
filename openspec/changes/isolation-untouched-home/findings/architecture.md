@@ -50,7 +50,21 @@ home"). Nothing was left mutated in the tree.
 
 ## Findings
 
-- [ ] **`dev-writer`** — `radicle/rust-ffi/tests/profile_init.rs:631` (`Entry::Link`), `:661` (`record_under`'s symlink arm) and `:827` (`the_recorder_does_not_follow_a_symlink_out_of_its_root`) — stylistic, low: a recorder variant, a match arm and a ~35-line test exist for a case no input reaches
+- [x] **`dev-writer`** — `radicle/rust-ffi/tests/profile_init.rs:631` (`Entry::Link`), `:661` (`record_under`'s symlink arm) and `:827` (`the_recorder_does_not_follow_a_symlink_out_of_its_root`) — stylistic, low: a recorder variant, a match arm and a ~35-line test exist for a case no input reaches
       **Scenario:** design Decision 5 states "Profile creation makes no symlinks today, so this case is never exercised; it is there so that the record has a defined answer for every entry." That is the speculative-generality shape the specflow block's "do not refactor speculatively" rules out: the third `Entry` variant, its `read_link` arm and the only test that reaches it serve a future that is not in front of this change. A defined answer for a symlink is available at one line (`panic!("unexpected symlink {path}")`, the same stance the recorder already takes on an unreadable entry), which would also stop it silently comparing equal across a link, and which a later change that does create symlinks would have to replace deliberately. The one real constraint, that the walk must not follow a link out of the root, is kept by using `DirEntry::file_type` instead of `metadata`; a one-line comment at that call already says so.
       **Measured:** nothing; by reading, `Entry::Link` is built only by the one symlink test (`grep -n Link` shows lines 631, 664 and 837 only), so removing both leaves no other test depending on it. Not mutated.
       **Judgement:** a stylistic preference, not a defect. The code is correct as written; rejecting this with Decision 5's argument is a reasonable outcome.
+      **Rejected.** The argument is now in design Decision 5, which also
+      corrects the sentence quoted above. The isolation test records a home
+      the crate lays out, not one this file controls. With a panic on any
+      symlink, a radicle version that put a symlink in a fresh home would turn
+      the isolation test red at `tree_record(path_b)`, for a reason that has
+      nothing to do with isolation. The recorder would then need rewriting
+      before the test measured anything again. A `Link` kind keeps the test
+      measuring isolation across that change. The saving is also smaller than
+      it looks. A panic arm needs its own test to be pinned, which is the gap
+      `design-review.md` raises for the unreadable-entry panic, so what it
+      removes is the `Link` kind and three lines, not the test. The symlink
+      test is also not idle: dropping the `changed:` arm of `record_changes`
+      turns it red ("retargeting a link must show as a change"), measured on
+      this tree.

@@ -394,11 +394,17 @@ data for every branch. `two_homes_get_two_different_identities` does both (see
 **"Untouched" needs the other home to exist first.** A record of a home that
 does not exist yet is empty, and an empty record can only see entries appear,
 never a rewrite. So the test creates home B, records its whole tree with
-`tree_record` (every entry by relative path, every file's bytes — keys,
-`config.json` and the SQLite databases), then creates home A and compares. The
-version that checked only `profile_exists` and that the two paths do not nest
-passed against an init that overwrote the previous home's key pair. The record
-compares bytes and names, not file modes or timestamps.
+`tree_record` (every entry by relative path with its permissions, every file's
+bytes — keys, `config.json` and the SQLite databases), then creates home A and
+compares. The version that checked only `profile_exists` and that the two paths
+do not nest passed against an init that overwrote the previous home's key pair.
+
+**Permissions are compared because bytes cannot see the worst harm.** An init
+that made the other home's `keys/radicle` world-readable changes no byte of it,
+and a names-and-bytes record passed against exactly that. Timestamps and
+ownership are not compared. The record reads type and permissions through
+`DirEntry::metadata`, which does not follow a symlink; `fs::metadata` would,
+and would record a link's target in place of the link.
 
 ## Platform scope
 

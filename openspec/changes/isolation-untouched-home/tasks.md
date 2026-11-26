@@ -23,6 +23,19 @@
   behaviour; verify `reporting_encryption_leaves_the_key_untouched` stays green,
   and goes red when the encryption probe is mutated to rewrite `radicle.pub` or
   to add an entry under `keys/` (design Decision 3).
+- [x] 1.2 Pin the recorder itself against a hand-built tree whose expected
+  record and changes are written out: every depth with directories as
+  entries, one table row per kind of change, and a symlink out of the root
+  that is not followed. Verify that dropping the `changed:`, `removed:` or
+  `added:` arm of `record_changes` each turns a recorder test red (design
+  Decision 6, "The recorder is pinned by tests of its own").
+- [ ] 1.3 Record each entry's permissions (`Entry` = `Kind` +
+  `std::fs::Permissions`, read through `DirEntry::metadata`) and report a
+  permissions-only change as `permissions changed:` (design Decision 9).
+  Implemented; left unticked because no test shows it yet. Dropping the
+  `permissions changed:` arm leaves every test green until the recorder's
+  table gains a permissions-only row and a chmod mutation of `init_profile`
+  is watched turning the isolation test red, both the `tester`'s.
 
 ## 2. The isolation test checks the other home
 
@@ -50,8 +63,8 @@
 
 - [x] 3.1 Update `docs/rust-ffi.md`'s "An isolation test needs two homes"
   paragraph. It no longer defers the second half to the issue, and it says
-  why B must exist before it is recorded. Verify by reading it against the
-  test.
+  why B must exist before it is recorded and why permissions are compared.
+  Verify by reading it against the test.
 
 ## Workflow follow-up
 

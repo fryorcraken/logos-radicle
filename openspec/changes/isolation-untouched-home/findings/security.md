@@ -72,7 +72,7 @@ Clean areas, checked:
       out is reworded (`design.md` Non-Goals and Risks, `docs/rust-ffi.md`
       around "compares bytes and names, not file modes or timestamps").
 
-- [ ] **`dev-writer`** — `radicle/rust-ffi/tests/profile_init.rs:25` — header says homes are "removed on drop"; nothing is dropped
+- [x] **`dev-writer`** — `radicle/rust-ffi/tests/profile_init.rs:25` — header says homes are "removed on drop"; nothing is dropped
       **Scenario:** `cleanup` is an explicit call at the end of each test, not a
       `Drop` guard. The new isolation test has several early `assert!` exits
       between creating B (an unencrypted key pair, passphrase `""`) and
@@ -84,3 +84,11 @@ Clean areas, checked:
       give. Style/accuracy, severity low: reword to "removed at the end of a
       passing test", or give `cleanup` a guard type. Pre-existing text, but this
       change adds the panics that make the claim false more often.
+      **Fixed** in `f3c2bc5`: the header now says a passing test removes its
+      homes with `cleanup` at its end, and a failing one leaves them, throwaway
+      keys included, until the next run's `scratch_dir` clears that name.
+      Reworded rather than given a `Drop` guard, because a guard would also
+      delete the homes a red isolation test leaves behind, which are what a
+      developer reads to see what the creation did. No test can fail on a
+      comment; checked by reading it against `cleanup` (an explicit call) and
+      `fixture::scratch_dir` (which removes the name before recreating it).
