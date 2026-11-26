@@ -29,13 +29,15 @@
   that is not followed. Verify that dropping the `changed:`, `removed:` or
   `added:` arm of `record_changes` each turns a recorder test red (design
   Decision 6, "The recorder is pinned by tests of its own").
-- [ ] 1.3 Record each entry's permissions (`Entry` = `Kind` +
+- [x] 1.3 Record each entry's permissions (`Entry` = `Kind` +
   `std::fs::Permissions`, read through `DirEntry::metadata`) and report a
   permissions-only change as `permissions changed:` (design Decision 9).
-  Implemented; left unticked because no test shows it yet. Dropping the
-  `permissions changed:` arm leaves every test green until the recorder's
-  table gains a permissions-only row and a chmod mutation of `init_profile`
-  is watched turning the isolation test red, both the `tester`'s.
+  The recorder's table has a file row, a directory row and a bytes-and-mode
+  row. Verified: dropping the `permissions changed:` arm turns the table test
+  red at case 1 (`left: []`, `right: ["permissions changed: top.bin"]`), and
+  a temporary chmod of every sibling home's `keys/radicle` to 0644 in
+  `init_profile_inner` turns `two_homes_get_two_different_identities` red with
+  `["permissions changed: keys/radicle"]`.
 
 ## 2. The isolation test checks the other home
 
