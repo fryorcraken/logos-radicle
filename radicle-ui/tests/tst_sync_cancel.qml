@@ -258,15 +258,23 @@ Item {
         }
 
         // A request the sync did not make is not the sync's to stop, whenever
-        // it is made: here a directory, listed after the cancel while the
-        // cancelled sync's own reads are still with the node.
-        function test_a_directory_opened_after_the_cancel_lists() {
+        // it is made: here a directory, listed either side of the cancel while
+        // the cancelled sync's own reads are still with the node.
+        function test_a_directory_opened_either_side_of_the_cancel_lists_data() {
+            return [
+                { tag: "opened before the cancel", before: true },
+                { tag: "opened after the cancel", before: false }
+            ];
+        }
+
+        function test_a_directory_opened_either_side_of_the_cancel_lists(data) {
             makeRepo(60, 10);
             startAndAnswerRoot();
-            source.cancelSync();
             // d9 is far beyond the bound in the sync's walk, so no read of it
             // was ever handed over: this request is the only one for it.
-            source.openEntry({ name: "d9", kind: "tree", path: "d9" });
+            if (data.before) source.openEntry({ name: "d9", kind: "tree", path: "d9" });
+            source.cancelSync();
+            if (!data.before) source.openEntry({ name: "d9", kind: "tree", path: "d9" });
             node.serveAll();
             compare(source.path, "d9");
             compare(source.entryNames, "f0,f1,f2");
