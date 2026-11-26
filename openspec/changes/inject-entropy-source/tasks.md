@@ -27,8 +27,10 @@
       `a_source_that_cannot_be_opened_creates_no_key`, red with the old
       open-failure message restored
 - [x] 1.3 Add `init_profile_with_entropy`, and make `init_profile` that
-      function with the `/dev/urandom` opener fixed; verified by the eight
-      scripted-source tests going red when the seam ignores its argument
+      function with the `/dev/urandom` opener fixed; verified by every test
+      that scripts a source, except the refused-home one, going red when the
+      seam ignores its argument (the tests are named in `design.md`
+      Decision 1)
 - [x] 1.4 Draw the seed after every refusal and before `Home::new`; verified by
       `a_failed_draw_creates_no_home_directory` (red with the draw moved after
       `Home::new`) and `a_refused_home_never_opens_the_entropy_source` (red with
@@ -43,12 +45,12 @@
 - [x] 1.7 Production still reads `/dev/urandom` and still yields distinct
       identities; verified by `two_homes_get_two_different_identities` and the
       rest of the pre-existing `tests/profile_init.rs`, unchanged and green
-- [x] 1.8 No caller can choose the entropy source — **satisfied by
-      construction, not by a test**: `radicle_local_init_profile` and
-      `createEmbeddedIdentity` keep their signatures, `radicle_ffi.h` is
-      unchanged, and `init_profile_with_entropy` is not `extern "C"`, so
-      cbindgen emits nothing for it. Left for the `tester` to decide whether a
-      signature check earns a test
+- [x] 1.8 No caller can choose the entropy source: `radicle_local_init_profile`
+      and `createEmbeddedIdentity` keep their signatures, and
+      `init_profile_with_entropy` has no `extern "C"` wrapper and no
+      declaration in `radicle_ffi.h`, which is written by hand (nothing
+      generates it). Left for the `tester` to decide whether a signature check
+      earns a test
       **Tester:** it earns two, for the half this layer can see. The compiled
       signature is pinned by
       `the_init_entry_point_takes_home_alias_and_passphrase_and_nothing_else`
@@ -59,6 +61,18 @@
       worth having. `createEmbeddedIdentity`'s signature is on the C++ side, out
       of this layer's sight, and is held only by its callers passing two
       arguments
+- [x] 1.9 Split `init_profile_inner` into `admit` (every refusal) and
+      `create(Admitted, Seed)` (every write), so `init_profile_with_entropy`
+      reads admit, draw, create; no behaviour change, verified by the whole
+      `profile_init` suite staying green across the commit, and by
+      `a_failed_draw_creates_no_home_directory` and
+      `a_refused_home_never_opens_the_entropy_source` each still red under
+      its ordering mutation (`design.md` Decisions 2 and 3)
+- [x] 1.10 Keep the text of an error the source itself raises with kind
+      `UnexpectedEof`, rewording only `read_exact`'s own running-out, as "A
+      failed entropy draw creates no key" requires; verified by
+      `a_read_error_of_the_end_of_file_kind_keeps_its_own_text`, watched red
+      against the reword-on-kind code before the fix
 
 ## 2. Documentation
 
@@ -68,7 +82,8 @@
       `/dev/urandom`"
 - [x] 2.2 Record the decisions, alternatives and the mutation each guard kills
       in `design.md`; verified by each Decision carrying a "What breaks
-      without it" naming the tests
+      without it" naming the tests, each list measured by running its
+      mutation against this tree
 
 ## 3. Gates
 

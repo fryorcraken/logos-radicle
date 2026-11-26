@@ -53,8 +53,8 @@
 //! vendoring reason above: the crate is already in the lock transitively, but
 //! naming it as a direct dependency still rewrites `Cargo.lock` and invalidates
 //! `flake.nix`'s pinned hash — the exact cost this file exists to avoid paying
-//! twice. Eight lines of `File::read_exact` is what `getrandom` does on Linux
-//! anyway, and a short read is treated as a failure rather than padded, because
+//! twice. Opening the file and calling `read_exact` on it is what `getrandom`
+//! does on Linux anyway, and a short read is treated as a failure rather than padded, because
 //! a partially-random seed is worse than no key at all.
 //!
 //! ## Why the source can be swapped, and by whom
@@ -65,7 +65,9 @@
 //! identity-creation test green. `init_profile_with_entropy` therefore takes
 //! the source's opener as an argument, and `init_profile` is that function
 //! with `/dev/urandom` fixed. The `extern "C"` entry point calls
-//! `init_profile`, so nothing across the FFI boundary can choose the source.
+//! `init_profile`, and `init_profile_with_entropy` has no `extern "C"` wrapper
+//! and no declaration in `radicle_ffi.h` (which is written by hand, not
+//! generated), so nothing across the FFI boundary can choose the source.
 
 use std::io::Read;
 
@@ -391,13 +393,10 @@ pub fn init_profile(home: &str, alias: &str, passphrase: &str) -> String {
 
 /// `init_profile`, drawing the key seed from whatever `open_entropy` opens.
 ///
-/// **This exists for tests, and production never comes through it with
-/// anything but `/dev/urandom`.** `init_profile` is the only caller outside
-/// the tests, and it fixes the source; the `extern "C"` entry point calls
-/// `init_profile`, and this function is not `extern "C"`, so nothing across
-/// the FFI boundary can reach it. A test hands it a reader that ends early,
-/// fails, chunks or is interrupted — the cases `/dev/urandom` cannot be made
-/// to produce.
+/// **For tests only.** Production reaches this solely through `init_profile`,
+/// with `/dev/urandom` fixed; why the seam exists, and why no caller across
+/// the FFI boundary can reach it, is the module doc's "Why the source can be
+/// swapped, and by whom".
 ///
 /// The source is passed as an opener rather than an open reader so that it is
 /// opened where the seed is drawn, after every refusal: a call refused for its
