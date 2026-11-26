@@ -8,9 +8,9 @@ An accepted write through the settings store, by `setSetting` or by
 `setRemoteSeed` storing a seed, MUST leave every member of the settings file
 other than the one its key names with the JSON value it had, including an
 uninterpretable `mode`, an unknown key and a non-string value. It MUST add no
-other member. A refused write MUST leave the file as it was. A member kept
-this way is not one the module persists, in the sense of "The settings store
-holds exactly five named keys".
+other member. A refused write MUST leave the file's bytes unchanged. A member
+kept this way is not one the module persists, in the sense of "The settings
+store holds exactly five named keys".
 
 #### Scenario: A write of one key keeps an unknown mode and an unknown key
 
@@ -44,6 +44,8 @@ holds exactly five named keys".
 - **AND** `setSetting` is called with key `mode` and value `remote`, and
   again with key `noSuchSetting` and value `y`
 - **THEN** each reply MUST be `{"error":"..."}`
+- **AND** after each, the file's bytes MUST equal the bytes it held before
+  the first call
 - **AND** after each, the file on disk MUST parse as a JSON object equal to
   `{"mode":"turbo","futureKey":"x"}`
 
@@ -56,6 +58,36 @@ holds exactly five named keys".
   seed answers its probe
 - **THEN** the file on disk MUST parse as a JSON object equal to
   `{"mode":"turbo","remoteSeed":"https://chosen.example.test","futureKey":"x"}`
+
+### Requirement: A settings write keeps each member's value, not the file's text
+
+An accepted write MUST keep what "A settings write changes only the key it
+names" requires whatever the file's member order, whitespace or number
+spelling. A member the file names more than once, other than the one written,
+MUST be kept as one member holding the last value the file gives it. The
+file's text, meaning its member order, whitespace and number spelling, is
+outside that requirement, and so is the value of a number beyond the range or
+precision of an IEEE 754 binary64 double.
+
+#### Scenario: The file's layout does not change what a write keeps
+
+- **WHEN** the settings file contains `{"futureKey":1.5e3,"mode":"turbo"}`,
+  written with a newline after `{` and after each `,`, a tab before each
+  member, and a space on each side of each `:`
+- **AND** `setSetting` is called with key `radHome` and value
+  `/home/u/.radicle`, and accepts it
+- **THEN** the file on disk MUST parse as a JSON object equal to
+  `{"futureKey":1.5e3,"mode":"turbo","radHome":"/home/u/.radicle"}`
+
+#### Scenario: A member the file names twice is kept once, with its last value
+
+- **WHEN** the settings file contains
+  `{"futureKey":"a","mode":"turbo","futureKey":"b"}`
+- **AND** `setSetting` is called with key `radHome` and value
+  `/home/u/.radicle`, and accepts it
+- **THEN** the file on disk MUST parse as a JSON object equal to
+  `{"mode":"turbo","futureKey":"b","radHome":"/home/u/.radicle"}`
+- **AND** the file's text MUST contain `"futureKey"` exactly once
 
 ### Requirement: A settings write replies with the settings as read, not the file as stored
 

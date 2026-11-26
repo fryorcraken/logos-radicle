@@ -23,7 +23,12 @@ Normalising stays a property of reads only.
   uninterpretable `mode`, a key this build does not know, a known key whose
   value is not a string. The write adds no other member, so defaults are not
   written out for keys the file never held.
-- A refused write leaves the file as it was.
+- A refused write leaves the file's bytes unchanged.
+- What a write keeps is each member's JSON value, not the file's text. The
+  file's member order, whitespace and number spelling do not change which
+  members a write keeps or their values, and a member the file names twice is
+  kept once, with its last value. The text itself, and a number beyond what an
+  IEEE 754 double holds, are left out of the contract rather than promised.
 - A write over a settings file that is absent, cannot be read, or does not
   parse as a JSON object replaces it with an object holding only the key
   written. This is a write's behaviour; a read of such a file still yields
@@ -59,6 +64,7 @@ None.
 ### Modified Capabilities
 
 - `module-settings`: adds "A settings write changes only the key it names",
+  "A settings write keeps each member's value, not the file's text",
   "A settings write replies with the settings as read, not the file as stored"
   and "A settings write over an unreadable file stores only the key written";
   modifies "A settings file that cannot be read yields defaults" to match.
