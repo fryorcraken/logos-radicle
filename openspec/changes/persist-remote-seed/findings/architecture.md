@@ -131,3 +131,96 @@ the fifth is a missing contract note.
       what they did": the header now says success is an empty object (which
       `isError` reads as an acceptance) and that a non-empty `gitPath` is
       checked by running it, spawning a process. Comment only.
+
+## Round 2
+
+Dimension reviewed: **architecture** only, at HEAD `35f8d35`, concentrating on
+what changed since `1973b69` (`git diff 1973b69 HEAD -- radicle/src
+radicle-ui/src`, `design.md`, the spec delta). Round 1's five boxes above are
+answered and not re-raised.
+
+**Clean areas.**
+
+- **Moving the seed-ness check into `SeedClient::probe` is the right owner.**
+  `probe` is where `apiVersion` and `nid` were already read, so "is this a
+  seed" and "what did it say" are decided in one function; `setRemoteSeed`
+  cannot second-guess a "success" because `probe` no longer returns one it
+  would have to distrust. The reply reading `m_seed.nid()` removes the second,
+  throwing opinion about `nid` that round 1's shape had. `probe` has exactly
+  one production caller (`setRemoteSeed`, on the candidate), so tightening its
+  contract widened nothing.
+- **`getJson`'s `is_string()` guard sits at the shared choke point**, so every
+  `remote*` call gets it rather than only the probe. That is the right place,
+  and `design.md` says why.
+- **The candidate-client shape survived the rework.** The new shape check runs
+  on `candidate.seedUrl()` after the copy, still before any request, and still
+  leaves `m_seed` untouched on every refusal. The "Keep this a value type"
+  comment is now on the class, which answers round 1's fourth box.
+- **Who owns the normalised URL is coherent.** `SeedClient` normalises (ctor
+  and `setSeedUrl`, one `trimTrailingSlash`); `setRemoteSeed` stores and
+  reports `candidate.seedUrl()` and never trims itself; the persisted value is
+  re-normalised on load by the same `setSeedUrl`. There is one trim, and no
+  second copy in `radicle_impl.cpp` or `settings_store.cpp`. The only
+  disagreement is the `setSetting` door, which `design.md` Risks records.
+- **The empty-store-path message is fixed in `SettingsStore::set`**, not in
+  `setRemoteSeed`'s wrapper, so both doors benefit; no interface widened
+  (`std::string` in, JSON out), no dependency added, no CI gate path moved.
+
+Findings below are low severity; none is a regression. The first is a
+documentation-accuracy gap with a stylistic reshape attached, the second a
+contract the new `probe` doc states and the code does not keep.
+
+- [ ] **`dev-writer`** — `design.md` "The shape rule is asked of the URL as given and as stored", `radicle/src/radicle_impl.cpp:467-477` — the stated reason for checking the typed form is wrong, and no test pins it
+      **Scenario:** `design.md` says "Checking the normalised form alone would
+      satisfy today's rule, since a normalised URL is a prefix of the given
+      one and the rule is a prefix test", and gives a hypothetical length cap as
+      the reason to ask both. It is not true of today's rule. `validate`
+      accepts an empty `remoteSeed` (it means "clear" through `setSetting`), and
+      `setRemoteSeed("/")` or `setRemoteSeed("///")` normalises to `""`, which
+      passes the rule. Asking the normalised form alone would then probe
+      `"" + "/api/v1"` and report "whatever the transport makes of it", the very
+      thing the comment above the loop says to avoid. The typed-form half of the
+      loop is what refuses these today, and the only reason it does is that the
+      typed `/` fails the `http(s)://` prefix. No row in
+      `every_url_set_setting_refuses_is_refused_by_set_remote_seed_though_it_would_answer`
+      is slash-only (`//seed.example.test` normalises to itself), so by reading,
+      dropping `seedUrl` from the initializer list survives the suite; I did not
+      run that mutation (a Nix build for one edit), so treat "survives" as read,
+      not measured.
+      **Ask:** correct the design sentence to name the real reason (a
+      slash-only URL normalises to the empty string the rule accepts), and
+      either add a slash-only row to that table or, simpler and the reshape the
+      "complexity in the data" habit points at, refuse an empty *normalised* URL
+      in place of the typed `seedUrl.empty()` check and validate the normalised
+      form alone. That is one check on one form, and it makes the loop and the
+      two-form comment unnecessary. **Severity:** low; accuracy of a recorded
+      decision, and a stylistic preference for the reshape.
+
+- [ ] **`dev-writer`** — `radicle/src/seed_client.cpp:142-143`, `radicle/src/seed_client.h:51-58` — `probe` runs `isError(index)` on the seed's own body, so the documented acceptance bar and the code disagree for a 2xx index that carries an `error` key
+      **Scenario:** `probe`'s header says a seed answers with "a 2xx reply whose
+      body is a JSON object carrying a string `apiVersion`" and that anything
+      else leaves `reachable()` false. A 200 body `{"apiVersion":"6.2.0","error":5}`
+      meets that bar, but `getJson` returns it as a success (and sets
+      `m_reachable = true`) and `probe`'s `isError(index)` then reads the seed's
+      key as *our* error signal and returns the index unchanged.
+      `setRemoteSeed` dumps it, so the caller gets `{"error":5,"apiVersion":"6.2.0"}`:
+      a failure whose `error` is not a string, which breaks "failures are always
+      `{"error":"..."}`", with `reachable()` left true. With a string `error`
+      the seed is refused under the seed's own message, which is defensible but
+      not what the header says. Nothing refused is stored, so no state is
+      corrupted; the defect is the contract. The cause is structural: `getJson`
+      returns the untrusted body and our error object as the same type with the
+      same discriminator, so a seed can forge the discriminator. A seed index
+      with an `error` key is unlikely in practice, hence low.
+      **Ask:** either test the object/`apiVersion` bar before `isError` (an
+      error produced by `getJson` is `{"error":"<string>"}` with no
+      `apiVersion`, so the order can be object-with-`apiVersion` first), or say
+      in the header that an index carrying `error` is refused. Not asked: a
+      reshape of `getJson`'s return type, which is wider than this change.
+      **Severity:** low; contract accuracy.
+
+Noted, not boxed: `save()` (`settings_store.cpp:271`) and the new pre-check in
+`set()` (`:360`) both know "no settings path". The pre-check is correct, its
+comment says why, and `set()` is the only caller of `save()`, so nobody needs to
+act; if `save()` is touched again it could report why it failed rather than a
+bool.
