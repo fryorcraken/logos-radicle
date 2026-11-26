@@ -215,9 +215,21 @@ public:
 
     /**
      * Point the remote proxy at a different seed (e.g.
-     * "https://seed.radicle.xyz"). Validates by fetching `/api/v1` and
-     * recording its apiVersion. Affects only `remote*` calls.
+     * "https://seed.radicle.xyz"), and store it as the `remoteSeed` setting so
+     * the next start adopts it. Affects only `remote*` calls.
      * -> {"seed":"<url>","apiVersion":"6.2.0","nid":"z6Mk..."}
+     *
+     * The seed must pass, in order: non-empty; the shape `setSetting` checks
+     * (`http://` or `https://`), before any request is made; a probe of
+     * `/api/v1`; and the settings write. Any failure is `{"error":"..."}` and
+     * changes nothing — not the seed in force, not the stored seed, and no
+     * `remoteSeedChanged` is emitted. A seed that answers but cannot be stored
+     * (a module with no settings path) is refused rather than adopted for the
+     * session only.
+     *
+     * `setSetting("remoteSeed", …)` is the other way into the same stored key,
+     * and the difference is deliberate: it checks shape only and never touches
+     * the network, where this proves the seed answers before storing it.
      */
     std::string setRemoteSeed(const std::string& seedUrl);
 

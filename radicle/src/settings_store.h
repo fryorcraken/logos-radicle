@@ -10,11 +10,16 @@ namespace radicle {
 /**
  * The module's own persistent settings.
  *
- * Before this existed the module persisted **nothing**: `setRemoteSeed`
- * mutated an in-memory field that was lost on restart, and the seed list was
+ * Before this existed the module persisted **nothing**, and the seed list was
  * three compile-time constants. Mode, the chosen home, the git path and the
  * seed all have to survive a restart or every one of them is a thing the user
  * re-chooses on every launch.
+ *
+ * A store is not the same as every caller writing to it. The seed picker calls
+ * `setRemoteSeed`, which for a while after this store landed adopted a seed in
+ * memory only, so the chosen seed was still lost on restart. Both it and
+ * `setSetting("remoteSeed", …)` write the `remoteSeed` key; see
+ * `setRemoteSeed` in `radicle_impl.h` for how the two differ.
  *
  * ## Where the file lives, and why not `~/.radicle/config.json`
  *

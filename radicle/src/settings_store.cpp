@@ -400,9 +400,9 @@ nlohmann::json SettingsStore::validate(const std::string& key, const std::string
         }
     } else if (key == kKeyRemoteSeed) {
         // Deliberately shape-only. Whether the seed actually answers is
-        // setRemoteSeed's job — it probes and rolls back — and duplicating that
-        // here would mean two places deciding what a good seed is, and a
-        // settings write that blocks on the network.
+        // setRemoteSeed's job — it asks this same rule first, then probes, and
+        // stores only a seed that answered — and probing here too would mean
+        // a settings write that blocks on the network.
         if (!value.empty() && value.rfind("http://", 0) != 0
             && value.rfind("https://", 0) != 0) {
             return makeError("a seed URL must start with http:// or https://");

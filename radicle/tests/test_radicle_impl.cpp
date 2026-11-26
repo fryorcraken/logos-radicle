@@ -292,6 +292,34 @@ std::string scratchSettingsPath(const std::string& name)
     return dir + "/settings.json";
 }
 
+/// `scratchSettingsPath`, with any file a previous run left there removed.
+///
+/// The directory is named per test and nothing cleans it, so a test that
+/// writes a seed and later asserts what a fresh instance adopts would, on a
+/// second local run, also pass against an implementation that wrote nothing:
+/// the first run's file would still be carrying the value. Callers assert the
+/// file is absent before relying on it.
+std::string freshSettingsPath(const std::string& name)
+{
+    const auto path = scratchSettingsPath(name);
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    return path;
+}
+
+/// A settings file at a fresh path carrying `seed` as `remoteSeed`, written
+/// through the store itself rather than by hand so the file is the shape the
+/// module writes.
+std::string settingsCarryingSeed(const std::string& name, const std::string& seed)
+{
+    const auto path = freshSettingsPath(name);
+    SettingsStore{path}.set(SettingsStore::kKeyRemoteSeed, seed);
+    return path;
+}
+
+/// The `/api/v1` index a seed answers its probe with.
+constexpr const char* kSeedIndex = R"({"apiVersion":"6.2.0","nid":"z6MkNew"})";
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -499,14 +527,25 @@ LOGOS_TEST(get_capabilities_reflects_the_seed_clients_reachability_and_version)
 }
 
 // ---------------------------------------------------------------------------
-// setRemoteSeed — the rollback on a failed probe.
+// setRemoteSeed — a seed it accepts is stored and survives a restart; a seed
+// it refuses changes neither the seed in force nor the stored one.
+//
+// Every test here gives the module a settings path. Without one the store
+// refuses every write, and a seed that cannot be stored is now refused, so the
+// empty-path default `makeRadicleImpl` uses would turn every acceptance into a
+// refusal. The one test that wants that refusal asks for it by name.
+//
+// A "restart" is a second `makeRadicleImpl` over the same settings file, with
+// a default SeedClient: whatever seed it reports can only have come from the
+// file, by the adoption "Settings survive a restart" requires.
 // ---------------------------------------------------------------------------
 
 LOGOS_TEST(set_remote_seed_adopts_the_new_seed_on_a_successful_probe)
 {
     FakeSeed fake;
-    fake.replies["/api/v1"] = R"({"apiVersion":"6.2.0","nid":"z6MkNew"})";
-    auto impl = makeRadicleImpl(fakeSeedClient(fake, "https://old.example.test"), LocalStore{});
+    fake.replies["/api/v1"] = kSeedIndex;
+    auto impl = makeRadicleImpl(fakeSeedClient(fake, "https://old.example.test"), LocalStore{},
+                                SettingsStore{freshSettingsPath("seed-adopt")});
 
     const auto out = parse(impl.setRemoteSeed("https://example.test"));
     LOGOS_ASSERT_FALSE(out.contains("error"));
@@ -517,35 +556,228 @@ LOGOS_TEST(set_remote_seed_adopts_the_new_seed_on_a_successful_probe)
     LOGOS_ASSERT_EQ(caps["remoteSeed"].get<std::string>(), std::string("https://example.test"));
 }
 
-/// The rollback this milestone protects: a probe failure must leave the
-/// PREVIOUS seed active, not the one that just failed to validate. Without
-/// the rollback, a typo'd seed URL would silently become the active (and
-/// broken) seed.
-LOGOS_TEST(set_remote_seed_rolls_back_to_the_previous_seed_on_a_failed_probe)
+LOGOS_TEST(a_seed_chosen_through_set_remote_seed_is_in_force_after_a_restart)
 {
-    FakeSeed fake;
-    fake.failEverything = true;
-    auto impl = makeRadicleImpl(fakeSeedClient(fake, "https://good.example.test"), LocalStore{});
+    // The bug as a user meets it: pick a seed, restart, and the picker is back
+    // on the default. The URL is not the default seed, so a module that wrote
+    // nothing reports `seed.radicle.xyz` here rather than passing.
+    const auto path = freshSettingsPath("seed-chosen-restart");
+    std::error_code ec;
+    LOGOS_ASSERT_FALSE(std::filesystem::exists(path, ec));
 
-    const auto out = parse(impl.setRemoteSeed("https://bad.example.test"));
-    LOGOS_ASSERT_TRUE(out.contains("error"));
+    {
+        FakeSeed fake;
+        fake.replies["/api/v1"] = kSeedIndex;
+        auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{}, SettingsStore{path});
+        LOGOS_ASSERT_FALSE(parse(impl.setRemoteSeed("https://chosen.example.test"))
+                               .contains("error"));
+    }
 
-    // The seed must have rolled back — a subsequent capabilities call reports
-    // the ORIGINAL seed, not the one that failed to probe.
-    const auto caps = parse(impl.getCapabilities());
-    LOGOS_ASSERT_EQ(caps["remoteSeed"].get<std::string>(), std::string("https://good.example.test"));
+    auto restarted = makeRadicleImpl(SeedClient{}, LocalStore{}, SettingsStore{path});
+    LOGOS_ASSERT_EQ(parse(restarted.getCapabilities())["remoteSeed"].get<std::string>(),
+                    std::string("https://chosen.example.test"));
 }
 
-LOGOS_TEST(set_remote_seed_refuses_an_empty_url_without_touching_the_current_seed)
+LOGOS_TEST(a_chosen_seed_is_stored_before_set_remote_seed_returns)
 {
     FakeSeed fake;
-    auto impl = makeRadicleImpl(fakeSeedClient(fake, "https://good.example.test"), LocalStore{});
+    fake.replies["/api/v1"] = kSeedIndex;
+    auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{},
+                                SettingsStore{freshSettingsPath("seed-stored-before-reply")});
+
+    const auto out = parse(impl.setRemoteSeed("https://chosen.example.test"));
+    LOGOS_ASSERT_FALSE(out.contains("error"));
+    LOGOS_ASSERT_EQ(parse(impl.getSettings())["remoteSeed"].get<std::string>(),
+                    std::string("https://chosen.example.test"));
+}
+
+LOGOS_TEST(the_later_of_two_accepted_seeds_is_the_one_stored)
+{
+    // Two different URLs, so a store that kept the first write, or appended
+    // rather than replaced, is told apart from one that kept the second.
+    const auto path = freshSettingsPath("seed-later-of-two");
+    {
+        FakeSeed fake;
+        fake.replies["/api/v1"] = kSeedIndex;
+        auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{}, SettingsStore{path});
+        LOGOS_ASSERT_FALSE(parse(impl.setRemoteSeed("https://first.example.test"))
+                               .contains("error"));
+        LOGOS_ASSERT_FALSE(parse(impl.setRemoteSeed("https://second.example.test"))
+                               .contains("error"));
+    }
+
+    auto restarted = makeRadicleImpl(SeedClient{}, LocalStore{}, SettingsStore{path});
+    LOGOS_ASSERT_EQ(parse(restarted.getCapabilities())["remoteSeed"].get<std::string>(),
+                    std::string("https://second.example.test"));
+}
+
+// NO SPEC: the spec requires a refusal to emit no `remoteSeedChanged`, and is
+// silent on an acceptance. This pins that an accepted seed emits exactly one,
+// carrying the seed now in force. It is also the control for every "no event"
+// assertion below: those pass trivially if the test build's event forwarder
+// records nothing, and this is the test that would then go red.
+LOGOS_TEST(an_accepted_seed_emits_one_remote_seed_changed_naming_it)
+{
+    logos_test::EventCapture events;
+    FakeSeed fake;
+    fake.replies["/api/v1"] = kSeedIndex;
+    auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{},
+                                SettingsStore{freshSettingsPath("seed-accepted-event")});
+
+    LOGOS_ASSERT_FALSE(parse(impl.setRemoteSeed("https://chosen.example.test")).contains("error"));
+
+    const auto emitted = events.all("remoteSeedChanged");
+    LOGOS_ASSERT_EQ(emitted.size(), size_t(1));
+    LOGOS_ASSERT_EQ(emitted[0].data, std::string("https://chosen.example.test"));
+}
+
+/// The rollback this milestone protects, now for the stored seed as well as
+/// the one in force: a typo'd URL must not become the active seed, and must
+/// not become the seed the next start adopts either.
+LOGOS_TEST(a_failed_probe_stores_nothing_and_keeps_the_seed_in_force)
+{
+    logos_test::EventCapture events;
+    const auto path = settingsCarryingSeed("seed-failed-probe", "https://kept.example.test");
+
+    FakeSeed fake;
+    fake.failEverything = true;
+    {
+        auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{}, SettingsStore{path});
+
+        const auto out = parse(impl.setRemoteSeed("https://unreachable.example.test"));
+        LOGOS_ASSERT_TRUE(out.contains("error"));
+        LOGOS_ASSERT_EQ(parse(impl.getCapabilities())["remoteSeed"].get<std::string>(),
+                        std::string("https://kept.example.test"));
+        LOGOS_ASSERT_EQ(parse(impl.getSettings())["remoteSeed"].get<std::string>(),
+                        std::string("https://kept.example.test"));
+    }
+    // The probe really was attempted against the new seed, so the refusal
+    // above is the probe's and not a shape check's.
+    LOGOS_ASSERT_FALSE(fake.requested.empty());
+    LOGOS_ASSERT_CONTAINS(fake.requested.back(), std::string("unreachable.example.test"));
+
+    auto restarted = makeRadicleImpl(SeedClient{}, LocalStore{}, SettingsStore{path});
+    LOGOS_ASSERT_EQ(parse(restarted.getCapabilities())["remoteSeed"].get<std::string>(),
+                    std::string("https://kept.example.test"));
+
+    LOGOS_ASSERT_TRUE(events.all("remoteSeedChanged").empty());
+}
+
+LOGOS_TEST(a_seed_that_answers_but_cannot_be_stored_is_refused)
+{
+    // An empty settings path refuses every write — the "A store with no path
+    // reports defaults and refuses to write" scenario. Before this change the
+    // seed was adopted for the session and silently lost at the next start,
+    // which is the bug this change removes rather than a case to preserve.
+    logos_test::EventCapture events;
+    FakeSeed fake;
+    fake.replies["/api/v1"] = kSeedIndex;
+    auto impl = makeRadicleImpl(fakeSeedClient(fake, "https://good.example.test"), LocalStore{},
+                                SettingsStore{""});
+
+    const auto out = parse(impl.setRemoteSeed("https://answers.example.test"));
+    LOGOS_ASSERT_TRUE(out.contains("error"));
+    // The seed did answer: the refusal is the store's, not the probe's.
+    LOGOS_ASSERT_FALSE(fake.requested.empty());
+
+    LOGOS_ASSERT_EQ(parse(impl.getCapabilities())["remoteSeed"].get<std::string>(),
+                    std::string("https://good.example.test"));
+    LOGOS_ASSERT_TRUE(events.all("remoteSeedChanged").empty());
+}
+
+LOGOS_TEST(a_url_with_no_scheme_is_refused_even_when_the_seed_would_answer)
+{
+    // The empty fragment matches every URL, so every request this fake sees
+    // succeeds: a refusal here cannot be a failed probe.
+    logos_test::EventCapture events;
+    const auto path = settingsCarryingSeed("seed-no-scheme", "https://kept.example.test");
+    FakeSeed fake;
+    fake.replies[""] = kSeedIndex;
+    auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{}, SettingsStore{path});
+
+    const auto out = parse(impl.setRemoteSeed("seed.example.test"));
+    LOGOS_ASSERT_TRUE(out.contains("error"));
+    LOGOS_ASSERT_EQ(parse(impl.getCapabilities())["remoteSeed"].get<std::string>(),
+                    std::string("https://kept.example.test"));
+    LOGOS_ASSERT_EQ(parse(impl.getSettings())["remoteSeed"].get<std::string>(),
+                    std::string("https://kept.example.test"));
+    LOGOS_ASSERT_TRUE(events.all("remoteSeedChanged").empty());
+}
+
+// NO SPEC: the spec requires a URL `setSetting` would refuse to be refused
+// whatever a probe would say, and is silent on whether the probe is made. This
+// pins that it is not: the shape is checked first, so a malformed URL costs no
+// network round trip and the caller sees the shape's reason rather than
+// whatever the transport makes of a URL with no scheme.
+LOGOS_TEST(a_url_with_no_scheme_is_refused_before_any_request_and_says_why)
+{
+    FakeSeed fake;
+    fake.replies[""] = kSeedIndex;
+    auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{},
+                                SettingsStore{freshSettingsPath("seed-no-scheme-no-request")});
+
+    const auto out = parse(impl.setRemoteSeed("seed.example.test"));
+    LOGOS_ASSERT_TRUE(out.contains("error"));
+    LOGOS_ASSERT_CONTAINS(out["error"].get<std::string>(), std::string("http://"));
+    LOGOS_ASSERT_TRUE(fake.requested.empty());
+}
+
+LOGOS_TEST(an_empty_url_is_refused_and_leaves_the_stored_seed_alone)
+{
+    const auto path = settingsCarryingSeed("seed-empty-url", "https://kept.example.test");
+    FakeSeed fake;
+    fake.replies[""] = kSeedIndex;
+    auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{}, SettingsStore{path});
 
     const auto out = parse(impl.setRemoteSeed(""));
     LOGOS_ASSERT_TRUE(out.contains("error"));
+    LOGOS_ASSERT_EQ(parse(impl.getCapabilities())["remoteSeed"].get<std::string>(),
+                    std::string("https://kept.example.test"));
+    LOGOS_ASSERT_EQ(parse(impl.getSettings())["remoteSeed"].get<std::string>(),
+                    std::string("https://kept.example.test"));
+}
+
+// NO SPEC: the spec says a refusal leaves "the seed in force" as it was, and
+// does not say whether that covers what the module last learned about it. This
+// pins that it does: the seed in force stays reachable, with its API version,
+// after a different seed fails its probe. Before this change the rollback
+// re-set the old URL, which cleared both, so a failed pick made a working seed
+// read as unreachable until something probed it again.
+LOGOS_TEST(a_failed_probe_leaves_the_seed_in_force_reachable)
+{
+    FakeSeed fake;
+    fake.replies["good.example.test/api/v1"] = kSeedIndex;
+    SeedClient seed = fakeSeedClient(fake, "https://good.example.test");
+    seed.probe();
+    auto impl = makeRadicleImpl(std::move(seed), LocalStore{},
+                                SettingsStore{freshSettingsPath("seed-failed-keeps-reachable")});
+    LOGOS_ASSERT_TRUE(parse(impl.getCapabilities())["remoteReachable"].get<bool>());
+
+    LOGOS_ASSERT_TRUE(parse(impl.setRemoteSeed("https://unreachable.example.test"))
+                          .contains("error"));
 
     const auto caps = parse(impl.getCapabilities());
     LOGOS_ASSERT_EQ(caps["remoteSeed"].get<std::string>(), std::string("https://good.example.test"));
+    LOGOS_ASSERT_TRUE(caps["remoteReachable"].get<bool>());
+    LOGOS_ASSERT_EQ(caps["remoteApiVersion"].get<std::string>(), std::string("6.2.0"));
+}
+
+// NO SPEC: the spec says `setRemoteSeed` stores "that URL", and is silent on a
+// trailing slash, which the seed client strips. This pins that the stored
+// value is the URL in force, slash stripped, so `getSettings().remoteSeed`,
+// `getCapabilities().remoteSeed` and the reply's `seed` all agree.
+LOGOS_TEST(the_stored_seed_is_the_url_in_force_without_a_trailing_slash)
+{
+    FakeSeed fake;
+    fake.replies["/api/v1"] = kSeedIndex;
+    auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{},
+                                SettingsStore{freshSettingsPath("seed-trailing-slash")});
+
+    const auto out = parse(impl.setRemoteSeed("https://chosen.example.test/"));
+    LOGOS_ASSERT_FALSE(out.contains("error"));
+    LOGOS_ASSERT_EQ(out["seed"].get<std::string>(), std::string("https://chosen.example.test"));
+    LOGOS_ASSERT_EQ(parse(impl.getSettings())["remoteSeed"].get<std::string>(),
+                    std::string("https://chosen.example.test"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1550,8 +1782,9 @@ LOGOS_TEST(a_refused_configured_git_path_is_still_reported_as_configured)
 
 LOGOS_TEST(a_persisted_seed_is_adopted_when_the_module_starts)
 {
-    // The cheapest proof the settings store works, and a real user-visible
-    // improvement: setRemoteSeed used to be lost on restart entirely.
+    // The cheapest proof the settings store works. This is the half of "a
+    // chosen seed survives a restart" that reads the file; the half that
+    // writes it is setRemoteSeed's, tested with the setRemoteSeed tests above.
     ScopedRadHome home("seed-persist");
     const auto path = scratchSettingsPath("seed-persist");
 
