@@ -80,7 +80,7 @@ a click selector is static and cannot choose a file from the listing.
 **The module answers one call at a time, in the order it received them**, so
 any backend call waits behind whatever was handed over before it. A sync is
 the one view that could hand over hundreds at once; it now keeps at most a
-fixed few with the module (`SourceTab.syncMaxInFlight`, and the `sync-cancel`
+fixed few with the module (`SourceTab.syncMaxOutstanding`, and the `sync-cancel`
 design's Decisions for why), which is what lets `sync.yaml` cancel a sync and
 then poll, in the user's order, with a wait that does not depend on the size of
 the repository. A new view that dispatches many calls at once reintroduces the

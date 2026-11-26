@@ -18,7 +18,7 @@ import "../src/qml" as Ui
  * value. A fake that answered everything identically could not tell "this
  * file's contents arrived" from "some file's contents arrived".
  *
- * The bound is 4: SourceTab.syncMaxInFlight, recorded in the change's
+ * The bound is 4: SourceTab.syncMaxOutstanding, recorded in the change's
  * design.md. It is written here as a literal, not read off the component, so
  * that a change to the bound is a change to this file as well.
  */
