@@ -1086,41 +1086,269 @@ fn a_source_longer_than_a_seed_uses_its_first_32_bytes() {
     cleanup(&dir);
 }
 
-/// A refused home never opens the source, so a refusal is never reported as
-/// an entropy failure.
+/// A refused call never opens the source, so a refusal is never reported as an
+/// entropy failure — whichever of the five refusals it is.
 ///
-/// The occupied-home refusal must name the overwrite whatever the source would
-/// have done; that half is the spec's. The `opened` flag is design.md's
-/// Decision 2, and it is the half that does the work: an implementation that
-/// opens the source before validating but holds the error until the draw still
-/// reports the refusal correctly, and only the flag sees it. Verified by that
-/// mutation, which leaves the message assertion green and turns the flag red.
+/// The message half is each refusal's own existing requirement: whatever the
+/// source would have done, the caller is told what they got wrong. The `opened`
+/// flag is design.md's Decision 2, and it is the half that does the work: an
+/// implementation that opens the source before validating but holds the error
+/// until the draw still reports the refusal correctly, and only the flag sees
+/// it.
+///
+/// A table rather than the occupied home alone, because the draw sits *after*
+/// five checks and a draw moved up past only some of them is a different bug:
+/// moved above the alias check, say, it leaves the occupied-home case green and
+/// turns the bad-alias case into an entropy error.
+// NO SPEC: that the source is not opened for a refused call is design.md's
+// Decision 2, not a requirement. The spec requires only that each refusal keep
+// its own message; the `opened` assertion pins the stronger ordering.
 #[test]
 fn a_refused_home_never_opens_the_entropy_source() {
-    let (dir, home) = fresh_home("entropy-refused");
-    let first = parse(&init_profile(&home, "tester", ""));
+    // (case, the words its own refusal must contain)
+    let cases: [(&str, &str); 5] = [
+        ("empty-home", "no home given"),
+        ("relative-home", "absolute"),
+        ("occupied-home", "would overwrite its signing key"),
+        ("half-created-home", "half-created"),
+        ("bad-alias", "not a usable alias"),
+    ];
+
+    for (case, wanted) in cases {
+        let (dir, home) = fresh_home(&format!("entropy-refused-{case}"));
+        let mut alias = "tester";
+        let target = match case {
+            "empty-home" => String::new(),
+            "relative-home" => "tmp/entropy-refused-must-not-appear".to_string(),
+            "occupied-home" => {
+                let first = parse(&init_profile(&home, "tester", ""));
+                assert_eq!(first["created"], serde_json::json!(true), "{first}");
+                home.clone()
+            }
+            "half-created-home" => {
+                let first = parse(&init_profile(&home, "tester", ""));
+                assert_eq!(first["created"], serde_json::json!(true), "{first}");
+                std::fs::remove_file(std::path::Path::new(&home).join("config.json"))
+                    .expect("fixture: could not remove config.json");
+                home.clone()
+            }
+            "bad-alias" => {
+                alias = "not a valid alias";
+                home.clone()
+            }
+            other => unreachable!("{other}"),
+        };
+
+        let opened = std::cell::Cell::new(false);
+        let out = parse(&init_profile_with_entropy(&target, alias, "", || {
+            opened.set(true);
+            Err::<Scripted, _>(std::io::Error::other("no such source"))
+        }));
+
+        let message = out["error"].as_str().unwrap_or_default();
+        assert!(
+            message.contains(wanted),
+            "{case}: must be refused with its own message ({wanted:?}), got: {out}"
+        );
+        assert!(
+            !message.contains(ENTROPY_UNREADABLE),
+            "{case}: a refusal must not be reported as an entropy failure: {out}"
+        );
+        assert!(
+            !opened.get(),
+            "{case}: the entropy source was opened for a call that was always \
+             going to be refused"
+        );
+
+        cleanup(&dir);
+    }
+}
+
+/// **A source that falls short of 32 bytes at any length creates no key**, and
+/// one that fails at any length does too.
+///
+/// The spec's scenarios name 16 bytes. A table, because a draw that accepted
+/// "at least half a seed" (or any other threshold) is red only at the lengths
+/// above it, and an empty source is the one a real `/dev/urandom` open that
+/// succeeds but yields nothing would be.
+#[test]
+fn a_source_short_of_32_bytes_at_any_length_creates_no_key() {
+    let seed = known_seed();
+
+    // (case, how many bytes arrive, then what the source does)
+    let cases: [(&str, usize, bool); 6] = [
+        ("ends-after-0", 0, false),
+        ("ends-after-1", 1, false),
+        ("ends-after-31", 31, false),
+        ("fails-after-0", 0, true),
+        ("fails-after-1", 1, true),
+        ("fails-after-31", 31, true),
+    ];
+
+    for (case, supplied, fails) in cases {
+        let (dir, home) = fresh_home(&format!("entropy-any-{case}"));
+        let mut steps = Vec::new();
+        if supplied > 0 {
+            steps.push(Step::Give(seed[..supplied].to_vec()));
+        }
+        if fails {
+            steps.push(Step::Fail);
+        }
+
+        let out = parse(&init_profile_with_entropy(
+            &home,
+            "tester",
+            "",
+            opening(Scripted::new(steps)),
+        ));
+
+        assert!(
+            out["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains(ENTROPY_UNREADABLE),
+            "{case}: must fail with the entropy message, got: {out}"
+        );
+        assert!(
+            out.get("created").is_none() && out.get("nodeId").is_none(),
+            "{case}: a failed draw must not report an identity: {out}"
+        );
+        assert_eq!(
+            files_under_keys(&home),
+            Vec::<String>::new(),
+            "{case}: a failed draw must write no key material"
+        );
+
+        cleanup(&dir);
+    }
+}
+
+/// **An interrupted read is retried wherever it falls**: before the first
+/// byte, between reads, twice running, and one byte from the end.
+///
+/// Each yields the identity the crate itself derives from the same 32 bytes, so
+/// a retry that dropped or repeated a chunk is a different key and not merely a
+/// created one.
+#[test]
+fn an_interruption_anywhere_in_the_draw_is_retried() {
+    let seed = known_seed();
+    let expected = node_id_the_crate_derives_from(&seed, "entropy-interrupt-table-oracle");
+
+    // (case, the script)
+    let cases: Vec<(&str, Vec<Step>)> = vec![
+        (
+            "before-any-byte",
+            vec![Step::Interrupt, Step::Give(seed.clone())],
+        ),
+        (
+            "twice-in-a-row",
+            vec![
+                Step::Give(seed[..16].to_vec()),
+                Step::Interrupt,
+                Step::Interrupt,
+                Step::Give(seed[16..].to_vec()),
+            ],
+        ),
+        (
+            "one-byte-from-the-end",
+            vec![
+                Step::Give(seed[..31].to_vec()),
+                Step::Interrupt,
+                Step::Give(seed[31..].to_vec()),
+            ],
+        ),
+    ];
+
+    for (case, steps) in cases {
+        let (dir, home) = fresh_home(&format!("entropy-interrupt-{case}"));
+
+        let out = parse(&init_profile_with_entropy(
+            &home,
+            "tester",
+            "",
+            opening(Scripted::new(steps)),
+        ));
+
+        assert_eq!(
+            out["created"],
+            serde_json::json!(true),
+            "{case}: an interruption is not a failure: {out}"
+        );
+        assert_eq!(
+            out["nodeId"].as_str().unwrap_or_default(),
+            expected,
+            "{case}: every byte on both sides of the interruption must reach the key"
+        );
+
+        cleanup(&dir);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// "No caller can choose the entropy source."
+//
+// The requirement is about two signatures, and a signature is something a test
+// can pin: not by calling the function, but by what the compiler and the C
+// header say its parameters are. The C++ half, `createEmbeddedIdentity(alias,
+// passphrase)`, is out of this layer's sight; it is held by every C++ caller
+// passing two arguments, which a third would break at compile time.
+// ---------------------------------------------------------------------------
+
+/// The FFI entry point, as compiled, takes a home, an alias and a passphrase
+/// and nothing else.
+///
+/// Assigning the function to a pointer of that exact type is the assertion: a
+/// fourth parameter (a path, a file descriptor, a callback supplying bytes)
+/// changes the type and this stops compiling.
+#[test]
+fn the_init_entry_point_takes_home_alias_and_passphrase_and_nothing_else() {
+    use std::os::raw::c_char;
+
+    let entry: unsafe extern "C" fn(*const c_char, *const c_char, *const c_char) -> *mut c_char =
+        radicle_local_ffi::radicle_local_init_profile;
+
+    // Used, so the binding is not optimised into a vacuous one. A NULL home is
+    // refused as an error object, never read as a source of anything.
+    let raw = unsafe { entry(std::ptr::null(), std::ptr::null(), std::ptr::null()) };
+    assert!(!raw.is_null());
+    unsafe { radicle_local_ffi::radicle_free_string(raw) };
+}
+
+/// The declaration C++ compiles against names the same three parameters.
+///
+/// `radicle_ffi.h` is checked in by hand, so it can drift from the Rust
+/// signature in either direction, and the C++ side would then pass an argument
+/// Rust never reads, or none Rust expects. Counted from the declaration's own
+/// text, up to its `;`.
+#[test]
+fn the_declared_init_prototype_has_three_const_char_pointer_parameters() {
+    const HEADER: &str = include_str!("../../src/radicle_ffi.h");
+
+    let start = HEADER
+        .find("char* radicle_local_init_profile(")
+        .expect("the header must declare radicle_local_init_profile");
+    let declaration = &HEADER[start..];
+    let end = declaration
+        .find(';')
+        .expect("the declaration must end in a semicolon");
+    let open = declaration.find('(').unwrap();
+    let params: Vec<&str> = declaration[open + 1..end]
+        .trim_end_matches(')')
+        .split(',')
+        .map(str::trim)
+        .collect();
+
     assert_eq!(
-        first["created"],
-        serde_json::json!(true),
-        "precondition: {first}"
+        params.len(),
+        3,
+        "the declared prototype must take exactly home, alias and passphrase, \
+         got {params:?}"
     );
-
-    let opened = std::cell::Cell::new(false);
-    let out = parse(&init_profile_with_entropy(&home, "tester", "", || {
-        opened.set(true);
-        Err::<Scripted, _>(std::io::Error::other("no such source"))
-    }));
-
-    let message = out["error"].as_str().unwrap_or_default();
-    assert!(
-        message.contains("would overwrite its signing key"),
-        "an occupied home must be refused as occupied, got: {out}"
-    );
-    assert!(
-        !opened.get(),
-        "the entropy source was opened for a call that was always going to be \
-         refused"
-    );
-
-    cleanup(&dir);
+    for param in &params {
+        assert!(
+            param.starts_with("const char*"),
+            "every declared parameter must be a `const char*`, got {param:?} in \
+             {params:?}"
+        );
+    }
 }
