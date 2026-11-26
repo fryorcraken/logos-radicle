@@ -95,6 +95,33 @@ Item {
         var raw = syncQueued > 0 ? syncDone / syncQueued : 0;
         if (raw > syncProgress) syncProgress = raw;
     }
+
+    /// The most of one sync's tree and file reads that are with the module at
+    /// once. The module answers one call at a time, in the order it received
+    /// them, so whatever a sync has already handed over is served before
+    /// anything asked after it — a cancel cannot take it back. Holding the
+    /// rest here, and handing over the next read only as one is answered, is
+    /// what lets a cancel stop the work rather than just ignore its replies:
+    /// after a cancel at most this many reads reach the node, and a request
+    /// made after it waits behind at most this many. The value and the
+    /// alternatives are the `sync-cancel` design's Decisions.
+    readonly property int syncMaxInFlight: 4
+    /// The running sync's reads discovered but not yet handed to the module,
+    /// oldest first, which keeps the walk breadth-first. Each is
+    /// `{ kind: "tree", path }` or `{ kind: "blob", entry }`. Already counted
+    /// in syncQueued.
+    property var syncPending: []
+    /// The running sync's reads handed to the module and not yet answered.
+    /// Only a reply under the running sync's epoch decrements it, so a late
+    /// reply from a cancelled sync cannot free a slot in the next one.
+    property int syncInFlight: 0
+
+    /// Forget the running sync's undispatched reads. Called wherever the epoch
+    /// moves on, so the next sync starts with an empty queue and every slot.
+    function dropSyncQueue() {
+        syncPending = [];
+        syncInFlight = 0;
+    }
     /// True once a sync has completed for this repository, so the idle button
     /// label can read "first download" vs "refresh" differently.
     property bool syncedOnce: false
@@ -136,6 +163,7 @@ Item {
         // replies cannot corrupt the counters of a sync started here.
         syncEpoch++;
         syncing = false;
+        dropSyncQueue();
         syncQueued = 0;
         syncDone = 0;
         syncProgress = 0;
@@ -349,6 +377,7 @@ Item {
         if (!app || rid === "" || syncing) return;
         syncEpoch++;
         syncing = true;
+        dropSyncQueue();
         syncQueued = 0;
         syncDone = 0;
         syncProgress = 0;
@@ -389,6 +418,7 @@ Item {
         }, function () { /* head unknown; pendingSyncHead stays "" */ });
 
         syncDir("", syncEpoch);
+        pumpSync(syncEpoch);
     }
 
     /// Set by syncAll()'s ListBranches lookup, consumed by
@@ -400,70 +430,130 @@ Item {
 
     function cancelSync() {
         // Bumping the epoch orphans every request already in flight, so their
-        // replies cannot touch the counters of a later sync.
+        // replies cannot touch the counters of a later sync — nor dispatch
+        // more of this one: only a reply under the running epoch pumps the
+        // queue (see pumpSync()). So at most syncMaxInFlight of this sync's
+        // reads reach the node after this line, and dropping the queue lets
+        // go of the rest.
         syncEpoch++;
         syncing = false;
+        dropSyncQueue();
     }
 
+    /// Queue a directory listing for the running sync.
     function syncDir(dirPath, epoch) {
         if (!syncing || epoch !== syncEpoch) return;
         syncQueued++;
-        var tkey = cacheKey(dirPath);
+        syncPending.push({ kind: "tree", path: dirPath });
+    }
 
-        var handle = function (list) {
+    /// Queue a file read for the running sync, unless the file is already
+    /// cached or already being fetched.
+    function syncBlob(entry, epoch) {
+        if (!syncing || epoch !== syncEpoch) return;
+        var bkey = cacheKey(entry.path);
+        if (blobCache[bkey] !== undefined || inFlight[bkey]) return;
+        syncQueued++;
+        syncPending.push({ kind: "blob", entry: entry });
+    }
+
+    /// Hand the running sync's queued reads to the module until
+    /// syncMaxInFlight of them are outstanding. The only place a sync's
+    /// GetTree or GetBlob is dispatched, so the bound has one place to hold.
+    ///
+    /// Called only under the running sync's epoch — from syncAll(), and from
+    /// settleSyncRead() after its caller's epoch check — so a cancelled sync
+    /// is never pumped again, and what it still held is never sent.
+    function pumpSync(epoch) {
+        while (syncInFlight < syncMaxInFlight && syncPending.length > 0) {
+            var job = syncPending.shift();
+            if (job.kind === "tree") fetchSyncTree(job.path, epoch);
+            else                     fetchSyncBlob(job.entry, epoch);
+        }
+    }
+
+    /// One of a sync's reads has been answered or refused: free its slot,
+    /// count it, and hand over the next. Only for a reply under the running
+    /// sync's epoch — the caller checks.
+    function settleSyncRead(epoch) {
+        syncInFlight--;
+        syncDone++;
+        finishSyncIfDone();
+        pumpSync(epoch);
+    }
+
+    /// Queue a listed directory's children. Counts the listing itself as done.
+    function walkSyncListing(list, epoch) {
+        for (var i = 0; i < list.length; i++) {
+            var e = list[i];
+            if (e.kind === "tree") syncDir(e.path, epoch);
+            else                   syncBlob(e, epoch);
+        }
+    }
+
+    function fetchSyncTree(dirPath, epoch) {
+        var tkey = cacheKey(dirPath);
+        if (treeCache[tkey] !== undefined) {
+            // A cached listing is no request: walk it without taking a slot.
+            walkSyncListing(treeCache[tkey], epoch);
+            syncDone++;
+            finishSyncIfDone();
+            return;
+        }
+        syncInFlight++;
+        app.call("GetTree", [rid, branch, dirPath], function (data) {
+            var list = data.entries || [];
+            treeCache[tkey] = list;
             // Count only while this reply still belongs to the running sync.
             // Counting unconditionally let a previous repository's replies
             // push syncDone past syncQueued, so a fresh sync reported itself
             // finished while it was still fetching.
             if (epoch !== syncEpoch) return;
-            syncDone++;
-            if (!syncing) return;
-            for (var i = 0; i < list.length; i++) {
-                var e = list[i];
-                if (e.kind === "tree") syncDir(e.path, epoch);
-                else                   syncBlob(e, epoch);
-            }
-            finishSyncIfDone();
-        };
-
-        if (treeCache[tkey] !== undefined) {
-            handle(treeCache[tkey]);
-            return;
-        }
-        app.call("GetTree", [rid, branch, dirPath], function (data) {
-            var list = data.entries || [];
-            treeCache[tkey] = list;
-            handle(list);
+            walkSyncListing(list, epoch);
+            settleSyncRead(epoch);
         }, function () {
             if (epoch !== syncEpoch) return;
-            syncDone++;
-            finishSyncIfDone();
+            settleSyncRead(epoch);
         });
     }
 
-    function syncBlob(entry, epoch) {
-        if (!syncing || epoch !== syncEpoch) return;
+    function fetchSyncBlob(entry, epoch) {
         var bkey = cacheKey(entry.path);
-        if (blobCache[bkey] !== undefined || inFlight[bkey]) return;
-
-        syncQueued++;
+        // Checked again here, not only when queued: a click or a hover may
+        // have fetched the file while it waited its turn.
+        if (blobCache[bkey] !== undefined || inFlight[bkey]) {
+            syncDone++;
+            finishSyncIfDone();
+            return;
+        }
+        // Marked only now, at dispatch. Marked when queued, a read the cancel
+        // then dropped would stay "in flight" for ever, and openEntry() would
+        // wait on a reply that is never coming.
         inFlight[bkey] = true;
+        syncInFlight++;
         app.call("GetBlob", [rid, branch, entry.path], function (data) {
             delete inFlight[bkey];
             // The cache key already carries the rid, so storing a late reply
             // is harmless and saves a refetch; only the counters are epoch
             // sensitive.
-            blobCache[bkey] = data.binary
+            var body = data.binary
                 ? "(binary file — " + (data.name || entry.name) + ")"
                 : (data.content || "");
+            blobCache[bkey] = body;
+            // openEntry() leaves a file already in flight to the request that
+            // is fetching it, so this reply must paint it if the user is
+            // waiting on it — cancelled sync or not, the file is the user's.
+            if (cacheKey(tab.selectedFile) === bkey) {
+                viewer.loading = false;
+                viewer.body = body;
+            }
             if (epoch !== syncEpoch) return;
-            syncDone++;
-            finishSyncIfDone();
+            settleSyncRead(epoch);
         }, function () {
             delete inFlight[bkey];
+            if (cacheKey(tab.selectedFile) === bkey) viewer.loading = false;
             if (epoch !== syncEpoch) return;
-            syncDone++;
-            finishSyncIfDone();
+            settleSyncRead(epoch);
         });
     }
 

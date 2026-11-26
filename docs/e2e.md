@@ -77,14 +77,17 @@ real one. The scroll fixes the geometry, not the dependence on the repository:
 `source.yaml` still needs the first repository to have a root `README.md`, since
 a click selector is static and cannot choose a file from the listing.
 
-**Cancelling a sync does not cancel its requests**, so a backend call made
-after a cancel queues behind the cancelled sync's backlog, minutes on a large
-repository. A spec that needs an answer after a cancel would have to size its
-wait for a repository nobody chose, which is why `sync.yaml` polls before it
-cancels. The defect and its measurement are issue #92. The opposite bound is
-`sync.yaml`'s too: its cancel half needs a first repository whose sync outlasts
-the steps before the cancel click, and a step asserting `syncing === true`
-immediately before it makes a repository too small fail there, by name.
+**The module answers one call at a time, in the order it received them**, so
+any backend call waits behind whatever was handed over before it. A sync is
+the one view that could hand over hundreds at once; it now keeps at most a
+fixed few with the module (`SourceTab.syncMaxInFlight`, and the `sync-cancel`
+design's Decisions for why), which is what lets `sync.yaml` cancel a sync and
+then poll, in the user's order, with a wait that does not depend on the size of
+the repository. A new view that dispatches many calls at once reintroduces the
+backlog for everything after it. `sync.yaml` has a lower bound as well: its
+cancel half needs a first repository whose sync outlasts the steps before the
+cancel click, and a step asserting `syncing === true` immediately before it
+makes a repository too small fail there, by name.
 
 **Add new specs to the `ui-tests.yml` matrix.** It runs one job per spec;
 `SPEC` was once hardcoded to `browse.yaml` and three specs sat in the tree
