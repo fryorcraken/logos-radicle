@@ -45,8 +45,16 @@ they arrive. Every one of them was still served.
 **Chosen:** `SourceTab` holds a sync's discovered reads in its own FIFO
 (`syncPending`) and hands them to `app.call()` only while fewer than
 `syncMaxInFlight` are outstanding (`syncInFlight`). Each answered read frees a
-slot and dispatches the next. `cancelSync()` empties the queue, so what is
+slot and dispatches the next. After a cancel nothing pumps the queue again,
+because only a reply under the running epoch does (Decision 5), so what is
 still held is never sent. QML only; the module's interface is unchanged.
+
+*Guard:* raising `syncMaxInFlight` to 1000 turns five tests in
+`tst_sync_cancel.qml` red: the large-sync, bound-does-not-grow and
+overtaking tests, and both rows of the late-reply slot test. Removing
+`dropSyncQueue()` from `cancelSync()` turns nothing red, and is not meant to:
+the epoch bump is what stops the queue being pumped, and the drop only lets go
+of what it held.
 
 The issue put the question this way: "Orphaning replies in QML cannot shorten
 the queue; the requests have to stop being served. That puts the cancel
@@ -120,9 +128,11 @@ coming. So `fetchSyncBlob()` sets it at dispatch, and re-checks the cache and
 the map there too, since a click may have fetched the file while it waited its
 turn.
 
-*Guard:* setting the mark in `syncBlob()` instead turns
-`tst_sync_cancel.qml`'s `test_a_file_queued_by_the_sync_still_opens_after_the_cancel`
-red.
+*Guard:* setting the mark in `syncBlob()` instead (and re-checking only the
+cache at dispatch) turns two tests red:
+`test_a_file_queued_by_the_sync_still_opens_after_the_cancel`, and
+`test_a_sync_after_a_cancel_downloads_everything`, where the next sync skips
+every file the cancelled one had queued (21 of 51 reads asked).
 
 ### 4. A sync's file read paints the file if the user is waiting on it
 
@@ -145,10 +155,16 @@ reads can hit it), not absent.
 `syncInFlight` is reset to 0 when a sync starts, is cancelled, or the tab is
 reset, and decremented only by a reply whose epoch is still current. A late
 reply from a cancelled sync therefore cannot free a slot in the sync that
-followed it, which would let the new sync put a fifth read out.
+followed it, which would let the new sync put a fifth read out. The same check
+is what keeps a cancelled sync from being pumped at all.
 
-*Guard:* decrementing before the epoch check turns
-`test_a_late_reply_does_not_free_a_slot_in_the_next_sync` red.
+*Guard:* freeing the slot and pumping before the epoch check turns
+`test_a_late_reply_does_not_free_a_slot_in_the_next_sync` red, in the
+"listings outstanding" row when done in the `GetTree` reply and the "files
+outstanding" row when done in the `GetBlob` reply (8 of the new sync's reads
+with the node at once, either way). The test runs both rows because a
+version with only directories outstanding left the `GetBlob` reply's check
+unexercised.
 
 One consequence worth stating: right after a cancel and a restart, the
 module can hold up to 4 reads of the cancelled sync and 4 of the new one. The

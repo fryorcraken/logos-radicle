@@ -295,8 +295,18 @@ Item {
             compare(source.syncProgress, progress, "a late reply must not move the new sync's progress");
         }
 
-        function test_a_late_reply_does_not_free_a_slot_in_the_next_sync() {
-            makeRepo(60, 10);
+        // Run twice: with directories in the root, the cancelled sync's
+        // outstanding reads are listings; with none, they are files. Each
+        // reply path has its own epoch check.
+        function test_a_late_reply_does_not_free_a_slot_in_the_next_sync_data() {
+            return [
+                { tag: "listings outstanding", files: 60, dirs: 10 },
+                { tag: "files outstanding", files: 60, dirs: 0 }
+            ];
+        }
+
+        function test_a_late_reply_does_not_free_a_slot_in_the_next_sync(data) {
+            makeRepo(data.files, data.dirs);
             startAndAnswerRoot();
             source.cancelSync();
             // What is with the node now belongs to the cancelled sync.

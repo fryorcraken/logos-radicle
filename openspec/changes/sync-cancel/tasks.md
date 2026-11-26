@@ -19,8 +19,8 @@
 
 - [x] 1.1 Write `radicle-ui/tests/tst_sync_cancel.qml` against a fake node
   that serves one request at a time, and watch it fail on the unchanged
-  code: 6 of its 12 tests failed there, among them 70 reads reaching the node
-  after a cancel against a bound of 4.
+  code: 7 of its 13 test rows failed there, among them 70 reads reaching the
+  node after a cancel against a bound of 4.
 - [x] 1.2 Queue a sync's discovered reads (`syncPending`) and dispatch them
   from `pumpSync()` only while fewer than `syncMaxInFlight` (4) are
   outstanding; `cancelSync()`, `syncAll()` and `reset()` drop the queue.
