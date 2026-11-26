@@ -210,8 +210,8 @@ steps:
   # The regression test this spec's order exists for (the `repo-sync` spec's
   # "A request made after a cancel does not wait for the sync"). The poll is
   # issued after the cancel, so it is answered only once the module has served
-  # what the cancelled sync had already handed over. Its wait is the file's
-  # default of 30 s, against a backlog measured at 116 s before the fix.
+  # what the cancelled sync had already handed over. Its wait is 30 s, set on
+  # the step, against a backlog measured at 116 s before the fix.
   - name: poll for staleness after the cancel
     eval: "root.sourceTabItem.checkForUpdate()"
 

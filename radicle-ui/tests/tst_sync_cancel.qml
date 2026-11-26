@@ -150,6 +150,22 @@ Item {
             return syncReadsServedSince(mark);
         }
 
+        // -- A running sync keeps at most 4 requests outstanding ----------
+
+        function test_a_large_sync_never_has_more_than_the_bound_outstanding() {
+            makeRepo(60, 10);
+            source.syncAll();
+            var most = queuedSyncReads();
+            while (node.queue.length > 0) {
+                node.serveNext();
+                most = Math.max(most, queuedSyncReads());
+            }
+            verify(most > 1, "the sync must have had more than one read out at some point");
+            verify(most <= bound, "the sync had " + most + " reads with the node at once");
+            compare(source.syncing, false);
+            compare(source.syncedOnce, true);
+        }
+
         // -- A cancelled sync stops reaching its node ---------------------
 
         function test_a_large_sync_cancelled_early_stops_well_short_of_its_end() {

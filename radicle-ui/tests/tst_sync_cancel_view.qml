@@ -79,10 +79,29 @@ Item {
         when: windowShown
 
         function init() {
+            source = "remote";
             queue = [];
             served = [];
             page.rid = "";
             page.repo = null;
+        }
+
+        // The `repo-sync` spec's "The sync control is the seed's". Run for
+        // both prefixes, the same repository and the same steps, so the only
+        // thing that differs between the rows is the source.
+        function test_the_sync_control_is_shown_for_the_seed_only_data() {
+            return [
+                { tag: "remote", source: "remote", shown: true },
+                { tag: "local", source: "local", shown: false }
+            ];
+        }
+
+        function test_the_sync_control_is_shown_for_the_seed_only(data) {
+            source = data.source;
+            openRepo("rad:zVIEW" + data.tag.toUpperCase());
+            var button = findChild(page, "syncButton");
+            verify(button !== null, "the sync control must exist");
+            compare(button.visible, data.shown);
         }
 
         function openRepo(rid) {
