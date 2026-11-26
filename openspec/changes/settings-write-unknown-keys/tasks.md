@@ -2,7 +2,7 @@
 
 - [x] spec — `spec-writer`
 - [x] design + code — `dev-writer`
-- [ ] tests — `tester`
+- [x] tests — `tester`
 - [ ] review: correctness — `code-reviewer`
 - [ ] review: security — `code-reviewer`
 - [ ] review: readability — `code-reviewer`
@@ -62,6 +62,12 @@ the sandbox, not this change.
       `std::ifstream` fails to open), and has no test of its own: a mode-000
       file is still readable by root, so such a test would pass or fail
       depending on who runs the suite. Left to the `tester` to judge.
+      Tester: tested, with a file that does not depend on the user: a symlink
+      pointing at itself, which `open(2)` refuses (ELOOP) and `rename(2)`
+      replaces, in
+      `a_write_over_a_file_that_exists_but_cannot_be_opened_replaces_it`. It
+      fails against a `set()` that refuses when the path exists but cannot be
+      opened, which no other test does.
 
 ## 5. The MODIFIED requirement
 
