@@ -15,6 +15,11 @@
 //! input-dependent form CLAUDE.md's branch-switch lesson asks for: a fixture
 //! answering the same for every input cannot tell working from broken.
 //!
+//! Its second half has the same trap in another shape: "each home holds a
+//! profile" passes against a creation that overwrote the other home's key. So
+//! the other home is recorded, whole and byte for byte, before the second
+//! creation, and compared after it.
+//!
 //! ## Never the developer's real profile
 //!
 //! Every home here is under this crate's own `tmp/` and removed on drop, via

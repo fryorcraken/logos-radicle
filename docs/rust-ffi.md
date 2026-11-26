@@ -388,10 +388,17 @@ is: an example promoted to a test breaks the rule above.
 two temporary homes, then assert both that their node ids differ and that
 neither home was written by the other's init. A fixture with one home cannot
 tell isolation from its absence — the same trap as a fake returning identical
-data for every branch. The first half is what
-`two_homes_get_two_different_identities` checks (see "Creating an identity"
-above for why it can fail); whether a test checks the second half yet is issue
-#59's question.
+data for every branch. `two_homes_get_two_different_identities` does both (see
+"Creating an identity" above for why the first half can fail).
+
+**"Untouched" needs the other home to exist first.** A record of a home that
+does not exist yet is empty, and an empty record can only see entries appear,
+never a rewrite. So the test creates home B, records its whole tree with
+`tree_record` (every entry by relative path, every file's bytes — keys,
+`config.json` and the SQLite databases), then creates home A and compares. The
+version that checked only `profile_exists` and that the two paths do not nest
+passed against an init that overwrote the previous home's key pair. The record
+compares bytes and names, not file modes or timestamps.
 
 ## Platform scope
 
