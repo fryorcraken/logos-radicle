@@ -54,7 +54,7 @@ direct call needs).
 
 ## Findings
 
-- [ ] **`spec-writer`** — spec, "A cancelled sync stops reaching its node" and
+- [x] **`spec-writer`** — spec, "A cancelled sync stops reaching its node" and
       "Cancel, then poll, in the order a user follows": the bound and the poll's
       wait are never given a value. The spec says "a fixed number", "the bound"
       and "that wait", and a scenario that says "MUST NOT exceed the bound"
@@ -67,8 +67,20 @@ direct call needs).
       depend on. Either the requirement states the number (and the wait), or
       the tests carry `NO SPEC:` comments naming the chosen value.
       **Severity:** medium.
+      **Outcome (`spec-writer`): fixed in the spec.** The bound is now the
+      number: "A cancelled sync stops reaching its node" says at most 4 of the
+      sync's requests reach the seed after a cancel, and every scenario that
+      said "the bound" says 4, so `tst_sync_cancel.qml`'s `bound: 4` is the
+      spec's value rather than `design.md`'s. The poll's wait is not a property
+      of the module, so it stays the test's choice, and the scenario now
+      constrains it instead of naming it: "a wait longer than that seed takes
+      to serve 4 of the sync's requests and the poll's own", against a sync
+      cancelled with more left than the seed can serve within that wait.
+      `sync.yaml`'s 30 s is a value satisfying that, not an unspecified one, so
+      it needs no `NO SPEC:`. The lower side of the constraint is what the
+      `tester`'s "Cancel, then poll" precondition finding below checks.
 
-- [ ] **`spec-writer`** — spec, scenario "The bound holds against the local
+- [x] **`spec-writer`** — spec, scenario "The bound holds against the local
       node", and the clause "the Radicle home for `local*` ones": untestable as
       written, and unreachable through the control the spec defines a cancel by.
       **Scenario:** nothing in the tree can start a Local-mode sync: the
@@ -82,6 +94,20 @@ direct call needs).
       exist, restate the scenario as something a test can observe. Do not leave
       a MUST that no layer can fail.
       **Severity:** medium.
+      **Outcome (`spec-writer`): fixed in the spec — struck, and the
+      remote-only control stated in this capability.** The scenario "The bound
+      holds against the local node", the `local*` clause and "the same for
+      every mode" are gone. A new requirement, "The sync control is the
+      seed's", says the control MUST be shown while the derived prefix is
+      `remote` and MUST NOT be shown while it is `local`, so a sync is made of
+      `remote*` calls and the node it reads from is the seed; the cancel
+      requirements now say "the seed". It sits in `repo-sync` rather than
+      `source-modes` because it is a rule about the sync control, and the
+      Purpose names `source-modes`' "The method prefix is derived from the
+      mode" as the boundary. The `local` half is new coverage: no test shows
+      the control hidden today (`tst_sync_cancel_view.qml` checks only that it
+      is shown for `remote`). That makes the `tester` finding below on a
+      `source: "local"` data row moot as written.
 
 - [ ] **`tester`** — `tst_sync_cancel.qml`, the "still opens" tests: they
       assert `viewerBodyLength` against `"content of f59".length` and
@@ -113,7 +139,7 @@ direct call needs).
       sync's counters do not move.
       **Severity:** medium.
 
-- [ ] **`spec-writer`** — `tst_sync_cancel.qml`,
+- [x] **`spec-writer`** — `tst_sync_cancel.qml`,
       `test_a_late_reply_does_not_free_a_slot_in_the_next_sync`: it pins that a
       running sync never has more than `bound` reads with the node at once,
       which no scenario states. The spec bounds only what a cancelled sync
@@ -124,14 +150,34 @@ direct call needs).
       test. Either add the running sync's cap to the spec or have the test say
       `NO SPEC:`.
       **Severity:** low.
+      **Outcome (`spec-writer`): fixed in the spec — the cap is now a
+      requirement.** "A running sync keeps at most 4 requests outstanding"
+      says a running sync MUST NOT have more than 4 of its requests
+      outstanding at once (outstanding: made, and no reply or refusal yet),
+      with two scenarios: "A large sync never has more than 4 requests
+      outstanding", and "A late reply from a cancelled sync does not widen the
+      next one", which is what this test pins. It bounds only the running
+      sync's own requests, so it agrees with `design.md` Decision 5's 4 + 4
+      right after a cancel and restart. The plain large-sync scenario has no
+      test of its own; the late-reply test's second sync runs to completion
+      under it, but with the old replies interleaved.
 
-- [ ] **`spec-writer`** — `sync.yaml:247`, `NO SPEC: "Update" is a colour and a
+- [x] **`spec-writer`** — `sync.yaml:247`, `NO SPEC: "Update" is a colour and a
       label, never a gate`: still unanswered. The change moved the two
       cancel-related markers into the spec and left this one, and the new
       capability's Purpose ("started and cancelled from one control") is the
       natural home. The test pins it by clicking the control in the `Update`
       state. The owner decides whether it is in scope for this change.
       **Severity:** low.
+      **Outcome (`spec-writer`): marker left in place, by decision.** It is a
+      rule about starting a sync, which issue #92 does not scope, and no cancel
+      requirement rests on it: "A sync started after a cancel downloads
+      everything" says nothing of the control's state. The marker stays as the
+      record of an unspecified choice, and the step it labels still pins the
+      behaviour. If the owner wants it specified, it is one requirement in
+      `repo-sync` beside "The sync control is the seed's", in this change or a
+      later one; that call is the owner's, and this outcome does not pre-empt
+      it.
 
 - [ ] **`tester`** — `sync.yaml`, "Cancel, then poll": the scenario's GIVEN is
       "a sync whose full download takes longer than a staleness poll is allowed

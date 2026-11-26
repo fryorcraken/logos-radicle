@@ -13,9 +13,14 @@ already sent, so this is specified before it is fixed.
 
 ## What Changes
 
-- A cancelled sync stops reaching the node it reads from: after the cancel, at
-  most a fixed number of its requests are served, however large the repository
-  and however much of the sync remained.
+- A sync reads from the seed: the sync control is shown only while the derived
+  method prefix is `remote`. This was already the behaviour, and stated
+  nowhere; it is what makes "the node a sync reads from" one node.
+- A running sync keeps at most 4 of its requests outstanding at once, however
+  large the repository.
+- A cancelled sync stops reaching the seed: after the cancel, at most 4 of its
+  requests are served, however large the repository and however much of the
+  sync remained.
 - A request made after a cancel is answered without waiting for the cancelled
   sync's remaining work.
 - Every request a cancel stops still settles: the busy indicator clears and no
@@ -41,7 +46,9 @@ requests.
 - `repo-sync`: the repository sync — the download of every directory and file
   on the selected branch into the view's cache, started and cancelled from one
   control — and what it costs every other request the module serves. This
-  change gives it the requirements for cancelling.
+  change gives it the requirements for cancelling, and the two it rests on:
+  that the control is the seed's, and how many requests a running sync keeps
+  outstanding.
 
 ### Modified Capabilities
 
@@ -50,11 +57,10 @@ None.
 ## Impact
 
 - `radicle-ui/src/qml/SourceTab.qml`: `syncAll()`, `cancelSync()` and the
-  sync's request dispatch.
-- Possibly the core module (`radicle/`) and its contract in
-  `radicle/src/radicle_impl.h`, depending on where the cancel is enforced; that
-  is `design.md`'s decision. A core-side cancel widens the module's interface.
+  sync's request dispatch. Where the cancel is enforced is `design.md`'s
+  decision; the core module and `radicle/src/radicle_impl.h` are unchanged.
 - `radicle-ui/tests/ui/sync.yaml`: the step order and its header comment, and
   the two cancel-related `NO SPEC` markers, which this spec answers.
-- Component tests around sync (`tst_sync_epoch.qml`, `tst_repo_switch.qml`)
-  and, for a core-side cancel, the core unit tests.
+- Component tests around sync: `tst_sync_cancel.qml` and
+  `tst_sync_cancel_view.qml`, beside the existing `tst_sync_epoch.qml` and
+  `tst_repo_switch.qml`.
