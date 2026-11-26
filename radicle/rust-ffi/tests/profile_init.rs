@@ -44,24 +44,59 @@ fn cleanup(dir: &std::path::Path) {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// **The isolation test.** Two homes must yield two *different* identities.
+/// **The isolation test.** Two homes must yield two *different* identities,
+/// and creating one must leave the other exactly as it was.
 ///
-/// Asserting on the node ids rather than on the paths is the whole point: see
+/// Asserting on the node ids rather than on the paths is the first half: see
 /// this file's header for why the path-shaped version of this test passes
 /// against an implementation that gives every profile the same key.
+///
+/// The second half needs B to exist, populated, *before* A is created. A
+/// record of a home that does not exist yet is empty, and an empty record can
+/// only see entries appear; it cannot see a rewrite. So B is created first, its
+/// whole tree recorded (keys, `config.json`, every database under it), and the
+/// record compared after A. Checking only `profile_exists` and that the paths
+/// do not nest — what this test used to do — passes against a creation that
+/// overwrites the sibling's key pair, which was measured.
+///
+/// The reverse direction is the absence of A: A's path must not exist until A
+/// is created, so creating B cannot have brought it into being.
 #[test]
 fn two_homes_get_two_different_identities() {
     let (dir_a, home_a) = fresh_home("profile-init-iso-a");
     let (dir_b, home_b) = fresh_home("profile-init-iso-b");
+    let path_a = std::path::Path::new(&home_a);
+    let path_b = std::path::Path::new(&home_b);
+
+    assert!(
+        !home_a.starts_with(&home_b) && !home_b.starts_with(&home_a),
+        "precondition: the homes must not nest: {home_a} / {home_b}"
+    );
+    assert!(
+        !path_a.exists(),
+        "precondition: home A must not exist before anything is created"
+    );
+
+    let b = parse(&init_profile(&home_b, "bob", ""));
+    let nid_b = b["nodeId"].as_str().unwrap_or_default().to_string();
+    assert!(!nid_b.is_empty(), "home B reported no node id: {b}");
+    assert!(
+        !path_a.exists(),
+        "creating an identity into home B brought home A into being: {home_a}"
+    );
+
+    let before = tree_record(path_b);
+    for required in ["keys/radicle", "keys/radicle.pub", "config.json"] {
+        assert!(
+            holds_file(&before, required),
+            "precondition: the record of home B must hold {required}, got {:?}",
+            before.keys().collect::<Vec<_>>()
+        );
+    }
 
     let a = parse(&init_profile(&home_a, "alice", ""));
-    let b = parse(&init_profile(&home_b, "bob", ""));
-
     let nid_a = a["nodeId"].as_str().unwrap_or_default().to_string();
-    let nid_b = b["nodeId"].as_str().unwrap_or_default().to_string();
-
-    assert!(!nid_a.is_empty(), "first profile reported no node id: {a}");
-    assert!(!nid_b.is_empty(), "second profile reported no node id: {b}");
+    assert!(!nid_a.is_empty(), "home A reported no node id: {a}");
     assert_ne!(
         nid_a, nid_b,
         "two embedded profiles share one identity — an embedded node would be \
@@ -69,15 +104,16 @@ fn two_homes_get_two_different_identities() {
          mode promises. A fixed seed produces exactly this."
     );
 
-    // And neither wrote into the other. Checked after the ids, because a shared
-    // identity is the failure that matters and this would pass regardless of it.
+    // Checked after the ids, because a shared identity is the failure that
+    // matters most, and this would pass regardless of it.
+    let changes = record_changes(&before, &tree_record(path_b));
+    assert!(
+        changes.is_empty(),
+        "creating an identity into home A changed home B: {changes:?}"
+    );
     assert!(
         profile_exists(&home_a) && profile_exists(&home_b),
         "each home must hold its own profile"
-    );
-    assert!(
-        !home_a.starts_with(&home_b) && !home_b.starts_with(&home_a),
-        "the homes must not nest: {home_a} / {home_b}"
     );
 
     cleanup(&dir_a);
