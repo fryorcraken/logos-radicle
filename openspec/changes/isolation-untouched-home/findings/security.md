@@ -34,7 +34,7 @@ Clean areas, checked:
   `keys/radicle`, which turned the test red with
   `["removed: keys/radicle"]`. Mutation (2) is the control for (1).
 
-- [ ] **`spec-writer`** — `radicle/rust-ffi/tests/profile_init.rs:60-100` (`Entry`), `design.md` Risks — "untouched" does not cover the mode of B's private key
+- [x] **`spec-writer`** — `radicle/rust-ffi/tests/profile_init.rs:60-100` (`Entry`), `design.md` Risks — "untouched" does not cover the mode of B's private key
       **Scenario:** `init_profile` for home A sets `~B/keys/radicle` to 0644
       (world-readable signing key) after B was created. `tree_record` stores
       names and bytes only, so `record_changes` is empty and
@@ -52,6 +52,25 @@ Clean areas, checked:
       the requirement (then `Entry` gains a `mode` on unix, and the recorder
       test table gains a chmod row), or state that modes are out of scope in the
       spec, not only in `design.md` Risks and `docs/rust-ffi.md`.
+      **Outcome (`spec-writer`): accepted, and permissions are now in scope.**
+      The requirement "Creating an identity leaves every other home untouched"
+      now says the creation "MUST NOT change the permissions of any entry under
+      it", and it states that timestamps and ownership are outside it. The first
+      scenario now records each entry's permissions and asserts that every entry
+      under home B still carries them. Why this way: "untouched" is what the
+      requirement's title promises. A chmod is the one way to harm the other
+      home's secret without changing a byte. And `std::fs::Permissions` can be
+      compared on every platform, so the check needs no Unix-only gate.
+      Timestamps stay out because nothing about a home's isolation depends on
+      them. Ownership stays out because an unprivileged process cannot change
+      it. The proposal's What Changes says the same.
+      `openspec validate isolation-untouched-home --strict` passes. This now
+      needs work from **`dev-writer`**: `Entry` records permissions, the
+      recorder test table gains a permissions-only row, a chmod mutation is
+      watched turning `two_homes_get_two_different_identities` red,
+      `record_changes` names a permission change, and the text that rules modes
+      out is reworded (`design.md` Non-Goals and Risks, `docs/rust-ffi.md`
+      around "compares bytes and names, not file modes or timestamps").
 
 - [ ] **`dev-writer`** — `radicle/rust-ffi/tests/profile_init.rs:25` — header says homes are "removed on drop"; nothing is dropped
       **Scenario:** `cleanup` is an explicit call at the end of each test, not a
