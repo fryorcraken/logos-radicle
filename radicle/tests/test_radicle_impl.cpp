@@ -2755,7 +2755,10 @@ LOGOS_TEST(embedded_mode_reads_and_writes_its_own_home_and_leaves_the_local_one_
     LOGOS_ASSERT_TRUE(parse(impl.createEmbeddedIdentity("tester", ""))["created"].get<bool>());
 
     const auto written = parse(impl.setNodeConfig(R"({"alias":"embedded-renamed"})"));
-    LOGOS_ASSERT_FALSE(written.contains("error"));
+    // Compared as a string rather than as `contains("error")`, so that a failure
+    // prints the error it carries instead of a bare "assertion failed", which
+    // cannot tell the sandbox's too-long socket path from a real defect.
+    LOGOS_ASSERT_EQ(written.value("error", std::string{}), std::string{});
     LOGOS_ASSERT_TRUE(written["alias"] == nlohmann::json("embedded-renamed"));
 
     // The file under the EMBEDDED home carries the new alias.

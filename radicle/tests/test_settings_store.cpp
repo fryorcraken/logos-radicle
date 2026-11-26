@@ -74,6 +74,55 @@ std::string nestedArray(size_t depth)
     return std::string(depth, '[') + std::string(depth, ']');
 }
 
+/// An object nested `depth` deep (`depth` >= 1), as text: `{"a":{"a":{}}}` is
+/// depth 3. Its innermost level is `{}`.
+std::string nestedObject(size_t depth)
+{
+    std::string text;
+    for (size_t level = 1; level < depth; ++level) text += R"({"a":)";
+    return text + "{}" + std::string(depth - 1, '}');
+}
+
+/// Arrays and objects alternating, `depth` levels (`depth` >= 1), outermost an
+/// array and innermost an array: `[{"a":[]}]` is depth 3.
+std::string nestedMixed(size_t depth)
+{
+    std::string open;
+    std::string close;
+    for (size_t level = 1; level < depth; ++level) {
+        const bool array = level % 2 == 1;
+        open += array ? "[" : R"({"a":)";
+        close = (array ? "]" : "}") + close;
+    }
+    return open + "[]" + close;
+}
+
+/// The file after one `radHome` write over `{"mode":"turbo","deep":<member>}`,
+/// parsed here rather than through the store. A write that is refused comes
+/// back as a discarded value, which equals no object a test names.
+nlohmann::json fileAfterWriteOver(const std::string& name, const std::string& member)
+{
+    ScratchSettings s(name);
+    s.write(R"({"mode":"turbo","deep":)" + member + "}");
+    SettingsStore store{s.path()};
+    if (isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")))
+        return nlohmann::json(nlohmann::json::value_t::discarded);
+    return s.onDisk();
+}
+
+/// What a write over a file holding `member` as `deep` must leave: `deep`
+/// still there, or dropped, beside the mode it kept and the key it wrote.
+nlohmann::json keptWith(const std::string& member)
+{
+    return nlohmann::json::parse(
+        R"({"mode":"turbo","deep":)" + member + R"(,"radHome":"/home/u/.radicle"})");
+}
+
+nlohmann::json droppedMember()
+{
+    return nlohmann::json::parse(R"({"mode":"turbo","radHome":"/home/u/.radicle"})");
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -424,11 +473,13 @@ LOGOS_TEST(the_store_reports_exactly_five_keys_before_and_after_each_write)
 //
 // The mutation these exist for is the shape `set()` had before this change:
 // `auto settings = load(); settings[key] = value; save(settings);`, which saves
-// the normalised view. Every test below except the refused-write one went red
-// under it: the unknown mode is saved as `explore`, the unknown and non-string
-// members are dropped or defaulted, and the defaults the file never held are
-// added. The refused-write test guards a save that runs before a refusal
-// returns, which the old shape did not do either.
+// the normalised view: the unknown mode is saved as `explore`, the unknown and
+// non-string members are dropped or defaulted, and the defaults the file never
+// held are added. The refused-write test is the exception, and guards a
+// different mutation: a save that runs before a refusal returns, which the old
+// shape did not do either. Which tests went red under the old shape is in
+// `design.md`, Decision 7, measured there; it is not repeated here, where it
+// would go stale the next time a test is added.
 // ---------------------------------------------------------------------------
 
 LOGOS_TEST(a_write_of_one_key_keeps_an_unknown_mode_and_an_unknown_key)
@@ -699,7 +750,54 @@ LOGOS_TEST(a_kept_nested_member_does_not_grow_the_file_with_its_depth)
 
     // The member is still there, so the size below is not small for want of it.
     LOGOS_ASSERT_TRUE(s.onDisk().contains("deep"));
-    LOGOS_ASSERT_TRUE(s.contents().size() < 2 * original.size());
+
+    // The file gains one member, `"radHome": "/home/u/.radicle"`, and a line
+    // break and two spaces of indent for each member it now lays out on its
+    // own line: well under 100 bytes. A bound of twice the original, which is
+    // what this was, let a write that adds a line break per level through.
+    // 100 is hardcoded from the one member added, not taken from what the
+    // writer produced.
+    LOGOS_ASSERT_TRUE(s.contents().size() <= original.size() + 100);
+}
+
+// "Of the members other than the one written, ... every one of depth 128 or
+// less" and "the number of arrays and objects on its deepest path, counting the
+// value itself when it is one". The 128 and 129 tests above use arrays only, so
+// a depth that counted arrays and not objects, or followed the first child and
+// not the deepest, would pass them; each shape below is one such mutation.
+
+LOGOS_TEST(a_member_of_nested_objects_counts_its_objects_toward_its_depth)
+{
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-objects-128", nestedObject(128)),
+                    keptWith(nestedObject(128)));
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-objects-129", nestedObject(129)),
+                    droppedMember());
+}
+
+LOGOS_TEST(a_member_alternating_arrays_and_objects_counts_both_toward_its_depth)
+{
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-mixed-128", nestedMixed(128)),
+                    keptWith(nestedMixed(128)));
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-mixed-129", nestedMixed(129)),
+                    droppedMember());
+}
+
+LOGOS_TEST(a_member_is_as_deep_as_its_deepest_path_wherever_that_path_sits)
+{
+    // Depth 129 by the second child, then by the first: a walk that followed
+    // only one end of an array would keep one of them.
+    const std::string deepSecond = "[[]," + nestedArray(128) + "]";
+    const std::string deepFirst = "[" + nestedArray(128) + ",[]]";
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-second", deepSecond), droppedMember());
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-first", deepFirst), droppedMember());
+}
+
+LOGOS_TEST(a_member_with_two_branches_is_as_deep_as_one_of_them_not_both)
+{
+    // Two branches of 127 under one array: depth 128, kept. A depth that added
+    // the branches, or counted every level it visited, would reach 255.
+    const std::string branches = "[" + nestedArray(127) + "," + nestedArray(127) + "]";
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-branches", branches), keptWith(branches));
 }
 
 LOGOS_TEST(a_member_nested_far_deeper_still_lets_the_write_complete)
@@ -1003,17 +1101,32 @@ LOGOS_TEST(a_store_with_no_path_still_reports_defaults_rather_than_failing)
                     std::string(SettingsStore::kModeExplore));
 }
 
-// NO SPEC: the spec requires a store with no path to refuse every write, and
-// is silent on what the refusal says. This pins that it names the cause, the
-// two variables `settingsPathFor` reads, rather than "could not write settings
-// to " followed by an empty path, a sentence that ends on nothing a user can
-// act on. `setRemoteSeed` passes this message on.
+// "A store with no path reports defaults and refuses to write": the refusal
+// names both variables `settingsPathFor` reads, rather than "could not write
+// settings to " followed by an empty path, a sentence that ends on nothing a
+// user can act on. `setRemoteSeed` passes this message on.
 LOGOS_TEST(a_store_with_no_path_says_why_it_cannot_write)
 {
     const auto result = SettingsStore{""}.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
     LOGOS_ASSERT_TRUE(isError(result));
-    const auto message = result["error"].get<std::string>();
+    auto message = result["error"].get<std::string>();
     LOGOS_ASSERT_CONTAINS(message, "XDG_DATA_HOME");
+
+    // `HOME` is a substring of `XDG_DATA_HOME`, so naming only the latter would
+    // satisfy a plain search for the former. Remove every occurrence of the
+    // longer name first; what is left must still name `HOME` on its own.
+    const std::string longer = "XDG_DATA_HOME";
+    for (auto at = message.find(longer); at != std::string::npos; at = message.find(longer))
+        message.erase(at, longer.size());
     LOGOS_ASSERT_CONTAINS(message, "HOME");
-    LOGOS_ASSERT_TRUE(message.back() != ' ');
+}
+
+// NO SPEC: the spec requires the refusal to name the two variables and says
+// nothing about how the sentence ends. This pins that it does not end on a
+// space, the shape of "could not write settings to " with nothing after it.
+LOGOS_TEST(the_refusal_of_a_store_with_no_path_does_not_end_on_a_space)
+{
+    const auto result = SettingsStore{""}.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
+    LOGOS_ASSERT_TRUE(isError(result));
+    LOGOS_ASSERT_TRUE(result["error"].get<std::string>().back() != ' ');
 }
