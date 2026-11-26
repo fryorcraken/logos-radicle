@@ -157,7 +157,8 @@ restored afterwards:
 | copy the new `config.json` over the previous home's | **red**: `changed: config.json` |
 | add `stray/` to the previous home and remove its `storage/` | **red**: `removed: storage`, `added: stray` |
 | create `home` in every sibling scratch dir | **red**: "creating an identity into home B brought home A into being" |
-| null implementation: report success with `nodeId = home`, write nothing | **red**: the record cannot list B's home |
+| null implementation: report success with `nodeId = home` before `Home::new`, write nothing | **red**: "creating an identity into home B reported … but left no profile there", the `profile_exists(&home_b)` check made straight after B's creation. Without that check the same mutation was caught only by a panic inside the recorder, which could not list B's home |
+| set every sibling home's `keys/radicle` to 0644 after creating a home | **red**: `permissions changed: keys/radicle`. **Green** when the `permissions changed:` arm is also dropped from `record_changes`, so in this test that arm is the only thing that sees a chmod (Decision 9) |
 
 The preconditions are the spec's GIVEN clauses:
 
@@ -181,20 +182,26 @@ derived from the recorder:
 - `the_recorder_lists_every_entry_at_every_depth_with_directories` pins depth,
   directories as entries, and file bytes.
 - `the_recorder_names_each_kind_of_change_by_path` pins each line
-  `record_changes` produces, one table row per kind of change.
-- `the_recorder_does_not_follow_a_symlink_out_of_its_root` pins Decision 5.
+  `record_changes` produces. It is a table with one case per kind of change,
+  a file's permissions and a directory's permissions among them, plus a case
+  where bytes and permissions move together.
+- `the_recorder_does_not_follow_a_symlink_out_of_its_root` pins Decision 5. It
+  is `#[cfg(unix)]`.
+- `the_recorder_records_a_socket_by_its_kind_without_reading_it` pins Decision
+  10. It is Linux-only.
 
-Each arm of `record_changes` was dropped in turn, by a temporary edit, and
-`cargo test --manifest-path radicle/rust-ffi/Cargo.toml --test profile_init
-the_recorder` run. The table test stops at its first failing row, so the row
-named is the first that went red, not the only one that would:
+Each arm of `record_changes` was dropped in turn, by a temporary edit, and the
+whole file run with `cargo test --manifest-path radicle/rust-ffi/Cargo.toml
+--test profile_init`. The table test stops at its first failing case, so the
+case named is the first that went red, not the only one that would. In every
+run, every test not named in the table stayed green:
 
 | Arm dropped from `record_changes` | Result |
 |---|---|
-| `changed:` | **red**: table row 1, "a deep file's bytes change"; and the symlink test, "retargeting a link must show as a change" |
-| `removed:` | **red**: table row 2, "a file is removed" |
-| `added:` | **red**: table row 4, "an empty directory is added" |
-| `permissions changed:` | **green**, all 22 tests in the file, before the recorder's table had a permissions row. That row is the guard for this arm (Decision 9) |
+| `changed:` | **red**: table case 3, "a file's bytes and permissions both change" (got `permissions changed: top.bin`); and the symlink test, "retargeting a link must show as a change" |
+| `removed:` | **red**: table case 5, "a file is removed" |
+| `added:` | **red**: table case 7, "an empty directory is added" |
+| `permissions changed:` | **red**: table case 1, "a file's permissions change and its bytes do not" (`left: []`, `right: ["permissions changed: top.bin"]`). Nothing else went red, the isolation test included, because no unmutated creation changes a mode |
 
 ### 7. One test, not one per scenario
 
@@ -220,10 +227,10 @@ world-readable. Before permissions were recorded, the security review made
 home, and `two_homes_get_two_different_identities` stayed green under it. The
 requirement now forbids a permissions change, so the record carries one.
 
-`Entry` is a struct of the entry's `Kind` (directory, file bytes, or link
-target) and its `std::fs::Permissions`, read from the same `DirEntry::metadata`
-call that gives the type, so a link's own permissions are recorded and its
-target's are not.
+`Entry` is a struct of the entry's `Kind` (directory, file bytes, link target,
+or special file, per Decision 10) and its `std::fs::Permissions`. Both are read
+from the same `DirEntry::metadata` call, so a link's own permissions are
+recorded and its target's are not.
 
 Alternatives considered:
 
@@ -244,9 +251,51 @@ only. It still turns the test red, and two lines for one path would make the
 failure longer without naming anything new.
 
 Without the `permissions changed:` arm the recorder reports a chmod as no
-change at all. Its guard is the permissions-only row of
-`the_recorder_names_each_kind_of_change_by_path`, together with a chmod
-mutation of `init_profile_inner` that turns the isolation test red.
+change at all. That arm has two guards. One is the two permissions-only cases
+of `the_recorder_names_each_kind_of_change_by_path`, a file's and a directory's:
+dropping the arm turns the table red at the file case. The other is the chmod
+mutation in Decision 6's first table, which turns the isolation test red, and
+leaves it green again once the arm is dropped too. The table's permissions edit
+is `set_readonly`, because it is the one permissions change `std::fs` can make
+on every platform. The case where bytes and permissions move together pins the
+one-line-per-path rule. Dropping the `changed:` arm turns that case red with a
+`permissions changed:` line where `changed:` belongs.
+
+### 10. Record a socket, FIFO or device by its kind, without reading it
+
+`Kind` has a fourth variant, `Special`, and `record_under` reads bytes only
+when `file_type.is_file()`. Anything that is not a directory, a link or a
+regular file is recorded by its name and its permissions alone.
+
+Reading such an entry as a file goes wrong in two different ways. `fs::read`
+on a Unix socket fails, which the recorder turns into a panic. On a FIFO with
+no writer it never returns, so the test hangs instead of failing. A fresh home
+holds neither, so no isolation test meets one today. But a home with a running
+embedded node holds the node's control socket, and this recorder is the one
+the file offers for "nothing under here changed". The correctness review
+raised the risk of a later test running it over such a home.
+
+Alternatives considered:
+
+- **Panic on a special file.** It is the same trade Decision 5 turned down for
+  symlinks. A test over a home with a live node would go red at the record,
+  for a reason that has nothing to do with what it checks.
+- **Skip it.** That leaves a hole in the record, and Decision 5 rules holes
+  out. A socket that appeared in, or vanished from, the other home would go
+  unseen.
+
+The guard is `the_recorder_records_a_socket_by_its_kind_without_reading_it`.
+It was watched failing before the `Special` arm existed. Re-measured since by
+mutating the `is_file()` condition so that every non-directory, non-link entry
+is read as a file. That run turns exactly that test red, with `unreadable
+file sock: No such device or address (os error 6)`, and every other test in
+the file stays green. The test binds its socket through
+`/proc/self/fd/<n>/sock`, because a path under the crate's scratch directory
+can be longer than the 107 bytes a Unix socket address holds. That makes it
+Linux-only.
+
+A FIFO is not tested. Without the arm it would hang the run rather than fail
+it, and the same `is_file()` branch covers it.
 
 ## Risks / Trade-offs
 
