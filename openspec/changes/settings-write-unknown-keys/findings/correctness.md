@@ -57,6 +57,17 @@ Clean, by reading (only the nesting and read-only cases below were probed):
       be refused" or "keeps every member" until the spec-writer says which gives.
       **Measured:** harness, `deep` input of 100000 and 50000: exit 139; 10000:
       completes (see the next entry); read-only (`all()`) at 100000: fine.
+      **Spec decision (spec-writer), box left for `dev-writer`:** the new
+      requirement "A settings write drops a member nested too deep to keep"
+      gives way on "keeps every member", not on "not refused": of the members
+      other than the one written, a write keeps every one of depth 128 or less
+      and drops from the file every one deeper, and completes as any accepted
+      write however deep the file nests. Depth counts arrays and objects on the
+      deepest path, the value itself included (`[]` is 1). "A settings write
+      changes only the key it names" now names that exception. Scenarios pin
+      128 kept, 129 dropped, and 100000 completing with the rest kept. Reads
+      are unchanged, since a member that deep holds no string. Note the depth
+      check itself must not recurse per level, or it crashes where `dump` did.
 
 - [ ] **`dev-writer`** — `radicle/src/settings_store.cpp:319` — `dump(2)` of a preserved nested member writes output quadratic in its depth
       **Scenario:** `{"x":[[[ ... ]]]}` nested 10000 deep is a 20 KB file;
@@ -72,3 +83,9 @@ Clean, by reading (only the nesting and read-only cases below were probed):
       kept members, which the spec's "whitespace is outside the requirement"
       permits). **Measured:** harness, depth 1000 → 2,004,027 bytes written,
       depth 10000 → 200,040,027 bytes written.
+      **Spec decision (spec-writer), box left for `dev-writer`:** the depth cap
+      in "A settings write drops a member nested too deep to keep" (128) bounds
+      this but does not remove it: a kept member 128 deep still indents to
+      roughly 128 times its compact size, and a file can hold many. The file's
+      whitespace stays outside the contract, so how the kept members are
+      serialised is the dev-writer's choice; no requirement is added on size.

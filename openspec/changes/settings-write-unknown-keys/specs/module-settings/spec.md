@@ -4,13 +4,13 @@
 
 ### Requirement: A settings write changes only the key it names
 
-An accepted write through the settings store, by `setSetting` or by
-`setRemoteSeed` storing a seed, MUST leave every member of the settings file
-other than the one its key names with the JSON value it had, including an
-uninterpretable `mode`, an unknown key and a non-string value. It MUST add no
-other member. A refused write MUST leave the file's bytes unchanged. A member
-kept this way is not one the module persists, in the sense of "The settings
-store holds exactly five named keys".
+An accepted settings write, by `setSetting` or by `setRemoteSeed` storing a
+seed, MUST leave every other member of the settings file with the JSON value
+it had, unknown, uninterpretable and non-string ones included, unless "A
+settings write drops a member nested too deep to keep" drops it. It MUST add no
+other member. A refused write MUST leave the file's bytes unchanged. A kept
+member is not one the module persists, as "The settings store holds exactly
+five named keys" means it.
 
 #### Scenario: A write of one key keeps an unknown mode and an unknown key
 
@@ -89,6 +89,44 @@ precision of an IEEE 754 binary64 double.
   `{"mode":"turbo","futureKey":"b","radHome":"/home/u/.radicle"}`
 - **AND** the file's text MUST contain `"futureKey"` exactly once
 
+### Requirement: A settings write drops a member nested too deep to keep
+
+A value's depth is the number of arrays and objects on its deepest path,
+counting the value itself when it is one: `"x"` has depth 0, `[]` depth 1 and
+`{"a":[]}` depth 2. Of the members other than the one written, an accepted
+write MUST keep every one of depth 128 or less and MUST drop from the file
+every one deeper. However deep a member nests, the write MUST complete and
+reply as any accepted write does, and MUST NOT be refused for that depth alone.
+
+#### Scenario: A member exactly 128 deep is kept
+
+- **WHEN** the settings file contains `{"mode":"turbo","deep":D}`, where `D` is
+  `[` written 128 times followed by `]` written 128 times
+- **AND** `setSetting` is called with key `radHome` and value
+  `/home/u/.radicle`, and accepts it
+- **THEN** the file on disk MUST parse as a JSON object equal to
+  `{"mode":"turbo","deep":D,"radHome":"/home/u/.radicle"}`
+
+#### Scenario: A member 129 deep is dropped and the rest kept
+
+- **WHEN** the settings file contains `{"mode":"turbo","deep":D}`, where `D` is
+  `[` written 129 times followed by `]` written 129 times
+- **AND** `setSetting` is called with key `radHome` and value
+  `/home/u/.radicle`, and accepts it
+- **THEN** the file on disk MUST parse as a JSON object equal to
+  `{"mode":"turbo","radHome":"/home/u/.radicle"}`
+
+#### Scenario: A member nested far deeper still lets the write complete
+
+- **WHEN** the settings file contains `{"mode":"turbo","deep":D}`, where `D` is
+  `[` written 100000 times followed by `]` written 100000 times
+- **AND** `setSetting` is called with key `radHome` and value
+  `/home/u/.radicle`
+- **THEN** the reply MUST be a settings object rather than an error, with
+  `radHome` `/home/u/.radicle`
+- **AND** the file on disk MUST parse as a JSON object equal to
+  `{"mode":"turbo","radHome":"/home/u/.radicle"}`
+
 ### Requirement: A settings write replies with the settings as read, not the file as stored
 
 The reply to an accepted `setSetting` MUST equal what `getSettings` reports
@@ -151,8 +189,8 @@ MUST NOT by itself cause the write to be refused.
 The module MUST start with working defaults rather than failing when the
 settings file is absent, unreadable, or does not parse as a JSON object. A
 store constructed with an empty path MUST likewise report defaults, and MUST
-refuse a write naming the problem rather than reporting success for a value
-it did not store.
+refuse a write, with an error naming both `XDG_DATA_HOME` and `HOME`, rather
+than report success.
 
 Keys present in the file that the store does not know MUST NOT change any
 setting the store reports, and MUST NOT appear in what `getSettings` reports.
@@ -181,4 +219,7 @@ setting the store reports, and MUST NOT appear in what `getSettings` reports.
 - **THEN** reading `mode` MUST give `explore`
 - **AND** a write of `mode` with value `local` MUST return
   `{"error":"..."}`
+- **AND** that error message MUST contain `XDG_DATA_HOME`
+- **AND** that error message, with every occurrence of `XDG_DATA_HOME`
+  removed, MUST still contain `HOME`
 - **AND** a subsequent read of `mode` MUST still give `explore`

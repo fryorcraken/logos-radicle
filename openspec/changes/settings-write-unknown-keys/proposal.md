@@ -29,6 +29,17 @@ Normalising stays a property of reads only.
   members a write keeps or their values, and a member the file names twice is
   kept once, with its last value. The text itself, and a number beyond what an
   IEEE 754 double holds, are left out of the contract rather than promised.
+- A member the write did not name is kept only while its value nests arrays
+  and objects 128 levels deep or less; a deeper one is dropped from the file,
+  and the write completes as usual however deep the file nests. Keeping
+  arbitrary members means keeping arbitrary depth, which review measured
+  crashing the module on a write (a 20 KB file nested 10000 deep was also
+  rewritten as a 200 MB one), and refusing the write instead would leave the
+  user no way to change a setting. No read changes: a member that deep holds
+  no string, so no setting reads from it.
+- The refusal of a write by a store with no path now has to name
+  `XDG_DATA_HOME` and `HOME`, which the requirement only asked for as "naming
+  the problem" and no scenario checked.
 - A write over a settings file that is absent, cannot be read, or does not
   parse as a JSON object replaces it with an object holding only the key
   written. This is a write's behaviour; a read of such a file still yields
@@ -65,9 +76,12 @@ None.
 
 - `module-settings`: adds "A settings write changes only the key it names",
   "A settings write keeps each member's value, not the file's text",
+  "A settings write drops a member nested too deep to keep",
   "A settings write replies with the settings as read, not the file as stored"
   and "A settings write over an unreadable file stores only the key written";
-  modifies "A settings file that cannot be read yields defaults" to match.
+  modifies "A settings file that cannot be read yields defaults" to match, and
+  to require that a store with no path names `XDG_DATA_HOME` and `HOME` when it
+  refuses a write.
 
 ## Impact
 

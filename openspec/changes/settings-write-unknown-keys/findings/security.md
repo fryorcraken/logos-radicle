@@ -5,6 +5,15 @@ Dimension reviewed: **security** only. The file under `~/.local/share/radicle-mo
 - [ ] **`dev-writer`** — `radicle/src/settings_store.cpp:384,405` (`readStored()` then `save(stored)` -> `settings.dump(2)` at `:319`) — a deeply nested unknown member now reaches the recursive serializer, which crashes the module and can write a file hundreds of megabytes long
       **Scenario:** the settings file holds `{"futureKey":[[[[ ... ]]]],"mode":"local"}` with the arrays nested N deep. `readStored()` parses it (nlohmann's parser is iterative and accepts any depth), and `set()` now keeps `futureKey` verbatim, so the next `setSetting`/`setRemoteSeed` calls `stored.dump(2)`. Before this change the member was dropped by `load()`, so a write never serialised it. Reproduced with the same nlohmann 3.11.3 header against a program doing `parse` then `[...] = ...` then `dump(2)`: N=1000 dumps 2 MB; **N=10000 (a 20 KB file) dumps 200 MB** (indent grows with depth, so output is quadratic in N, and that is written to the temp file and renamed over the settings file; every later `getSettings` then slurps 200 MB into a `stringstream` before parsing); **N=20000 and above segfaults** (exit 139) inside `dump`, which recurses once per level. The segfault takes the whole core module process down on a settings click, and it recurs on every restart, since the poisoned file is still there and the write is how a user would try to fix it.
       **Measured:** `tmp/deep 1000` ok, `10000` ok at 200,040,071 bytes, `20000`/`30000`/`100000`/`1000000` segfault; the parse step succeeded in every case, including 1,000,000 levels. Severity: low to medium. It needs a file this build did not write (the module itself never nests), so it is a robustness hole reachable from on-disk state, which the overlay names as untrusted, not a remote one. Genuine defect, not style. Neither the spec nor `design.md`'s Risks section names a depth or size bound; Decision 6 and the Risks entries cover number rounding and duplicate names only.
+      **Spec decision (spec-writer), box left for `dev-writer`:** the same
+      decision as `correctness.md`'s first entry. The new requirement "A
+      settings write drops a member nested too deep to keep" keeps a member
+      the write did not name only while its depth is 128 or less, drops a
+      deeper one from the file, and requires the write to complete and reply
+      as any accepted write however deep the file nests; the 100000-deep
+      scenario is the crash case. The output-size half is bounded by the same
+      cap and otherwise left to the dev-writer (see `correctness.md`'s second
+      entry).
 
 Clean areas, in prose:
 

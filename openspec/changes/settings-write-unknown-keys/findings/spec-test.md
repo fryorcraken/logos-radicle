@@ -57,7 +57,7 @@ file is not stated.
 
 **Part 3, `NO SPEC:`.** One marker, carried from #101 and not introduced here.
 
-- [ ] **`spec-writer`** — `test_settings_store.cpp:926`, `a_store_with_no_path_says_why_it_cannot_write`
+- [x] **`spec-writer`** — `test_settings_store.cpp:926`, `a_store_with_no_path_says_why_it_cannot_write`
       The marker says the spec is silent on what the no-path refusal says. It
       is not silent: the MODIFIED requirement "A settings file that cannot be
       read yields defaults" requires a refusal "naming the problem", yet its
@@ -71,6 +71,20 @@ file is not stated.
       **Severity:** low. The change re-states this requirement, so it is the
       natural place to add the clause to the scenario or to say the marker is
       stale. **Measured:** not mutated.
+      **Outcome (spec-writer): fixed in the spec.** The MODIFIED requirement
+      "A settings file that cannot be read yields defaults" now says the
+      refusal names both `XDG_DATA_HOME` and `HOME` (replacing "naming the
+      problem"), and its scenario "A store with no path reports defaults and
+      refuses to write" checks it: the message MUST contain `XDG_DATA_HOME`,
+      and MUST still contain `HOME` once every `XDG_DATA_HOME` is removed. The
+      second clause is worded that way because `HOME` is a substring of
+      `XDG_DATA_HOME`, so the test's `LOGOS_ASSERT_CONTAINS(message, "HOME")`
+      passes for a message naming only `XDG_DATA_HOME`. The trailing-space
+      check stays unspecified (it is implied by naming a cause, not a separate
+      behaviour). **Left for `tester`:** strengthen the `HOME` assertion to
+      the scenario's form, and remove the now-stale `NO SPEC:` comment. The
+      implementation's current message already satisfies the amended
+      scenario; no code change is needed.
 
 **Parts 4 and 5.** No requirement moved between capabilities. The spec is
 self-consistent and testable; the one defect is the box above.
