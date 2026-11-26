@@ -254,7 +254,7 @@ would need a UI test.
       its relaying of the body does not, which is the `dev-writer` entries in
       `correctness.md` and `security.md`. Reasons are in `proposal.md`.
 
-- [ ] **`tester`** — `test_radicle_impl.cpp`, after the spec-writer entry above
+- [x] **`tester`** — `test_radicle_impl.cpp`, after the spec-writer entry above
       lands
       **Scenario:** no test pins a 2xx body that is an object with a string
       `apiVersion` and an `error` member, so an implementation can answer or
@@ -262,8 +262,23 @@ would need a UI test.
       spec goes, with the body above, asserting the reply, `getSettings()`,
       `getCapabilities()` and the event. **Severity:** medium, paired with the
       entry above.
+      **Outcome: fixed (already met by the dev-writer's
+      `a_success_carrying_an_error_member_is_a_failed_probe`; verified by
+      mutation, no new test needed).** It drives the five bodies of the delta's
+      scenario at 2xx, asserts a non-empty string `error` and no other member,
+      both seeds unchanged and no event. **Mutation:** disabled the
+      error-member refusal in `SeedClient::probe`. **Predicted:** that test red
+      at its `out.contains("error")` line, as the accepted body carries none.
+      **Observed:** red, but one line later, at `out.size() == 1` (expected 1,
+      got 2): `setRemoteSeed`'s own `isError(index)` check still refuses the
+      body, so the seed is not accepted, and it relays the seed's body instead.
+      So the second line of defence makes acceptance unreachable through
+      `probe`'s error-member check alone, and the test catches the relay, which
+      is the "never the seed's body relayed" half of the requirement. The same
+      mutation also turned `a_failed_probe_leaves_nothing_from_an_earlier_answer`
+      red (`reachable()` left true). Restored.
 
-- [ ] **`tester`** — `every_url_set_setting_refuses_is_refused_by_set_remote_seed_though_it_would_answer`
+- [x] **`tester`** — `every_url_set_setting_refuses_is_refused_by_set_remote_seed_though_it_would_answer`
       (`test_radicle_impl.cpp`)
       **Scenario:** "A malformed seed URL is refused before any request" says
       the refusal is without a request and carries `setSetting`'s reason, for
@@ -277,8 +292,23 @@ would need a UI test.
       `fake.requested.empty()` and the control's own message in the loop. **Not
       measured:** reasoned from the test body; I did not mutate the code, which I
       may not read. **Severity:** low-medium.
+      **Outcome: fixed (already met by the dev-writer's rewrite of the loop;
+      verified by mutation, no change needed).** The loop now takes each row's
+      reason from `setSetting` as a control, asserts the reply contains it,
+      asserts `fake.requested.empty()`, both seeds unchanged and no event, and
+      has the `/` and `///` rows besides. **Mutation:** in `setRemoteSeed`,
+      the shape refusal made to apply only to a form with no `://` in it (the
+      "screens only for a missing scheme" implementation). **Predicted:** the
+      loop red at `fake.requested.empty()` on the `ftp://` row. **Observed:**
+      red at exactly that assertion (`test_radicle_impl.cpp:858`). The same
+      mutation turned `set_remote_seed_sends_no_request_for_a_url_with_credentials`
+      red, as predicted. **Difference:** I predicted
+      `a_scheme_with_no_host_is_refused_before_any_request` red too and it stayed
+      green: `https://` carries `://` but its normalised form `https:` does not,
+      so the mutated screen still refuses the second form before any request.
+      That is the two-forms check holding it, not a weak test. Restored.
 
-- [ ] **`tester`** — `a_failure_status_is_a_failed_probe_whatever_its_body` and
+- [x] **`tester`** — `a_failure_status_is_a_failed_probe_whatever_its_body` and
       the success rows (`test_radicle_impl.cpp`)
       **Scenario:** the definition is "a 2xx status" and "any other status" is
       a failed probe, but the only successful status ever driven is 200 and the
@@ -288,8 +318,28 @@ would need a UI test.
       says fails. `FakeSeed::replyStatus` already takes a value: add a 201 with
       a seed index (accepted) and a 301 with a seed index (refused, nothing
       stored). **Severity:** low.
+      **Outcome: fixed, at two layers.** New in `test_radicle_impl.cpp`:
+      `a_2xx_status_other_than_200_answers_the_probe` (201, 202, 299, each with
+      a seed index: accepted, stored, one event) and
+      `a_3xx_status_is_a_failed_probe_even_with_a_seed_index_body` (301, 302,
+      304: a string `error` and no other member, both seeds unchanged, no
+      event). New in `test_http_client.cpp`: `only_a_2xx_status_is_a_success`,
+      a hardcoded table (199, 200, 201, 204, 299 / 300, 301, 302, 304, 400, 404,
+      500). The second layer is needed because the 2xx rule lives in
+      `applyHttpOutcome`, and the module tests drive `SeedClient` through a fake
+      transport that decides `ok` itself, so no mutation of `applyHttpOutcome`
+      reaches them. **Mutations, predicted then observed:** (a) `fetch` failing
+      on `status != 200` as well as `!ok`: predicted the 2xx test red, observed
+      red at `!out.contains("error")` (`:1095`), the 3xx test green. (b) `fetch`
+      judging failure by `status >= 400 || status == 0` instead of `ok`:
+      predicted the 3xx test red, observed red at `out.contains("error")`
+      (`:1119`), the 2xx test green. (c) `applyHttpOutcome`'s `>= 300` made
+      `>= 400`: predicted `only_a_2xx_status_is_a_success` red on 301, observed
+      red (`ASSERT_EQ` expected 0, got 1, `test_http_client.cpp:133`). All
+      restored. Not mutated: the lower bound of `applyHttpOutcome` (199),
+      reasoned from the table row.
 
-- [ ] **`tester`** — `an_error_status_surfaces_the_seeds_own_message`
+- [x] **`tester`** — `an_error_status_surfaces_the_seeds_own_message`
       (`test_seed_client.cpp`)
       **Scenario:** it pins that a seed's own error text reaches the caller, and
       no scenario of any spec describes that. It is written as the control for
@@ -297,3 +347,25 @@ would need a UI test.
       whatever its body" does cover. Either mark it `NO SPEC:` with what was
       chosen, as the project's rule requires, or fold it into the control role
       its comment gives it. **Severity:** low.
+      **Outcome: fixed (marked `NO SPEC:`).** It is kept, not folded: the two
+      tests after it (a non-string and an empty `error`) assert the fallback to
+      the status, which passes whether or not the body is read, so this is the
+      only test that reddens when it is not. **Mutation:** `fetch` made never to
+      read a failure body. **Predicted:** this test red, the two after it
+      green. **Observed:** exactly that (`[HTTP 404] does not contain [was not
+      found]`, `test_seed_client.cpp:476`; the other two passed). Restored.
+      **The dev-writer's two markers in `test_seed_client.cpp` are honest.**
+      `an_error_status_whose_error_is_empty_falls_back_to_the_status`: the spec
+      asks a non-empty `error` of a failed probe and no wording, and the test
+      pins the status as the fallback for every `remote*` call; removing the
+      non-empty check reddened it (`[] does not contain [HTTP 500]`, `:517`).
+      `a_failed_probe_leaves_nothing_from_an_earlier_answer`: `grep` of
+      `radicle/src` finds one caller of `probe()`, `setRemoteSeed`, on a fresh
+      candidate, so no scenario reaches the cleared state, as the marker says;
+      disabling the error-member refusal reddened it (`!(client.reachable())`,
+      `:639`). **The `?` and `#` rows of `an_at_after_the_host_is_not_a_credential`
+      can fail.** Dropping `#` from the authority terminators in
+      `authorityCarriesUserinfo` turned the test red at its
+      `!out.contains("error")` line, and only the `#` row can fail under that
+      change; dropping `?` did the same for the `?` row. Both predicted, both
+      observed, both restored.
