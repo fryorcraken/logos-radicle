@@ -159,7 +159,7 @@ call must be accepted, and the code is the side that disagrees: `getJson`
 returns the parsed body for a 2xx, and `probe()` then asks `isError(index)`,
 which is true for any object with an `error` key, whatever else it carries.
 
-- [ ] **`dev-writer`** — `radicle/src/seed_client.cpp:142-143` (`probe()`) —
+- [x] **`dev-writer`** — `radicle/src/seed_client.cpp:142-143` (`probe()`) —
       a 2xx index that carries an `error` member is refused although the spec
       says a body with a string `apiVersion` answers, and the refusal is not
       `{"error":"..."}`
@@ -193,3 +193,16 @@ which is true for any object with an `error` key, whatever else it carries.
       requirement and a scenario for it, and have the refusal reply be
       `makeError(...)` rather than the seed's body. Whichever is chosen, the
       refusal must not hand the seed's raw body back as the reply.
+      **Fixed** in `3ec2b22`, by your second route. The `spec-writer` added
+      "and no `error` member" to "A seed answers its probe only with a Radicle
+      seed index", with the scenario "A success carrying an error member is a
+      failed probe" (your two bodies among its five), decided by the owner's
+      delegation; so the code's verdict stands and its reply was the defect.
+      `probe()` now builds the refusal with `makeError(...)` — a non-empty
+      message, no other member — and never returns the seed's body; it knows
+      the body is the seed's through a private `SeedClient::fetch` that says
+      whose body it is, so `isError` no longer conflates the two.
+      Regression test `a_success_carrying_an_error_member_is_a_failed_probe`
+      asserts, for every body, a non-empty string `error`, `out.size() == 1`,
+      the kept seed in force and stored, and no event; it was watched failing
+      first on `out.size()` (2: the relayed body).

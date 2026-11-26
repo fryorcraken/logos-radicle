@@ -170,7 +170,7 @@ Findings below are low severity; none is a regression. The first is a
 documentation-accuracy gap with a stylistic reshape attached, the second a
 contract the new `probe` doc states and the code does not keep.
 
-- [ ] **`dev-writer`** — `design.md` "The shape rule is asked of the URL as given and as stored", `radicle/src/radicle_impl.cpp:467-477` — the stated reason for checking the typed form is wrong, and no test pins it
+- [x] **`dev-writer`** — `design.md` "The shape rule is asked of the URL as given and as stored", `radicle/src/radicle_impl.cpp:467-477` — the stated reason for checking the typed form is wrong, and no test pins it
       **Scenario:** `design.md` says "Checking the normalised form alone would
       satisfy today's rule, since a normalised URL is a prefix of the given
       one and the rule is a prefix test", and gives a hypothetical length cap as
@@ -195,8 +195,26 @@ contract the new `probe` doc states and the code does not keep.
       form alone. That is one check on one form, and it makes the loop and the
       two-form comment unnecessary. **Severity:** low; accuracy of a recorded
       decision, and a stylistic preference for the reshape.
+      **Fixed** by correcting the reason and adding the rows; the reshape is
+      **rejected**, with the argument now in `design.md`. You were right on
+      both counts. `design.md` now says each form catches what the other lets
+      through, with `/` and `///` (normalising to the empty string the rule
+      accepts) as the given form's case, and the comment beside the loop in
+      `radicle_impl.cpp` says the same (`3ec2b22`). `/` and `///` are rows of
+      `every_url_set_setting_refuses_is_refused_by_set_remote_seed_though_it_would_answer`,
+      which now also asserts no request and that the refusal contains
+      `setSetting`'s own reason on every row. Measured, so no longer "read,
+      not measured": dropping `seedUrl` from the initializer list turns that
+      test red on the `/` row (`out.contains("error")` false; the seed was
+      probed and stored empty). The reshape was weighed and not taken for two
+      reasons. The spec requires the refusal to carry `setSetting`'s reason,
+      which for `/` is "must start with http:// or https://", not "seed URL is
+      required", and the new reason assertion holds the code to it. And the
+      reshape is correct only because the empty string is the rule's one gap
+      under normalisation, which puts knowledge of the rule's internals in
+      `setRemoteSeed`; asking `validate` of both forms keeps it in `validate`.
 
-- [ ] **`dev-writer`** — `radicle/src/seed_client.cpp:142-143`, `radicle/src/seed_client.h:51-58` — `probe` runs `isError(index)` on the seed's own body, so the documented acceptance bar and the code disagree for a 2xx index that carries an `error` key
+- [x] **`dev-writer`** — `radicle/src/seed_client.cpp:142-143`, `radicle/src/seed_client.h:51-58` — `probe` runs `isError(index)` on the seed's own body, so the documented acceptance bar and the code disagree for a 2xx index that carries an `error` key
       **Scenario:** `probe`'s header says a seed answers with "a 2xx reply whose
       body is a JSON object carrying a string `apiVersion`" and that anything
       else leaves `reachable()` false. A 200 body `{"apiVersion":"6.2.0","error":5}`
@@ -218,6 +236,23 @@ contract the new `probe` doc states and the code does not keep.
       in the header that an index carrying `error` is refused. Not asked: a
       reshape of `getJson`'s return type, which is wider than this change.
       **Severity:** low; contract accuracy.
+      **Fixed** in `3ec2b22`. The `spec-writer` settled the verdict in round 2:
+      a 2xx body with an `error` member is a failed probe, and the refusal is
+      a non-empty string `error` and nothing else. So the bar is not tested
+      before `isError` (that would accept `{"apiVersion":"6.2.0","error":5}`,
+      which the spec now refuses); instead the forgeable discriminator is
+      removed from `probe`'s path. A private `SeedClient::fetch` returns
+      `Fetched{seedAnswered, body}`, `getJson` is `fetch(path).body` for every
+      other caller (its type unchanged, as you said not to widen it), and
+      `probe` judges a body only when it is the seed's, building every refusal
+      itself. The header now states the `error` rule and that a refusal is
+      never the seed's body. Regression tests
+      `a_success_carrying_an_error_member_is_a_failed_probe` (five bodies) and
+      the error-member row of `a_failed_probe_leaves_nothing_from_an_earlier_answer`,
+      both watched failing first (reply size 2, `reachable()` true); dropping
+      the check turns exactly those two red (measured). Alternatives and why
+      each was not taken are under "`probe` knows whose body it holds" in
+      `design.md`.
 
 Noted, not boxed: `save()` (`settings_store.cpp:271`) and the new pre-check in
 `set()` (`:360`) both know "no settings path". The pre-check is correct, its

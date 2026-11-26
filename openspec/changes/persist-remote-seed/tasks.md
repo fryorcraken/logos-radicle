@@ -73,6 +73,31 @@
 - [x] 3.4 Re-measure each ordering guard in `design.md` by moving the gate and
       naming the tests that go red, and the assertion that does
 
+## 4. An error member, empty messages and credentials (review round 2)
+
+- [x] 4.1 Write the failing tests first: a 2xx body carrying an `error` member
+      (five bodies) refused with a non-empty string `error` and no other
+      member; a failure status with `{"error":""}` refused the same way, at
+      the module and at `SeedClient`; a seed URL with credentials refused by
+      `setSetting` without echoing the secret, and by `setRemoteSeed` before
+      any request; and a `SeedClient` probe that fails after a good one
+      leaving nothing behind. Verify each defect test is red against the code
+      before 4.2
+- [x] 4.2 `probe` judges a body only when it is the seed's (a private `fetch`
+      says whose it is) and builds every refusal itself; an `error` member
+      refuses; an empty seed `error` falls back to the status; `validate`
+      refuses userinfo in a `remoteSeed` authority. Verify the core unit tests
+      leave only the two sandbox socket-cap failures
+- [x] 4.3 Add the slash-only rows (`/`, `///`) to the malformed-URL table, with
+      no-request and `setSetting`-reason assertions on every row
+- [x] 4.4 Measure each new guard by mutation and record in `design.md` which
+      test it turns red; correct the reason given for asking both URL forms,
+      and record the probe bar's alternatives and its cost
+- [x] 4.5 Say where the next editor reads it that the two doors store the seed
+      in different forms (`radicle_impl.h`, the `setSetting` branch), and what
+      the transport may share (`seed_client.h`). Comments only: no test can
+      see them
+
 ## Workflow follow-up
 
 - The `tester` owns the final suite and may keep, adapt or remove the tests

@@ -167,7 +167,7 @@ Clean areas:
 
 Findings:
 
-- [ ] **`dev-writer`** — `radicle/src/seed_client.h:23` — the "keep this a value
+- [x] **`dev-writer`** — `radicle/src/seed_client.h:23` — the "keep this a value
       type" comment says a copy shares nothing mutable "beyond the stateless
       transport", and the transport is not stateless
       **Scenario:** `Transport` is a `std::function`, and the tests' own
@@ -184,8 +184,16 @@ Findings:
       transport" and "shares the transport" in the candidate-client section.
       **Severity:** low; a comment that is wrong on a point a reader would act
       on, a defect rather than a preference.
+      **Fixed** in `3ec2b22`, with the invariant as you stated it: the class
+      comment now says the transport is the one thing a copy shares, that it
+      may hold state of its own (the tests' fake shares one request log, which
+      is how a test names the candidate's request), and that it must not make
+      the candidate's probe change what the client in force reports, with
+      production's `httpGet` keeping nothing. The candidate-client section of
+      `design.md` no longer says "stateless". Comment and prose only; no test
+      can see them.
 
-- [ ] **`dev-writer`** — `radicle/src/radicle_impl.cpp:437-443` — the
+- [x] **`dev-writer`** — `radicle/src/radicle_impl.cpp:437-443` — the
       `setSetting("remoteSeed", …)` branch emits `remoteSeedChanged(value)`
       verbatim beside a `setRemoteSeed` that now emits the normalised URL, with
       no comment saying the difference is known
@@ -202,3 +210,10 @@ Findings:
       `setRemoteSeed`, which normalises; see the design's Risks") closes it.
       **Severity:** low; a missing "why" at a place the change itself made
       conspicuous.
+      **Fixed** in `3ec2b22`: the `setSetting` remoteSeed branch now says the
+      value is stored and announced as given while the client strips trailing
+      slashes, gives the `https://x/` case, says `setRemoteSeed` stores and
+      announces the normalised form, and points at the design's Risks. The
+      same is stated in both contracts in `radicle_impl.h`
+      (`design-review.md`'s round-2 third box). Comment only; no test can see
+      it.

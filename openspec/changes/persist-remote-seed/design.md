@@ -32,8 +32,9 @@ Two constraints shape the approach:
 
 - `setSetting("remoteSeed", …)`'s own adoption, including what an empty value
   does to the seed in force, is untested and stays as it is (#65).
-- No UI change. `Main.qml` already reports a refusal and snaps the picker back;
-  a component test pinning that call is #78.
+- No UI behaviour change. `Main.qml` already reports a refusal and snaps the
+  picker back; the one edit there is the comment above `onSeedChosen`, and a
+  component test pinning that call is #78.
 
 ## Decisions
 
@@ -116,28 +117,92 @@ candidate client is therefore built first (it makes no request), and
 `SettingsStore::validate` is asked of both `seedUrl` and
 `candidate.seedUrl()`.
 
-Checking the normalised form alone would satisfy today's rule, since a
-normalised URL is a prefix of the given one and the rule is a prefix test. Both
-are asked because the spec names both, and a later rule that is not a prefix
-test (a length cap, say) could refuse the given form while accepting the
-normalised one. **Guard:** the code that checked only the typed form turned
+Each form catches a URL the other lets through, so neither check is
+redundant. The normalised form catches `https://` and `http://`. The given form
+catches a URL made only of slashes: `/` and `///` normalise to the empty
+string, which the rule accepts because through `setSetting` it means "clear".
+Checked as normalised alone, `setRemoteSeed("/")` would probe `/api/v1`
+against nothing and, should that answer, store an empty seed. So "a normalised
+URL is a prefix of the given one, and the rule is a prefix test" does not make
+the given-form check redundant: the empty string is the prefix the rule lets
+through.
+
+The reshape that review offered was considered: refuse an empty *normalised*
+URL in place of the empty-given check, and validate the normalised form alone,
+one check on one form. It was not taken. The spec requires the refusal to carry
+the reason `setSetting` gives, and for `/` that reason is the shape rule's
+("must start with http:// or https://"), not "seed URL is required"; and the
+reshape is correct only because the empty string is the rule's one gap under
+normalisation, which is knowledge of the rule's internals held outside it.
+Asking `validate` of both forms keeps that knowledge in `validate`.
+
+**Guard:** checking only the typed form turned
 `a_scheme_with_no_host_is_refused_before_any_request` red on
-`fake.requested.empty()`; it was watched failing before the fix.
+`fake.requested.empty()` (watched failing before that fix). Checking only the
+normalised form turns
+`every_url_set_setting_refuses_is_refused_by_set_remote_seed_though_it_would_answer`
+red on its `/` row (measured in one run of the core unit tests alongside three
+other mutations, each reaching different tests, log read in full; this is the
+only test there that the other three cannot reach). That table now also
+asserts no request and
+that the refusal contains `setSetting`'s own reason for each row.
 
 ### What answering the probe means
 
 `SeedClient::probe` accepts only a 2xx reply whose body is a JSON object with a
-string `apiVersion`; anything else is `{"error":"..."}`, with `reachable()`
-false and `apiVersion()` / `nid()` empty. Before, any JSON at all answered: a
-mistyped URL that landed on another JSON API was adopted, and a non-object
-body (`[]`, `null`, a scalar) made `setRemoteSeed` throw from
-`index.value("nid", "")` after the seed had been stored and adopted, with no
-`catch` anywhere between there and the QtRO slot. Persisting is what turned
-both from a one-session oddity into a standing misconfiguration, so "returns
-JSON" stopped being enough. The `spec-writer` set the bar in "A seed answers
-its probe only with a Radicle seed index"; not measured is that every real
-seed's `/api/v1` carries a string `apiVersion` (the module's contract and
-fixtures assume it, and no seed was reachable from the sandbox).
+string `apiVersion` and no `error` member; anything else is this client's own
+`{"error":"<non-empty message>"}`, with `reachable()` false and `apiVersion()`
+/ `nid()` empty. Before, any JSON at all answered: a mistyped URL that landed
+on another JSON API was adopted, and a non-object body (`[]`, `null`, a scalar)
+made `setRemoteSeed` throw from `index.value("nid", "")` after the seed had
+been stored and adopted, with no `catch` anywhere between there and the QtRO
+slot. Persisting is what turned both from a one-session oddity into a standing
+misconfiguration, so "returns JSON" stopped being enough. The `spec-writer` set
+the bar in "A seed answers its probe only with a Radicle seed index"; not
+measured is that every real seed's `/api/v1` carries a string `apiVersion` (the
+module's contract and fixtures assume it, and no seed was reachable from the
+sandbox).
+
+The bar was chosen from these, each ruled out for the reason given:
+
+- **Any JSON** (what the code did): a foreign JSON API is persisted, and a
+  non-object body threw after the store.
+- **Any JSON object**: `{}` from any JSON API passes, so a foreign server is
+  still persisted; it closes the throw and nothing else.
+- **An object with a string `apiVersion`** (chosen, with the `error` rule
+  below): `apiVersion` is the field the module already reads from the index
+  and reports as `remoteApiVersion`, so the bar asks for exactly what the
+  module uses, and a foreign API is unlikely to carry it by accident.
+- **Also requiring a string `nid`**: the spec reports an absent or non-string
+  `nid` as empty, so a seed without one is a seed; and the module only shows
+  `nid`, it never routes by it.
+- **A `Content-Type: application/json` check**: `HttpResponse` carries no
+  headers, so it would widen `httpGet` and the transport type for every
+  `remote*` call, and it would add nothing the body check does not already
+  decide: the right type says nothing about the body being a Radicle index.
+
+**What the bar forecloses, and the escape.** If the assumption above is wrong
+and a real seed's index lacks a string `apiVersion`, that seed can no longer
+be picked in the UI at all, where before it was adopted for the session. The
+escape is `setSetting("remoteSeed", …)`, which stores any well-shaped URL
+without a probe and is adopted at the next start; no view exposes it for the
+seed today, so the escape is an API caller's, not a user's. That is the cost of
+the bar if the assumption fails, and it was accepted because the alternative
+cost, a foreign server persisted across restarts, is paid silently.
+
+**An `error` member refuses the seed whatever else the body holds**, a string
+`apiVersion` included. This was decided by the owner's delegation in review
+round 2, when the text and the code disagreed (the code refused such a body by
+accident, by reading the seed's `error` key as its own failure signal, and
+relayed the body). Such a body is more plausibly an error reply than a healthy
+index, because `{"error":...}` is this module's own failure shape and every
+caller reads it as one; and a wrongly accepted seed is now persisted across
+restarts, while a wrongly refused one costs a retry. The refusal is built by
+`probe`, never the seed's body relayed: a seed can send `"error":null`, `""`,
+`0` or `false`, which the view's reply parser (`doc && doc.error`) reads as
+success, so a relayed body made the picker report a refused seed as chosen.
+The message carries the seed's own `error` text when that is a non-empty
+string; the spec fixes the shape, not the wording.
 
 - **In `probe`, not in `setRemoteSeed`.** The probe's job is to say whether
   this is a seed, and `probe` is where `apiVersion` and `nid` are already
@@ -149,31 +214,110 @@ fixtures assume it, and no seed was reachable from the sandbox).
   `type_error.302`). The spec now says a `nid` that is absent or not a string
   is reported empty.
 - **`probe` clears `apiVersion` and `nid` before it asks**, so a probe that
-  fails leaves nothing from an earlier answer behind. For the candidate client
-  `setSeedUrl` has already cleared them; this keeps `probe` honest on its own.
+  fails leaves nothing from an earlier answer behind, as its header promises.
+  `setRemoteSeed` cannot show this, since the candidate's `setSeedUrl` has
+  already cleared them, so it is pinned at the `SeedClient` level instead.
 
 **Guard:** accepting any JSON turns
 `a_success_that_is_not_a_seed_index_is_a_failed_probe` red (the code before
 this fix threw `type_error.306` on its first row), and reading `nid` from the
 index again turns `a_nid_that_is_absent_or_not_a_string_is_reported_empty` red
-(`type_error.302`).
+(`type_error.302`). Deleting the two `clear()` lines turns
+`a_failed_probe_leaves_nothing_from_an_earlier_answer` (`test_seed_client.cpp`)
+red on its `[]` row, with `apiVersion()` still `6.2.0` (measured, in the
+shared run). Dropping the
+`error`-member check turns `a_success_carrying_an_error_member_is_a_failed_probe`
+red, the reply being the seed's two-member body relayed, and the same
+`SeedClient` test red on its second row, with `reachable()` left true; those
+two and nothing else (measured, the mutation alone). Both new tests were first
+watched failing against the code before the fix, on the same assertions.
 
-### A seed's error body is a message only when `error` is a string
+### A seed's error body is a message only when `error` is a non-empty string
 
-`SeedClient::getJson` surfaces a seed's own `{"error":"..."}` on a failure
-status, because it is more useful than the bare status. It used to call
-`get<std::string>()` on whatever `error` held, so `{"error":5}` threw. It now
-surfaces only a string and otherwise falls back to the status. The fix is in
-`getJson` rather than in `setRemoteSeed` because every `remote*` call goes
-through it: one check covers them all, where a check in the caller would cover
-one. The spec now says a failure status is a failed probe whatever its body,
-including a body that is itself a seed index. **Guard:** removing the
-`is_string()` check turns
+`SeedClient` surfaces a seed's own `{"error":"..."}` on a failure status,
+because it is more useful than the bare status. It used to call
+`get<std::string>()` on whatever `error` held, so `{"error":5}` threw; and it
+passed an empty string on as the message, so a 500 with `{"error":""}` became
+a refusal whose `error` a view reads as success. It now surfaces only a
+non-empty string and otherwise falls back to the status. The check is in the
+one function every `remote*` call goes through (`fetch`, below), so one check
+covers them all, where a check in `setRemoteSeed` would cover one. The spec now
+says a failure status is a failed probe whatever its body, including a body
+that is itself a seed index, and that every failed probe's `error` is a
+non-empty string. **Guard:** removing the `is_string()` check turns
 `an_error_status_whose_error_is_not_a_string_still_becomes_an_error_object`
 (`test_seed_client.cpp`) and `a_failure_status_is_a_failed_probe_whatever_its_body`
-red; both were watched failing with `type_error.302`.
-`an_error_status_surfaces_the_seeds_own_message` is the control that the body
-is still read.
+red; both were watched failing with `type_error.302`. Removing the non-empty
+check turns `an_error_status_whose_error_is_empty_falls_back_to_the_status`
+(`test_seed_client.cpp`) and the `{"error":""}` row of
+`a_failure_status_is_a_failed_probe_whatever_its_body` red (measured, in the
+shared run; both were also watched failing before the fix). `an_error_status_surfaces_the_seeds_own_message`
+is the control that the body is still read.
+
+### `probe` knows whose body it holds
+
+`getJson` returns the seed's parsed 2xx body and its own `{"error":...}` as
+the same type, told apart only by `isError`, which is true for any object with
+an `error` key. So a seed could forge the discriminator: `probe` read a 2xx
+index carrying `error` as its own failure and handed the seed's body back as
+the refusal, with `reachable()` left true. A private `fetch(path)` now returns
+`Fetched{seedAnswered, body}`, and `probe` judges the body only when
+`seedAnswered` is true; `getJson` is `fetch(path).body`, so no other caller
+changes. Considered:
+
+- **Testing object-with-`apiVersion` before `isError`**, the architecture
+  review's first suggestion. It works only because this client's own errors
+  happen to carry no `apiVersion`, and it still leaves `{"error":5}` with no
+  `apiVersion` to be told apart by the same forgeable key.
+- **Reading `m_reachable` after `getJson`**, which `getJson` already sets true
+  only on a parsed 2xx. It would work, but gives a field that `getCapabilities`
+  reports to views a second, internal meaning, and makes `probe` depend on an
+  ordering inside `getJson` that nothing states.
+- **Changing `getJson`'s return type** for every caller. Wider than this
+  change; the other `remote*` calls pass a seed's reply on rather than judging
+  it, and a 2xx body with an `error` key is read by their callers as a failure,
+  which is what it most plausibly is.
+
+The guard is the `error`-member check's, above: without `seedAnswered`, there
+is no way for `probe` to build that refusal rather than relay the body.
+
+### A seed URL carrying credentials is refused, by the shape rule
+
+`SettingsStore::validate` refuses a non-empty `remoteSeed` whose authority
+(between `://` and the first `/`, `?` or `#`) contains `@`, with a message that
+names the rule and never the URL. Decided in review round 2. Before this
+change a URL typed into the picker (`SeedPicker.qml` is editable, so
+`https://user:token@host` reaches `setRemoteSeed`) lived in memory only;
+persisting it would write the secret in plain text to `settings.json`, created
+by `std::ofstream` with the default umask, normally `0644`, and hand it back
+from every `getSettings`. A Radicle seed's HTTP API takes no credentials, so
+refusing costs no seed the module can otherwise use.
+
+- **Accepting it and recording that the credential is the user's to place**
+  was rejected for that reason: it makes a secret persist where the user did
+  not ask for it, for no seed that needs one.
+- **Stripping the userinfo and storing the rest** was not taken: it stores and
+  reports a URL the user did not type, silently, where a refusal tells them
+  why. Probing as typed and stripping only on store would be worse: the probe
+  would send the credential (Qt turns userinfo into Basic auth) to a seed
+  that takes none.
+- **Refusing in `setRemoteSeed` only** would leave the `setSetting` door
+  writing the same secret to the same file, and two places deciding what a
+  good seed is. In `validate`, both doors refuse it, and `setRemoteSeed`
+  refuses it before any request because it asks `validate` first.
+- **The message names no part of the URL.** Echoing the URL would hand the
+  secret back in the refusal meant to keep it out of storage, and the other
+  `remoteSeed` refusal does not echo it either.
+
+Out of scope, as the proposal says: a settings file edited by hand to carry
+userinfo (`load()` does not re-run `validate`), and the view's own "Cannot use
+<url>" status line, which shows what the user typed on their own screen.
+**Guard:** disabling the check turns
+`a_seed_url_with_credentials_is_refused_and_its_secret_not_echoed` and
+`set_remote_seed_sends_no_request_for_a_url_with_credentials` red (measured,
+in the run shared with the other mutations that reach different tests; both
+were watched failing before the fix). `an_at_after_the_host_is_not_a_credential`
+is the control that the rule is on the authority, one row per terminator.
 
 ### A candidate client, not mutate-then-roll-back
 
@@ -192,9 +336,13 @@ wrong. The copy makes "a refusal changes nothing" true of the whole client by
 construction, and the spec now says the seed in force includes the
 `remoteReachable` and `remoteApiVersion` reported for it.
 
-The copy depends on `SeedClient` staying a cheap value type that shares
-nothing mutable with its source beyond the stateless transport, which its class
-comment now says. **Guard:** going back to mutate-and-restore turns
+The copy depends on `SeedClient` staying a cheap value type whose only shared
+member is the transport, which its class comment now says. The transport is
+not required to be stateless: the tests' fake records every request in one log
+that the candidate and the client in force share, which is how a test names
+the candidate's request. What it must not do is make the candidate's probe
+change what the client in force reports; production's default calls
+`httpGet`, which keeps nothing. **Guard:** going back to mutate-and-restore turns
 `a_failed_probe_leaves_the_seed_in_force_reachable` red; it was watched
 failing against the code that did it.
 
@@ -279,9 +427,14 @@ claim false after this change made it true.
   stores the string verbatim and adopts `https://x` (`m_seed.setSeedUrl`
   strips it), so `getSettings().remoteSeed` and
   `getCapabilities().remoteSeed` disagree after a `setSetting` write with a
-  trailing slash. "The URL is normalised once" above holds for
-  `setRemoteSeed` only. It is a consequence of leaving `setSetting`'s seed
-  path alone, which is #65's; that issue does not yet name this divergence.
+  trailing slash, and its `remoteSeedChanged` names the slashed form, not the
+  one in force. "The URL is normalised once" above holds for `setRemoteSeed`
+  only. It is a consequence of leaving `setSetting`'s seed path alone, which
+  is #65's. Because the next person to touch either door needs it, it is also
+  stated where they will read it: both contracts in `radicle_impl.h`, and a
+  comment at the `setSetting` branch beside the `setRemoteSeed` body that
+  normalises. Whether #65 names the divergence is for `gh issue view 65` to
+  say; if it does not, that is where it belongs.
 - [A seed pick rewrites the whole settings file from `load()`] → `load()`
   sends a mode this build does not know to `explore` and drops keys it does not
   know; `set` saves that normalised object, so the first write after a newer

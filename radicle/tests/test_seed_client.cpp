@@ -493,6 +493,9 @@ LOGOS_TEST(an_error_status_whose_error_is_not_a_string_still_becomes_an_error_ob
 /// An empty `error` string names nothing either, and an empty message is one
 /// a caller reading `error` as "did it fail" takes for success. It falls back
 /// to the status, like a non-string one.
+// NO SPEC: the spec requires a non-empty `error` from setRemoteSeed's probe,
+// not from getRepo, and fixes no wording; this pins that every remote* call
+// gets the same fallback, and that the fallback is the status.
 LOGOS_TEST(an_error_status_whose_error_is_empty_falls_back_to_the_status)
 {
     SeedClient client("https://example.test");
@@ -609,6 +612,9 @@ LOGOS_TEST(changing_the_seed_clears_the_previous_versions_state)
 /// probe runs. One row per way a probe fails after the transport answered or
 /// did not: a 2xx body that is not an index, a 2xx index carrying an `error`
 /// member, and no answer at all.
+// NO SPEC: no module method can re-probe a client that already answered, so no
+// scenario reaches this; it pins `probe`'s header contract, which the design
+// records as a guard.
 LOGOS_TEST(a_failed_probe_leaves_nothing_from_an_earlier_answer)
 {
     for (const std::string body : {"[]", R"({"apiVersion":"6.2.0","error":"x"})", ""}) {
