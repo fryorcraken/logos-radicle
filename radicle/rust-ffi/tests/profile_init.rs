@@ -1345,7 +1345,11 @@ fn a_refused_home_never_opens_the_entropy_source() {
         },
         Refusal {
             case: "half-created-home",
-            wanted: "half-created",
+            // Not "half-created": that is also the scratch directory's name
+            // (`entropy-refused-half-created-home`), which every message for
+            // this home quotes, so it would be found in an occupied-home
+            // refusal too.
+            wanted: "initialisation did not finish",
             alias: "tester",
             target: |home| {
                 make_half_created(home);

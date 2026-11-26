@@ -57,7 +57,7 @@ Dimension: **security** only. Scope: `radicle/rust-ffi/src/profileinit.rs`,
 
 ## Findings
 
-- [ ] **`tester`** — `radicle/rust-ffi/tests/profile_init.rs` (production wiring: `profileinit.rs:358`, `open_system_entropy`) — nothing pins that the production source supplies all 32 bytes as entropy; a seed with 64 bits of entropy passes every test
+- [x] **`tester`** — `radicle/rust-ffi/tests/profile_init.rs` (production wiring: `profileinit.rs:358`, `open_system_entropy`) — nothing pins that the production source supplies all 32 bytes as entropy; a seed with 64 bits of entropy passes every test
       **Scenario:** `init_profile` is changed to draw through
       `open_system_entropy().map(|f| Read::take(f, 8).chain(std::io::repeat(0)))`,
       so every production seed is 8 random bytes and 24 zero bytes. A creation
@@ -81,3 +81,26 @@ Dimension: **security** only. Scope: `radicle/rust-ffi/src/profileinit.rs`,
       differ (false-failure probability 2^-128). `Seed` derefs to `[u8; 32]`.
       That test is red under the `take(8)` mutation, and under `/dev/zero`, a
       fixed seed and any half-zeroed seed.
+      **Outcome (`tester`): fixed, in a different place from the one suggested.**
+      The test is `production_seeds_differ_in_both_halves` in
+      `radicle/rust-ffi/tests/profile_init.rs`, not a unit test in
+      `profileinit.rs`: `draw_seed` is private, a unit test would live in an
+      implementation file, and the integration layer can see the same thing from
+      outside. It creates two homes through the real `init_profile`, reads each
+      seed back off disk (`Keystore::secret_key(None)`, `SigningKey::as_bytes`,
+      the 32-byte secret) and asserts the first 16 bytes differ and the last 16
+      differ. Its helper is itself checked first: a home created from
+      `known_seed()` through the seam must read back as exactly those bytes, so
+      the test cannot be reading something that is not the seed. **Predicted and
+      observed, full suite each time:** (a) `init_profile` drawing through
+      `open_system_entropy().map(|f| Read::take(f, 8).chain(std::io::repeat(0)))`:
+      predicted this test alone red, on the second half; observed one failure of
+      36, `the second half of two production seeds must differ ... [0 x16] ==
+      [0 x16]`, and `two_homes_get_two_different_identities` still green, which
+      is the finding's point. (b) first 16 bytes zero and the last 16 from
+      `/dev/urandom`: observed red on `the first half of two production seeds
+      must differ`. (c) `SYSTEM_ENTROPY` set to `/dev/zero`: observed two red,
+      this one and `two_homes_get_two_different_identities`. (d) the seam
+      ignoring its opener and drawing from `/dev/urandom`: this test's helper
+      precondition is red along with thirteen others. All restored with
+      `git checkout`.
