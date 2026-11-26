@@ -10,29 +10,16 @@ it.
 
 ### Requirement: The settings store holds exactly five named keys
 
-The module MUST persist exactly five settings, named `mode`, `radHome`,
-`radSocket`, `gitPath` and `remoteSeed`. No other key is stored, and the
-meaning of each is fixed:
+The module MUST persist exactly five settings, and no other key, each with a
+fixed meaning:
 
-- `mode` — which node this module is pointed at; one of `explore`, `local`
-  or `embedded`.
-- `radHome` — an explicit Radicle home; `""` means resolve one from the
-  environment.
-- `radSocket` — an explicit node control socket; `""` means resolve one.
-- `gitPath` — an explicit `git` executable; `""` means find one on `PATH`.
+- `mode` — which node this module is pointed at: `explore`, `local` or
+  `embedded`;
+- `radHome` — an explicit Radicle home; `""` means resolve one;
+- `radSocket` — an explicit node control socket; `""` means resolve one;
+- `gitPath` — an explicit `git` executable; `""` means find one on `PATH`;
 - `remoteSeed` — the seed URL the `remote*` methods proxy to; `""` means the
   built-in default.
-
-`getSettings` MUST return all five keys on every call, with defaults filled in
-for anything unset, and MUST NOT return any other key.
-
-The second half is **currently unpinned**, and this was demonstrated rather
-than suspected: injecting an extra key into the store's reply leaves the whole
-unit suite green, because the covering test makes five `contains()` assertions
-and never checks the count. A one-line count assertion closes it, and is
-recorded in `tasks.md` rather than made here, because this change adds no
-tests. Until then, a regression leaking an internal field into every reply
-would ship unnoticed.
 
 #### Scenario: Every key is present in a reply even when nothing was written
 
@@ -61,16 +48,13 @@ would ship unnoticed.
 
 ### Requirement: The settings file lives under the XDG data home
 
-The settings file MUST be `<base>/radicle-module/settings.json`, where
-`<base>` is `$XDG_DATA_HOME` when that is set and non-empty, and
-`$HOME/.local/share` otherwise. When neither is available the resolved path
-MUST be empty rather than a path relative to nothing.
+The settings file MUST be `<base>/radicle-module/settings.json`, where `<base>`
+is `$XDG_DATA_HOME` when that is set and non-empty, and `$HOME/.local/share`
+otherwise. When neither is available the resolved path MUST be empty.
 
-Basecamp hands each profile its own `XDG_DATA_HOME`, so two profiles resolve
-two different files and therefore hold two independent sets of settings. The
-module MUST NOT derive this path from `RAD_HOME` or from any Radicle profile
-location, and MUST NOT write its settings into a node-owned file such as
-`~/.radicle/config.json`.
+The module MUST NOT derive this path from `RAD_HOME` or from any Radicle
+profile location, and MUST NOT write its settings into a node-owned file such
+as `~/.radicle/config.json`.
 
 #### Scenario: An XDG data home in force decides the path
 
@@ -157,33 +141,14 @@ A persisted `remoteSeed` MUST be adopted when the module starts, so that
 
 ### Requirement: Values are validated on write, not on use
 
-`setSetting` MUST validate a value before storing it, and MUST refuse rather
-than store a value it cannot accept. A refusal MUST return the module's
-standard `{"error":"..."}` shape, and MUST leave the stored value unchanged.
+`setSetting` MUST validate a value before storing it, and refuse one it cannot
+accept with `{"error":"..."}`, leaving the stored value unchanged:
 
-The per-key rules are:
-
-- `mode` MUST be one of `explore`, `local` or `embedded`. The refusal message
-  MUST name all three.
-- `gitPath` MUST, when non-empty, be an absolute path to an executable that
-  answers as git. An empty value is always accepted, because it means "find git
-  on `PATH`". The refusal message MUST name the value that was tried. The
-  requirement "A configured git path is proved to be git, and never falls back"
-  below owns the full rule, including the cases a positive test alone cannot
-  distinguish.
-- `radSocket` MUST, when non-empty, be short enough for a Unix domain socket
-  path — at most 107 bytes, one less than the 108-byte `sun_path` capacity
-  that holds its terminator. The refusal message MUST name the limit. The
-  `node-paths` capability owns the full rule, including why this check is not
-  redundant with the one at resolution time.
-- `remoteSeed` MUST, when non-empty, begin with `http://` or `https://`.
-  Validation of `remoteSeed` is shape-only: whether the seed answers is not
-  checked here and MUST NOT put a network round trip on a settings write.
-- `radHome` has no value validation. **This is a known gap, not the intended
-  contract**: every other non-mode key is validated on write, and an
-  unusable home is accepted here only to surface later as
-  `localAvailable: false` — the deferred-failure shape this capability rejects
-  for `gitPath`. Do not read this line as licence to leave it unvalidated.
+- `mode` MUST be one of `explore`, `local` or `embedded`.
+- `gitPath`, when non-empty, MUST be an absolute path to an executable that
+  answers as git. An empty value MUST be accepted.
+- `radSocket`, when non-empty, MUST be at most 107 bytes.
+- `remoteSeed`, when non-empty, MUST begin with `http://` or `https://`.
 
 #### Scenario: A mode the module does not know is refused and lists the valid ones
 
@@ -289,19 +254,12 @@ MUST NOT appear in what `getSettings` reports.
 
 ### Requirement: A stored mode this build cannot interpret reads back as explore
 
-`setSetting` validates, so the module never writes an unknown mode — but the
-file lies under the user's own data directory and a hand edit, a torn write,
-or a newer build can leave one. Such a value MUST be reported as `explore`,
-the one mode that touches no local profile, rather than passed through to a
-caller that has no interpretation for it and rather than falling back to
-`local`, which would claim a node identity on the strength of a file the
-build has just admitted it cannot read.
+A stored `mode` this build cannot interpret MUST be reported as `explore`,
+rather than passed through to a caller or reported as `local`.
 
-Sanitising the mode MUST NOT discard the file's other settings, and MUST NOT
-rewrite the file: the stored string stays as it was found, so a build that
-understands it loses nothing.
-
-A mode the build does know MUST be reported unchanged.
+Sanitising it MUST NOT discard the file's other settings, and MUST NOT rewrite
+the file: the stored string MUST stay as it was found. A mode the build does
+know MUST be reported unchanged.
 
 #### Scenario: An uninterpretable stored mode is reported as explore
 
@@ -325,18 +283,13 @@ A mode the build does know MUST be reported unchanged.
 
 ### Requirement: A settings write that repoints the module is applied at once
 
-Writing `mode`, `radHome` or `radSocket` changes which Radicle home the
-module reads. Those three MUST take effect on the running instance rather
-than at the next start: after such a write, `getCapabilities` MUST report the
-home and availability of the newly selected mode, not of the previous one.
+Writing `mode`, `radHome` or `radSocket` MUST take effect on the running
+instance: afterwards `getCapabilities` MUST report the home and availability of
+the newly selected mode, not of the previous one. Writing `remoteSeed` MUST
+adopt the URL for subsequent `remote*` calls.
 
-Writing `remoteSeed` MUST adopt the URL for subsequent `remote*` calls.
-
-Writing `gitPath` MUST NOT change the `git` in force on the running instance:
-it is validated and stored now and applied at the next module start, because
-the only channel that reaches Radicle's `git` spawn sites is the process's
-own `PATH`, which can only be written safely before any thread exists. A
-caller MUST be told this rather than left to infer that the change is live.
+Writing `gitPath` MUST NOT change the `git` in force on the running instance. It
+MUST be applied at the next module start, and a caller MUST be told so.
 
 #### Scenario: Switching mode changes the reported home in the same session
 
@@ -411,24 +364,12 @@ subsequent successful write MUST clear a previously displayed refusal.
 ### Requirement: A configured git path is proved to be git, and never falls back
 
 A non-empty `gitPath` MUST be accepted only when the path it names both runs
-and identifies itself as git. Each of the following MUST be refused, and each
-refusal MUST name the value that was tried and say what was wrong with it:
+and identifies itself as git. Each of these MUST be refused, with a refusal
+naming the value tried and what was wrong with it: a path that does not exist;
+an executable that exits zero but whose `--version` output does not identify
+it as git; one whose `--version` exits non-zero; a path that is not absolute.
 
-- A path that does not exist.
-- An executable that runs and exits zero but whose `--version` output does not
-  identify it as git.
-- An executable whose `--version` exits non-zero.
-- A path that is not absolute.
-
-A configured path that fails any of these MUST NOT fall back to a git found on
-`PATH`. A silent fallback makes a typo in the setting look like a Radicle
-defect rather than a wrong path, and makes the reported path differ from the
-binary that would actually run.
-
-These four cases are required together rather than as one: no positive check
-distinguishes them, since a test configuring a working git and observing success
-passes equally against a resolver that ignores the setting. Only a refusal
-naming the configured value shows the setting was consulted.
+A configured path that fails MUST NOT fall back to a git found on `PATH`.
 
 #### Scenario: A real-but-not-git executable is refused
 
@@ -476,11 +417,8 @@ naming the configured value shows the setting was consulted.
 ### Requirement: The reported git path distinguishes configured from detected
 
 `getCapabilities()` MUST report `gitConfigured` as true exactly when a non-empty
-`gitPath` setting is in force, and false when git was found on `PATH`.
-
-It MUST report `gitConfigured` as true for a configured path that was refused,
-because the user did set something: reporting "found automatically" there would
-describe a state the module is not in.
+`gitPath` setting is in force, including one that was refused, and false when
+git was found on `PATH`.
 
 `gitPath` MUST report the resolved absolute path when git was found, and the
 empty string when it was not. `gitProblem` MUST be empty exactly when `gitFound`
@@ -501,3 +439,37 @@ is true.
 - **THEN** `getCapabilities().gitFound` MUST be false
 - **AND** `gitConfigured` MUST be true
 - **AND** `gitProblem` MUST be non-empty
+
+### Requirement: getSettings reports the five keys and no other
+
+`getSettings` MUST return all five keys on every call, with defaults filled in
+for anything unset, and MUST NOT return any other key.
+
+#### Scenario: A reply carries exactly five keys
+
+- **WHEN** `getSettings` is called against a settings file that has never been
+  written, and again after `setSetting` has accepted a value for each key
+- **THEN** each reply MUST contain exactly five keys
+
+### Requirement: A settings refusal names what was wrong
+
+A refused `mode` MUST name all three modes, a refused `gitPath` MUST name the
+value that was tried, and a refused `radSocket` MUST name the 107-byte limit.
+
+#### Scenario: A refused mode names all three whatever was tried
+
+- **WHEN** `setSetting` is called with key `mode` and value `remote`
+- **THEN** the reply MUST be `{"error":"..."}`
+- **AND** the message MUST contain `explore`, `local` and `embedded`
+
+### Requirement: A seed URL is checked for its shape only
+
+Validating `remoteSeed` MUST check its shape only: a settings write MUST NOT
+make a network round trip to learn whether the seed answers.
+
+#### Scenario: A seed that cannot be reached is accepted
+
+- **WHEN** `setSetting` is called with key `remoteSeed` and value
+  `https://seed.invalid`
+- **THEN** the reply MUST be a settings object rather than an error
+- **AND** a subsequent read of `remoteSeed` MUST give `https://seed.invalid`

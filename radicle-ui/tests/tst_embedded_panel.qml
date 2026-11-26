@@ -72,6 +72,15 @@ Item {
         property bool embeddedStartHosted: true
         property bool embeddedRestartHosted: false
 
+        /// What `Main.qml` exposes from `getCapabilities().canWriteLocal`, which
+        /// is a probe of the mode in force's home and says nothing about whether
+        /// the EMBEDDED key is sealed. True by default, as it is for a profile
+        /// that can sign; the one test about it moves it to false while the key
+        /// is unencrypted, which is the combination a surface keying on it would
+        /// misread as "encrypted".
+        property bool canWrite: true
+        property string writeUnavailableReason: ""
+
         property var callLog: []
         property var pending: null
 
@@ -191,6 +200,8 @@ Item {
             app.embeddedSetupHosted = true;
             app.embeddedStartHosted = true;
             app.embeddedRestartHosted = false;
+            app.canWrite = true;
+            app.writeUnavailableReason = "";
             root.writesObserved = [];
             list.reload();
             app.reset();
@@ -699,6 +710,19 @@ Item {
         /// `encrypted` is the only field moved between the two legs, and the
         /// node status is identical in both — so a panel starting on the node's
         /// state rather than on the key answers the same in each and fails.
+        ///
+        /// **While that call is outstanding and the node still reports
+        /// `running:false`, the state rendered is the STOPPED one** — the
+        /// scenario's last step, which the spec states because a stopped node
+        /// outranks an outstanding start: the backend's report wins over what
+        /// this view is waiting for. The harness does not move
+        /// `embeddedStartPending` itself, so the test sets it, as `Main.qml`
+        /// does between issuing the call and its reply. The control reports
+        /// the same outstanding call over a node that says `running:true`,
+        /// where the state is `starting` — so the stopped answer is the
+        /// node's report deciding and not an outstanding flag the panel
+        /// never read. A render that put `starting` above `stopped` fails the
+        /// first leg; one ignoring `embeddedStartPending` fails the control.
         function test_an_unencrypted_stopped_node_is_started_without_being_asked() {
             app.embeddedEncrypted = false;
             list.reload();
@@ -712,6 +736,28 @@ Item {
             compare(list.embedded.actionKind, "",
                     "and no control is offered beside it — a button the module "
                     + "has already pressed asks for an act with one answer");
+
+            // The call is now outstanding, and the node still reports
+            // `running:false` and `serving:false`.
+            app.embeddedStartPending = true;
+            compare(list.embedded.current, "stopped",
+                    "while the start is outstanding and the node still "
+                    + "reports running:false, the rendered state must be the "
+                    + "stopped one, not starting");
+            compare(app.startLog.length, 1,
+                    "and the outstanding call must not be issued again: "
+                    + JSON.stringify(app.startLog));
+
+            // The control: the same outstanding call over a node that reports
+            // `running:true` IS the starting state.
+            app.embeddedRunning = true;
+            compare(list.embedded.current, "starting",
+                    "control: with the node reporting running the same "
+                    + "outstanding call renders starting");
+
+            // Back to the baseline for the encrypted control below.
+            app.embeddedRunning = false;
+            app.embeddedStartPending = false;
 
             // The control: the same node status with an encrypted key starts
             // nothing and asks instead.
@@ -969,6 +1015,235 @@ Item {
             compare(app.startLog[1], "the right one",
                     "carrying the SECOND value — a panel holding the first "
                     + "would retry what was already refused");
+        }
+
+        // ---- the split-out scenarios of strict-spec-validation --------------
+        //
+        // Each pins one scenario that was split out of a longer requirement and
+        // is therefore worded in the spec's own scenario text. Every leg moves
+        // ONE field against a control leg, so a panel answering the same for
+        // every input fails one of them.
+
+        /// **A home that resolves to nothing is blocked**, with no action named
+        /// and nothing issued.
+        ///
+        /// `embeddedPathsProblem` is empty on purpose: the empty HOME is the
+        /// whole of the cause, which is the half of "blocked" that the
+        /// `pathsProblem` tests do not reach. The key is unencrypted so a state
+        /// that wrongly fell through to `stopped` would START the node, which is
+        /// what makes "no `startNode` was issued" able to fail.
+        function test_a_home_that_resolves_to_nothing_is_blocked_and_offers_nothing() {
+            app.embeddedHome = "";
+            app.embeddedPathsProblem = "";
+            app.embeddedEncrypted = false;
+            list.reload();
+
+            compare(list.embedded.current, "blocked",
+                    "an empty home with no reported problem is still blocked");
+            compare(list.embedded.actionKind, "",
+                    "so no action is named");
+            var a = action();
+            verify(a === null || !a.visible,
+                   "and none is rendered");
+            compare(app.startLog.length, 0,
+                    "no startNode may be issued: " + JSON.stringify(app.startLog));
+            compare(app.callLog.length, 0,
+                    "and nothing else asked of a backend: "
+                    + JSON.stringify(app.callLog));
+            verify(list.embeddedPanelShown && !list.sayingNothing,
+                   "while the pane still says something");
+
+            // The control: the same key and node status over a home that
+            // resolves is the stopped state, and does start.
+            app.embeddedHome = "/basecamp/embedded-home";
+            list.reload();
+            compare(list.embedded.current, "stopped", "control: it resolves");
+            compare(app.startLog.length, 1,
+                    "control: so the node is started, which the blocked leg "
+                    + "above was not");
+        }
+
+        /// **A stopped node with an unencrypted key renders no start control.**
+        /// The module has already pressed it, so a button beside that start asks
+        /// the user for an act with one answer.
+        ///
+        /// Read off the RENDERED item, not off `actionKind`: a control that was
+        /// drawn although no act is named is the defect, and the state object
+        /// could not show it.
+        function test_a_stopped_unencrypted_node_renders_no_start_control() {
+            app.embeddedEncrypted = false;
+            list.reload();
+
+            compare(list.embedded.current, "stopped", "precondition");
+            compare(app.startLog.length, 1,
+                    "exactly one start has been issued: "
+                    + JSON.stringify(app.startLog));
+            var a = action();
+            verify(a === null || !a.visible,
+                   "so no control that starts the node may be rendered");
+
+            // The control: with an encrypted key the same state DOES render the
+            // start control, so the absence above is about the key.
+            app.reset();
+            app.embeddedEncrypted = true;
+            list.reload();
+            a = action();
+            verify(a !== null && a.visible,
+                   "control: an encrypted key renders the control");
+            compare(list.embedded.actionKind, "start", "control: and it starts");
+        }
+
+        /// **A refused automatic start offers a start as a refused one does.**
+        /// The scenario is the unencrypted key, where the start was the module's
+        /// and the user pressed nothing — which is why it is the case most
+        /// easily reported more quietly.
+        function test_a_refused_automatic_start_offers_a_start_as_a_refused_one_does() {
+            app.embeddedEncrypted = false;
+            list.reload();
+            compare(app.startLog.length, 1, "precondition: it started by itself");
+
+            app.embeddedStartPending = false;
+            app.embeddedStartError = "the passphrase did not unlock keys/radicle";
+            list.reload();
+
+            compare(list.embedded.current, "startFailed",
+                    "the same state a requested start would be refused into");
+            verify(note().text.indexOf("did not unlock") !== -1,
+                   "with the backend's own words, got: " + note().text);
+            compare(list.embedded.actionKind, "start",
+                    "and the named action is the one that starts the node");
+            var a = action();
+            verify(a !== null && a.visible && a.enabled,
+                   "rendered, and enabled where start is hosted");
+        }
+
+        /// **A refused automatic start does not become a prompt.** The prompt
+        /// follows the key's encryption; after the refusal the key is still
+        /// unencrypted and there is still nothing to ask for.
+        ///
+        /// The control leg is the same refusal over an ENCRYPTED key, where the
+        /// field does appear — so this is the field following `encrypted`, not
+        /// a field that is never rendered after a refusal.
+        function test_a_refused_automatic_start_does_not_become_a_prompt() {
+            app.embeddedEncrypted = false;
+            list.reload();
+            compare(app.startLog.length, 1, "precondition: it started by itself");
+
+            app.embeddedStartPending = false;
+            app.embeddedStartError = "{\"error\":\"the node did not start\"}";
+            list.reload();
+            compare(list.embedded.current, "startFailed", "precondition");
+
+            var f = passphrase();
+            verify(f === null || !f.visible,
+                   "no field for a passphrase may be present");
+
+            app.embeddedEncrypted = true;
+            list.reload();
+            verify(passphrase().visible,
+                   "control: the same refusal over an encrypted key keeps the "
+                   + "field, so a mistyped passphrase can be corrected");
+        }
+
+        /// What the panel is showing as text, one string per item.
+        ///
+        /// A `Text` contributes `text`; the passphrase field contributes
+        /// `displayText`, which is what is DRAWN (its `text` is the secret
+        /// itself, and is what a masked field exists to keep off the screen).
+        function shownStrings(node, out) {
+            if (!node || node.visible === false) return out;
+            if (node.objectName === "embeddedPassphrase") {
+                out.push(String(node.displayText));
+            } else if (node.text !== undefined && String(node.text) !== "") {
+                out.push(String(node.text));
+            }
+            for (var i = 0; i < node.children.length; i++)
+                shownStrings(node.children[i], out);
+            return out;
+        }
+
+        /// **The passphrase field does not show what is typed.**
+        ///
+        /// Asserted on what is drawn, by walking every visible item, rather than
+        /// on the field's `echoMode` alone: a secret echoed by a SECOND item —
+        /// a label repeating it, a tooltip — would pass an `echoMode` check.
+        ///
+        /// The control turns the mask off and walks again, so the walk is shown
+        /// to be able to see the secret when it IS drawn. Without it, a walk
+        /// that found nothing at all would also pass.
+        function test_the_passphrase_field_does_not_show_what_is_typed() {
+            list.reload();
+            var f = passphrase();
+            verify(f !== null && f.visible, "precondition: the field is offered");
+
+            // The field is ONE item shared by every test in this file, and the
+            // control leg below unmasks it. A failed `verify` aborts the
+            // function by throwing, so a restore written after the last
+            // assertion is skipped exactly when something has broken — leaving
+            // the field unmasked and holding the secret, and a later test that
+            // asserts the mask (`test_an_encrypted_identity_is_offered_a_
+            // passphrase_field`) failing with a message about the wrong test.
+            // The `finally` restores it whichever way this function ends, to
+            // the mode it was found in rather than to a mode written here.
+            var foundEchoMode = f.echoMode;
+            var secret = "correct horse battery";
+            try {
+                f.text = secret;
+
+                var masked = shownStrings(list, []);
+                verify(masked.length > 0, "precondition: the walk found text");
+                for (var i = 0; i < masked.length; i++)
+                    verify(masked[i].indexOf(secret) === -1,
+                           "the typed passphrase must not be displayed, but this "
+                           + "is: " + masked[i]);
+
+                f.echoMode = TextInput.Normal;
+                var shown = shownStrings(list, []);
+                var seen = false;
+                for (var j = 0; j < shown.length; j++)
+                    if (shown[j].indexOf(secret) !== -1) seen = true;
+                verify(seen,
+                       "control: with the mask off, the walk DOES find the "
+                       + "secret — so its absence above is the mask's doing");
+            } finally {
+                f.echoMode = foundEchoMode;
+                f.text = "";
+            }
+        }
+
+        /// **`canWriteLocal` is not read as `encrypted`.** The capability probes
+        /// the mode in force's home, not necessarily the embedded one, and a
+        /// `false` from it conflates a sealed key with a missing or unreadable
+        /// one. A surface reading it as "encrypted" would prompt for a
+        /// passphrase an unencrypted key does not have.
+        ///
+        /// `canWrite:false` is the ONLY thing that differs from the baseline
+        /// autostart test, and the key is unencrypted in both — so a panel that
+        /// consulted the capability answers differently here.
+        function test_a_key_that_cannot_sign_is_not_taken_for_an_encrypted_one() {
+            app.canWrite = false;
+            app.writeUnavailableReason = "the signing key is locked";
+            app.embeddedEncrypted = false;
+            list.reload();
+
+            compare(list.embedded.current, "stopped", "precondition");
+            compare(app.startLog.length, 1,
+                    "a startNode must have been issued: "
+                    + JSON.stringify(app.startLog));
+            compare(app.startLog[0], "",
+                    "with an empty passphrase");
+            var f = passphrase();
+            verify(f === null || !f.visible,
+                   "and no field for a passphrase may be present");
+
+            // The control: the same capability over a key that IS sealed asks.
+            app.reset();
+            app.embeddedEncrypted = true;
+            list.reload();
+            verify(passphrase().visible,
+                   "control: a sealed key is asked for its passphrase");
+            compare(app.startLog.length, 0,
+                    "and is not started unasked: " + JSON.stringify(app.startLog));
         }
 
         // ---- a node this surface started is not one in the way -------------

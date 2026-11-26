@@ -11,18 +11,15 @@ opinion about it.
 
 ### Requirement: The three modes and what each resolves
 
-The module MUST recognise exactly three modes, persisted as the strings
-`explore`, `local` and `embedded`, and each MUST resolve its own Radicle home
-independently of the others.
+The module MUST recognise exactly three modes, persisted as `explore`, `local`
+and `embedded`, each resolving its own Radicle home independently. `explore`
+MUST resolve no home. `local` MUST resolve the home the environment or the
+`radHome` setting names. `embedded` MUST resolve the module's own home under the
+Basecamp profile's XDG data directory, never one reachable from `RAD_HOME` or
+`$HOME`.
 
-`explore` MUST resolve no home at all. `local` MUST resolve the home the
-environment or the `radHome` setting names. `embedded` MUST resolve the
-module's own home under the Basecamp profile's XDG data directory, never a
-home reachable from `RAD_HOME` or `$HOME`.
-
-No mode MUST fall through to another mode's home resolution. A mode this build
-resolves no home for MUST be inert — it MUST report no home rather than
-inheriting the one `local` would have resolved.
+A mode MUST NOT fall through to another's resolution: one that resolves no
+home MUST report none.
 
 #### Scenario: Local reports the environment's profile
 
@@ -68,16 +65,12 @@ inheriting the one `local` would have resolved.
 ### Requirement: The reason a profile is absent fits the mode that asked
 
 When the mode in force resolves a home holding no profile, the reason reported
-MUST be worded for that mode.
+MUST be worded for that mode, and MUST never be empty.
 
-In `local` it MUST advise installing Radicle and running `rad auth`, which is
-the fix for a home the user manages. In `embedded` it MUST NOT mention
-`rad auth` — a mode whose premise is that the user never runs it — and MUST
-instead name the embedded home and state that it is a separate identity from
-any node the user already runs.
-
-The reason MUST never be empty when the profile is absent: an absence with no
-explanation is indistinguishable on screen from a blank pane.
+In `local` it MUST advise installing Radicle and running `rad auth`. In
+`embedded` it MUST NOT mention `rad auth`, and MUST instead name the embedded
+home and state that it is a separate identity from any node the user already
+runs.
 
 #### Scenario: Embedded with no identity yet is explained in its own words
 
@@ -119,28 +112,14 @@ or a hand edit left MUST survive so that build reading it again loses nothing.
 
 ### Requirement: Startable means a mode resolves a workable home
 
-`startableModes()` MUST report every mode this build can start, and a mode
-counts as startable when it resolves a home this module can work against —
-**not** when a node daemon is running in it. On this build all three modes
-therefore resolve a workable home and are reported as startable.
+`startableModes()` MUST report every mode this build can start. A mode is
+startable when it resolves a home this module can work against, not when a node
+daemon runs in it; on this build all three are. A view MUST NOT hard-code the
+set's membership.
 
-**That is a fact about what this build reports, not a licence for a view to
-assume it.** Every view-layer requirement below is a property of the control
-for *any* set the backend might report, including sets no current build
-produces — and the component tests deliberately construct builds where
-`embedded` is absent from the set, because a control that is correct only for
-the set that happens to ship is a control that breaks silently the moment a
-mode stops resolving. A view MUST NOT hard-code the membership of this set, and
-simplifying a startability check to a constant on the strength of the sentence
-above is precisely the error it must not invite.
-
-Whether a daemon answers is a separate question with a separate lifetime:
-`getCapabilities().localNodeRunning` answers it by probing the control socket
-live, so it MUST be free to change while the module runs, whereas the startable
-set is a fact about the build and MUST NOT change at runtime.
-
-`modeIsStartable(mode)` MUST agree with membership of the startable set for
-every mode, so the boolean and the set cannot disagree.
+`localNodeRunning` MUST be free to change while the module runs, and the
+startable set MUST NOT. `modeIsStartable(mode)` MUST agree with membership of
+the startable set for every mode.
 
 #### Scenario: Every known mode is startable and says so per mode
 
@@ -173,16 +152,13 @@ every mode, so the boolean and the set cannot disagree.
 
 ### Requirement: The startable set is reported, not derived from one mode
 
-`getCapabilities()` MUST report `startableModes` as an array, and its contents
-MUST equal `SettingsStore::startableModes()` element for element — neither a
-subset nor a superset.
+`getCapabilities()` MUST report `startableModes` as an array equal, element for
+element, to `SettingsStore::startableModes()`, and it MUST NOT vary with the
+mode in force.
 
-The array MUST NOT vary with the mode in force: selecting a mode MUST NOT add
-it to the set and MUST NOT remove any other mode from it.
-
-A view that annotates which modes are available MUST consume `startableModes`
-and MUST NOT derive that set from the boolean `modeStartable`, which answers
-only whether the mode in force can start.
+A view that annotates which modes are available MUST consume `startableModes`,
+and MUST NOT derive that set from `modeStartable`, which answers only for the
+mode in force.
 
 #### Scenario: The reported array matches the store's own answer exactly
 
@@ -217,26 +193,12 @@ only whether the mode in force can start.
 
 ### Requirement: An unstartable mode is offered and says so before it is chosen
 
-Every mode MUST be selectable, including one the startable set omits: a mode
-MUST NOT be hidden, and MUST NOT be silently inert when chosen.
-
-A control offering the modes MUST mark any mode the startable set it was given
-omits, on that mode's own row or segment, keyed on membership of the set rather
-than on whether that mode is the one currently selected — so the caveat is
-legible while the user is deciding. This behaviour is a property of the control
-and MUST hold for any startable set it is given, including sets no current
-build reports.
-
-A control that ANNOTATES AN ABSENCE MUST distinguish three states of the
-startable set. An absent set — `undefined`, meaning nothing has been reported
-yet — MUST annotate nothing, in either direction. A reported empty array MUST
-annotate every mode, because it is a build saying it can start none. A
-populated array MUST annotate exactly the modes it omits.
-
-A component that merely derives whether the mode IN FORCE is startable — and
-annotates nothing on its own — MUST instead treat an empty array as not yet
-reported and reduce to startable, so that no not-implemented state is shown
-before the first capabilities reply arrives.
+Every mode MUST be selectable, including one the startable set omits, and MUST
+NOT be hidden or silently inert when chosen. A control offering the modes MUST
+mark each mode the set it was given omits, on that mode's own row or segment,
+keyed on membership rather than on selection, for any set. An absent set
+(`undefined`) MUST mark nothing; a reported empty array MUST mark every mode; a
+populated array MUST mark exactly the modes it omits.
 
 #### Scenario: Only the unstartable mode is marked
 
@@ -274,15 +236,11 @@ before the first capabilities reply arrives.
 ### Requirement: The method prefix is derived from the mode
 
 The `remote*` / `local*` method prefix a view calls MUST be derived from the
-mode and MUST NOT be a separately stored or separately chosen value, so the two
-cannot drift apart.
+mode, and MUST NOT be a separately stored or separately chosen value.
 
-`local` and `embedded` MUST both derive the `local` prefix, and `explore` MUST
-derive `remote`. Every mode that derives `local` MUST be named explicitly: a
-mode the derivation does not recognise MUST derive `remote`, the prefix that
-touches no local profile.
-
-Because `local` and `embedded` derive the same prefix, the prefix MUST NOT be
+`local` and `embedded` MUST both derive `local`, and `explore` MUST derive
+`remote`. Every mode that derives `local` MUST be named explicitly: a mode the
+derivation does not recognise MUST derive `remote`. The prefix MUST NOT be
 treated as a proxy for the mode.
 
 #### Scenario: Each mode derives its prefix
@@ -360,18 +318,14 @@ NOT be emitted when the mode in force is reassigned the value it already has.
 
 ### Requirement: Picking a mode persists it and the backend is the authority
 
-Picking a mode MUST persist it through `setSetting("mode", …)`; the control
-that offered the choice MUST NOT record its own copy of the mode in force.
-
-What a view displays as the mode in force MUST come from
-`getCapabilities().mode`, so a mode that failed to persist is not shown as
-selected.
-
-A pick of the mode already in force MUST persist nothing, and MUST leave the
+Picking a mode MUST persist it through `setSetting("mode", …)`, and the control
+that offered the choice MUST NOT record its own copy of the mode in force: what
+a view displays as the mode in force MUST come from `getCapabilities().mode`. A
+pick of the mode already in force MUST persist nothing, and MUST leave the
 control able to accept the next pick.
 
-Changing `mode`, `radHome` or `radSocket` MUST repoint the module at the newly
-resolved home without a restart, and MUST announce the new capabilities.
+Changing `mode`, `radHome` or `radSocket` MUST repoint the module without a
+restart, and MUST announce the new capabilities.
 
 #### Scenario: Clicking a segment persists that mode
 
@@ -413,28 +367,15 @@ resolved home without a restart, and MUST announce the new capabilities.
 
 ### Requirement: getCapabilities reports the mode and its consequences
 
-`getCapabilities()` MUST report, alongside the rest of its fields: `mode` (one
-of the three strings, whatever is on disk), `modeStartable`, `startableModes`,
+`getCapabilities()` MUST report, among its fields, `mode` (one of the three,
+whatever is on disk), `modeStartable`, `startableModes`,
 `modeUnavailableReason`, `radHome`, `radSocket`, `pathsProblem`,
 `localAvailable`, `localNodeRunning`, `canWriteLocal` and
-`writeUnavailableReason`.
-
-`modeUnavailableReason` MUST be the empty string whenever `modeStartable` is
-true, and MUST be present rather than omitted.
-
-On this build that condition holds for every mode, so the field is empty in
-every state a test can reach: every known mode is startable and an unknown
-stored mode resolves to `explore`. The requirement is written as the
-conditional rather than as "it is always empty" for two reasons — the view
-layer consumes it for sets the backend does not currently report (a control
-marking an unstartable mode needs the sentence to show), and a fourth mode, or
-a mode that stops resolving, makes the conditional live without any edit here.
-
-Whether the sentence-building code that fills it should stay at all is an open
-question recorded in `tasks.md`, not settled by this spec.
+`writeUnavailableReason`. `modeUnavailableReason` MUST be present, and empty
+whenever `modeStartable` is true.
 
 `getCapabilities()` MUST NOT fail: a probe that cannot answer MUST be reported
-as a reason a capability is absent, not as an `{"error":"..."}` reply.
+as a reason a capability is absent.
 
 #### Scenario: The mode fields are all present and consistent
 
@@ -495,39 +436,13 @@ is true, so a view never shows an explanation next to an available write.
 
 ### Requirement: A mode that cannot start asks its node for nothing
 
-A view MUST NOT issue a request against a mode that has no node able to answer
-it. Two separate conditions put a mode in that position, and a view MUST honour
-both:
+A view MUST NOT issue a request against a mode with no node able to answer it:
+one the startable set omits, or a startable one whose node does not exist or is
+not loaded. It MUST NOT issue the request and then hide the reply.
 
-- the mode is one the startable set it was given omits — this build reports no
-  such mode, and the requirement is a property of the view for any set it is
-  given;
-- the mode is startable, and so resolves a workable home, but no node exists in
-  that home or none is loaded. `embedded` before its identity is created, and
-  `embedded` with its node stopped, are both of this kind. `embedded-state`
-  states which of its states have a node to ask and which do not.
-
-**Startability is not the test, and treating it as one is how this surface was
-lost.** A mode counts as startable when it resolves a workable home, not when a
-node is running in it, so a guard keyed on startability stops firing for a mode
-the moment that mode becomes startable — while the node it would have asked
-still does not exist. That is exactly what happened to `embedded`: the guard and
-the explanation it protected were keyed on the same condition, so both went away
-together, leaving a request issued against a home with no identity and a refusal
-rendered as an error banner.
-
-A view MUST NOT issue the request and then hide the reply. The reply would still
-arrive, still pass the staleness guard that compares the mode and the derived
-method prefix it was issued under, and still repopulate what is on screen.
-
-While a view is declining to fetch, it MUST render an explanation of why rather
-than nothing, and MUST NOT render wording that claims the mode's node exists and
-holds no repositories.
-
-The decision to decline MUST be derived from what the backend reports — the
-startable set, and the state of the mode's node — and MUST NOT be a comparison
-against a particular mode's name, so that a mode gaining a node changes this
-behaviour with no view edited.
+While declining, it MUST render why, and MUST NOT render wording claiming the
+mode's node exists and holds nothing. The decision MUST be derived from what the
+backend reports, not from a particular mode's name.
 
 #### Scenario: An unstartable mode issues no list request
 
@@ -575,8 +490,16 @@ behaviour with no view edited.
   a home with no identity is not a node that exists and holds nothing
 - **AND** no error banner MUST be raised, since nothing was asked
 
-The third clause of that scenario was recorded here as unpinned by any test: the
-covering test asserted only that the pane was not blank, which an error
-*alongside* the "no repositories" wording would satisfy. `embedded-state` now
-states it as a requirement in its own right, with scenarios that distinguish the
-two, so the gap closes there rather than remaining an annotation here.
+### Requirement: A deriving component reads an empty set as not yet reported
+
+A component that only derives whether the mode in force is startable, and
+annotates nothing itself, MUST treat an empty startable set as not yet reported
+and reduce to startable.
+
+#### Scenario: An empty set derives startable for Embedded too
+
+- **GIVEN** a component that derives only whether the mode in force is
+  startable, told an empty startable set and a mode of `embedded`
+- **THEN** its derived startable flag MUST be true
+- **AND WHEN** it is told a populated set omitting `embedded`
+- **THEN** that flag MUST be false

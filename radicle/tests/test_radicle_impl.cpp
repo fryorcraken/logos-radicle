@@ -611,6 +611,73 @@ LOGOS_TEST(get_settings_reports_defaults_when_nothing_has_been_persisted)
     LOGOS_ASSERT_TRUE(out["gitPath"].get<std::string>().empty());
 }
 
+LOGOS_TEST(get_settings_reports_exactly_five_keys_before_and_after_every_write)
+{
+    // "getSettings reports the five keys and no other", for BOTH halves of the
+    // scenario: against a file that has never been written, and again after
+    // `setSetting` has accepted a value for each key. `contains()` on the five
+    // names cannot see a sixth key; the count can, which is the gap issue #64
+    // records.
+    //
+    // The reply to every write is counted as well as the read that follows it,
+    // because `setSetting` returns the whole object and a caller re-renders
+    // from that reply alone.
+    //
+    // The scratch file is REMOVED first. `scratchSettingsPath` names a fixed
+    // directory under TMPDIR that nothing cleans, and this test writes all five
+    // keys into it, so on a second local run the opening read below would be of
+    // a file that already holds `mode:"local"`, a home and a seed — not of one
+    // that has never been written, which is the half of the scenario it claims.
+    // The existence check after the removal makes a removal that did not take
+    // fail here, rather than quietly weaken the first read.
+    ScopedRadHome home("settings-five-keys");
+    const auto settingsPath = scratchSettingsPath("five-keys");
+    std::error_code removeEc;
+    std::filesystem::remove(settingsPath, removeEc);
+    LOGOS_ASSERT_FALSE(std::filesystem::exists(settingsPath, removeEc));
+    auto impl = makeRadicleImpl(SeedClient{}, LocalStore{},
+                                SettingsStore{settingsPath});
+
+    LOGOS_ASSERT_EQ(parse(impl.getSettings()).size(), size_t(5));
+
+    // One accepted value per key. `gitPath` is the empty string, which means
+    // "find it on PATH" and is accepted everywhere; a real path would make this
+    // test depend on where git is installed.
+    const std::vector<std::pair<std::string, std::string>> writes = {
+        {"mode",       "local"},
+        {"radHome",    home.dir},
+        {"radSocket",  "/run/user/1000/rad.sock"},
+        {"gitPath",    ""},
+        {"remoteSeed", "https://seed.example.test"},
+    };
+    for (const auto& write : writes) {
+        const auto reply = parse(impl.setSetting(write.first, write.second));
+        LOGOS_ASSERT_FALSE(reply.contains("error"));
+        LOGOS_ASSERT_EQ(reply.size(), size_t(5));
+        LOGOS_ASSERT_EQ(parse(impl.getSettings()).size(), size_t(5));
+    }
+}
+
+LOGOS_TEST(a_seed_that_cannot_be_reached_is_accepted_by_a_settings_write)
+{
+    // "A seed URL is checked for its shape only." `.invalid` is reserved by RFC
+    // 2606 and never resolves, so a settings write that went to the network to
+    // ask whether the seed answers would be refused here — and the unit-test
+    // sandbox has no network at all, so the refusal would not depend on DNS.
+    //
+    // Asserted on the reply AND on a later read, because a reply that said
+    // "ok" and dropped the value would pass the first alone.
+    ScopedRadHome home("settings-unreachable-seed");
+    auto impl = makeRadicleImpl(SeedClient{}, LocalStore{},
+                                SettingsStore{scratchSettingsPath("unreachable-seed")});
+
+    const auto written = parse(impl.setSetting("remoteSeed", "https://seed.invalid"));
+    LOGOS_ASSERT_FALSE(written.contains("error"));
+
+    LOGOS_ASSERT_EQ(parse(impl.getSettings())["remoteSeed"].get<std::string>(),
+                    std::string("https://seed.invalid"));
+}
+
 LOGOS_TEST(a_setting_written_through_the_module_is_readable_through_it)
 {
     ScopedRadHome home("settings-roundtrip");
@@ -1054,6 +1121,112 @@ LOGOS_TEST(the_reported_encryption_is_observed_from_the_key_not_echoed_from_a_ca
         // not have — which is the property that makes the field askable at all.
         LOGOS_ASSERT_TRUE(out["problem"].get<std::string>().empty());
     }
+}
+
+LOGOS_TEST(reporting_the_embedded_identity_leaves_every_key_file_as_it_was)
+{
+    // "Reporting encryption leaves the key untouched", asked of the whole read
+    // through the module rather than of the Rust probe alone. The scenario's
+    // words are: every file under the home's `keys` directory is byte-for-byte
+    // what it was before the call, and the reply reports `encrypted:true`.
+    //
+    // The sealed identity is created through the module and read back through
+    // it, with a snapshot of every file in between. A snapshot of the private
+    // key alone would miss a read that rewrote the public half or left a stray
+    // file beside the pair, so names and bytes are both compared.
+    ScopedRadHome home("embedded-report-immutable");
+    ScopedXdgDataHome xdg("embedded-report-immutable");
+
+    auto impl = makeRadicleImpl(SeedClient{}, LocalStore{},
+                                SettingsStore{scratchSettingsPath("emb-immutable")});
+    LOGOS_ASSERT_TRUE(
+        parse(impl.createEmbeddedIdentity("tester", "correct horse battery"))["created"]
+            .get<bool>());
+
+    const std::string keys = embeddedHomeFor(xdg.dir, "") + "/keys";
+    auto snapshot = [&keys]() {
+        std::map<std::string, std::string> files;
+        for (const auto& entry : std::filesystem::directory_iterator(keys)) {
+            std::ifstream in(entry.path(), std::ios::binary);
+            files[entry.path().filename().string()] =
+                std::string(std::istreambuf_iterator<char>(in),
+                            std::istreambuf_iterator<char>());
+        }
+        return files;
+    };
+
+    const auto before = snapshot();
+    // Both halves of the key are there to be compared. Without this, two empty
+    // maps would compare equal for a home whose keys directory never filled.
+    LOGOS_ASSERT_TRUE(before.count("radicle") == 1);
+    LOGOS_ASSERT_TRUE(before.count("radicle.pub") == 1);
+
+    const auto out = parse(impl.getEmbeddedIdentity());
+    LOGOS_ASSERT_TRUE(out["exists"].get<bool>());
+    LOGOS_ASSERT_TRUE(out["encrypted"].get<bool>());
+
+    LOGOS_ASSERT_TRUE(snapshot() == before);
+}
+
+LOGOS_TEST(an_unreadable_embedded_key_carries_a_problem_through_the_module)
+{
+    // The module's own composition of the answer, which the Rust probe's test
+    // cannot see: `getEmbeddedIdentity()` must forward the probe's `problem`
+    // alongside `encrypted:false`, or an unreadable key reads as an
+    // unencrypted one — and a surface starts the node with an empty
+    // passphrase against a key it could not open.
+    //
+    // The two legs are the SAME home, so the only thing that moves is whether
+    // the private key can be read: a reply stuck on `problem:""`, or stuck on a
+    // non-empty one, fails one of them.
+    ScopedRadHome home("embedded-key-unreadable");
+    ScopedXdgDataHome xdg("embedded-key-unreadable");
+
+    auto impl = makeRadicleImpl(SeedClient{}, LocalStore{},
+                                SettingsStore{scratchSettingsPath("emb-unreadable")});
+    LOGOS_ASSERT_TRUE(parse(impl.createEmbeddedIdentity("tester", ""))["created"].get<bool>());
+
+    const auto readable = parse(impl.getEmbeddedIdentity());
+    LOGOS_ASSERT_TRUE(readable["exists"].get<bool>());
+    LOGOS_ASSERT_FALSE(readable["encrypted"].get<bool>());
+    LOGOS_ASSERT_TRUE(readable["problem"].get<std::string>().empty());
+
+    // A directory where the private key was: `exists` (which looks at the public
+    // key and `config.json`) is unaffected, and the key cannot be read.
+    const std::string key = embeddedHomeFor(xdg.dir, "") + "/keys/radicle";
+    std::error_code ec;
+    std::filesystem::remove(key, ec);
+    LOGOS_ASSERT_TRUE(!ec);
+    std::filesystem::create_directory(key, ec);
+    LOGOS_ASSERT_TRUE(!ec);
+
+    const auto unreadable = parse(impl.getEmbeddedIdentity());
+    LOGOS_ASSERT_TRUE(unreadable["exists"].get<bool>());
+    LOGOS_ASSERT_FALSE(unreadable["encrypted"].get<bool>());
+    LOGOS_ASSERT_FALSE(unreadable["problem"].get<std::string>().empty());
+    LOGOS_ASSERT_FALSE(unreadable.contains("error"));
+}
+
+LOGOS_TEST(no_data_directory_still_reports_every_field_and_no_error)
+{
+    // `the_embedded_identity_methods_refuse_when_no_home_can_be_resolved` reads
+    // four of the five fields; this reads the fifth and, as the scenario states
+    // it, that all five are PRESENT. `operator[]` on a parsed object adds a
+    // missing key as null, so a reply that dropped a field is only seen by
+    // `contains`.
+    ScopedRadHome home("embedded-no-data-fields");
+    home.makeStorage();
+    ScopedUnsetEnv noXdg("XDG_DATA_HOME");
+    ScopedUnsetEnv noHome("HOME");
+
+    auto impl = makeRadicleImpl(SeedClient{}, LocalStore{},
+                                SettingsStore{scratchSettingsPath("emb-no-data-fields")});
+
+    const auto out = parse(impl.getEmbeddedIdentity());
+    for (const char* field : {"home", "exists", "nodeId", "encrypted", "problem"})
+        LOGOS_ASSERT_TRUE(out.contains(field));
+    LOGOS_ASSERT_FALSE(out.contains("error"));
+    LOGOS_ASSERT_TRUE(out["nodeId"].get<std::string>().empty());
 }
 
 LOGOS_TEST(creating_the_embedded_identity_makes_one_the_module_can_then_report)

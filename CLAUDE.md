@@ -730,7 +730,13 @@ the latest `ui-tests.yml` run says — read that rather than a claim here.
 pushes to `main` and `v*` tags — **not on a push to a feature branch**, which
 gets no run at all until its PR is open:
 QML syntax, metadata lint, qmllint, the QML component tests and the LGX builds.
-It also validates that the sitometres specs parse.
+It also validates that the sitometres specs parse, and that every live OpenSpec
+spec passes `openspec validate --specs --strict` on the CLI version the `Lint`
+step pins — run that step's command from the repo root to reproduce it. Strict
+is what fails a requirement whose text runs past the CLI's 500-character limit;
+without it that is a warning. What a green there cannot see is
+[`docs/OPENSPEC-ARCHIVE.md`](docs/OPENSPEC-ARCHIVE.md)'s, beside the archive
+step that most often defeats it.
 
 `.github/workflows/ui-tests.yml` runs the sitometres specs for real, on pushes
 to `main`, on pull requests, and on demand. It is a **matrix, one job per

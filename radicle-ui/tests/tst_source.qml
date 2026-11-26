@@ -977,9 +977,9 @@ Item {
         /// derivation directly.
         ///
         /// The list version is what shipped and what cost Embedded its DID. A
-        /// list has to be noticed and extended by somebody; a rule keyed on
-        /// whether the mode reads a home of its own is right for a fourth mode
-        /// before anyone writes one.
+        /// second list has to be noticed and extended by somebody; a rule keyed
+        /// on the prefix the mode derives gives a fourth mode an identity in
+        /// the same edit that routes it to the `local*` methods.
         function test_having_an_identity_is_derived_rather_than_listed() {
             var answers = [];
             var modes = ["explore", "local", "embedded"];
@@ -993,6 +993,59 @@ Item {
                     "a mode has an identity exactly when it reads a Radicle "
                     + "home of its own — which is what routing to the local* "
                     + "methods means");
+        }
+
+        /// **The identity is shown in exactly the modes that derive the local
+        /// prefix** — `embedded-header`'s "One rule decides the header identity
+        /// for every mode".
+        ///
+        /// Asserted on what is DISPLAYED (`slotIdentity.visible`, and the label's
+        /// text where it is), not on `modeHasIdentity` alone: the property is
+        /// the rule, the slot is what a user sees, and the scenario is about the
+        /// second. `slotState.current` is read alongside because the scenario
+        /// defines "has an identity" as "derives the local prefix".
+        ///
+        /// Every case is given a DIFFERENT, non-empty DID, so a "hidden" result
+        /// is about the mode and nothing else, and a "shown" one carries the
+        /// DID that case was given rather than a stale or hardcoded string. The
+        /// expectation below is written out by hand, not read back from the
+        /// code. Unrecognised modes are a string the view has no rule for and
+        /// the empty string, which is what `mode` is before anything has set
+        /// it; both route to the seed (`source-modes`) and so show nothing.
+        ///
+        /// Mutation it is written against: "every mode except Explore has an
+        /// identity" agrees on the three known modes and shows a DID for
+        /// `turbo` and for the empty string; "only Local" hides `embedded`.
+        function test_the_identity_is_shown_in_exactly_the_modes_that_derive_local() {
+            var cases = [
+                { mode: "local",    did: "did:key:z6MkCASELOCALaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+                { mode: "embedded", did: "did:key:z6MkCASEEMBEDbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+                { mode: "explore",  did: "did:key:z6MkCASEEXPLOcccccccccccccccccccccccccccc" },
+                { mode: "turbo",    did: "did:key:z6MkCASETURBOdddddddddddddddddddddddddddd" },
+                { mode: "",         did: "did:key:z6MkCASEEMPTYeeeeeeeeeeeeeeeeeeeeeeeeeeeee" }
+            ];
+            var answers = [];
+            for (var i = 0; i < cases.length; i++) {
+                root.slotMode = cases[i].mode;
+                slotIdentity.nodeId = cases[i].did;
+                var line = "[" + cases[i].mode + "]:" + slotState.current + ":"
+                           + (slotIdentity.visible ? "shown" : "hidden");
+                if (slotIdentity.visible) {
+                    var label = root.findByName(slotIdentity,
+                                                "nodeIdentityLabel");
+                    line += ":" + (String(label.text) === cases[i].did
+                                   ? "its-own-did" : "wrong-did");
+                }
+                answers.push(line);
+            }
+            compare(answers.join(" "),
+                    "[local]:local:shown:its-own-did "
+                    + "[embedded]:local:shown:its-own-did "
+                    + "[explore]:remote:hidden "
+                    + "[turbo]:remote:hidden "
+                    + "[]:remote:hidden",
+                    "a DID is displayed in exactly the modes that derive the "
+                    + "local method prefix, and in full");
         }
 
         /// Exactly one at a time, across every mode. Asserted as a loop over
@@ -1195,6 +1248,35 @@ Item {
             verify(sourceState.modeStartable,
                    "before capabilities arrive the mode must not read as "
                    + "unstartable");
+            sourceState.startableModes = ["explore", "local"];
+        }
+
+        /// **An empty set derives startable for Embedded too**, and a populated
+        /// set that omits it does not. The test above holds the mode at `local`;
+        /// `embedded` is the mode the build used to report unstartable, so it is
+        /// the one a rule special-casing "empty set means the modes that have
+        /// always worked" would get wrong.
+        ///
+        /// The same component, the same mode and ONE changed input — the set —
+        /// so a derivation that ignored the set answers the same for both legs
+        /// and fails the second.
+        function test_an_empty_startable_set_derives_startable_for_embedded_too() {
+            sourceState.mode = "embedded";
+
+            sourceState.startableModes = [];
+            verify(sourceState.modeStartable,
+                   "an empty set is not yet reported, so embedded reads as "
+                   + "startable");
+
+            sourceState.startableModes = ["explore", "local"];
+            verify(!sourceState.modeStartable,
+                   "a populated set omitting embedded must read it as "
+                   + "unstartable");
+
+            sourceState.startableModes = [];
+            verify(sourceState.modeStartable,
+                   "and emptying the set again restores 'not yet reported'");
+
             sourceState.startableModes = ["explore", "local"];
         }
 

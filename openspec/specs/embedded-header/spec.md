@@ -17,31 +17,14 @@ nor the caption under it, nor what any mode's repository list shows, which is
 ### Requirement: Every mode with an identity shows it in the header
 
 The header MUST display the DID the backend reports for the mode in force,
-whenever the mode in force has one and the reported DID is non-empty. That MUST
-hold for `embedded` exactly as it holds for `local`.
-
-`radicle_impl.h` states the reason as a requirement on any view: a user
-believing they are operating as their existing DID while they are operating as a
-different one finds their repositories simply missing, with nothing on screen
-explaining why. Embedded is the mode where that confusion is most likely, because
-its identity is one the module created rather than one the user made — so a mode
-that shows no identity is showing nothing precisely where the risk is highest.
+whenever the mode in force has one and the reported DID is non-empty, in
+`embedded` exactly as in `local`.
 
 The DID MUST be displayed in full, including its `did:key:` prefix, and MUST be
-the one the backend reported rather than a truncation or a placeholder — so that
-a header told a different DID displays a different string.
+the one the backend reported rather than a truncation or a placeholder.
 
-A mode with no identity — `explore`, which resolves no home, and any mode whose
-reported DID is empty — MUST display nothing rather than a blank slot or a
-placeholder. An empty identity slot in a mode where the user is not operating as
-anyone is noise, and a placeholder is worse, because it suggests a value that is
-loading.
-
-The display MUST be governed by one rule covering every mode, and MUST NOT be a
-list of modes that each have it switched on. A rule keyed on whether the mode has
-an identity is right for a mode added later without anyone editing it; a list is
-one someone has to notice and extend, which is how Embedded came to show nothing
-while the contract required otherwise.
+Where the mode has no identity, as in `explore`, or its reported DID is empty,
+nothing MUST be displayed: no blank slot and no placeholder.
 
 #### Scenario: Embedded shows its DID as Local does
 
@@ -71,22 +54,13 @@ while the contract required otherwise.
 
 ### Requirement: The header identity is copied by taking it
 
-Taking the displayed identity MUST put the DID on the system clipboard, and MUST
-confirm only once it is there.
-
-The one thing anyone does with a DID is paste it somewhere — into
-`rad id update --allow`, into a message asking a delegate to authorise this node
-— so copying is the act the display exists to serve, and it MUST work the same
-way in `embedded` as in `local`.
-
-The confirmation MUST be earned rather than assumed: it MUST NOT be shown for a
-copy that did not reach the clipboard. A clipboard is not available in every
-environment this module runs in, and a confirmation shown regardless tells the
-user their DID is in a buffer that is empty.
+Taking the displayed identity MUST put the DID on the system clipboard, in
+`embedded` as in `local`, and MUST confirm only once it is there: the
+confirmation MUST NOT be shown for a copy that did not reach the clipboard.
 
 What is copied MUST be the full DID the backend reported, whatever the header is
-displaying — so a display shortened to fit a narrow window still copies the whole
-value.
+displaying, so a display shortened to fit a narrow window still copies the
+whole value.
 
 #### Scenario: Taking the identity copies it in Embedded
 
@@ -107,3 +81,23 @@ value.
 - **GIVEN** a header in `embedded` displaying a DID shortened to fit
 - **WHEN** the identity is taken
 - **THEN** the clipboard MUST hold the full reported DID
+
+### Requirement: One rule decides the header identity for every mode
+
+Whether the header displays an identity MUST be decided by one rule covering
+every mode, keyed on whether the mode in force has an identity, and MUST NOT be
+decided by a list of modes that each have the display switched on.
+
+A mode has an identity exactly when it derives the `local` method prefix, as
+`source-modes`' "The method prefix is derived from the mode" decides it. A mode
+that derives `remote` has none. Whether that identity exists yet is the
+reported DID, a separate question.
+
+#### Scenario: The identity is shown in exactly the modes that derive the local prefix
+
+- **GIVEN** a header whose backend reports a distinctive DID
+- **WHEN** the mode is `local`, and then `embedded`
+- **THEN** that DID MUST be displayed in each
+- **AND WHEN** the mode is `explore`, and then a string the view does not
+  recognise
+- **THEN** no identity MUST be displayed in either

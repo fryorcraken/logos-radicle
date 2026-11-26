@@ -10,15 +10,9 @@ a DID alone does not.
 ### Requirement: Seeding is a policy, not a question about stored repositories
 
 The module MUST expose seeding through `listSeeded`, `seedRepo` and
-`unseedRepo`, and these MUST report and change the node's **seeding policy**.
-
-A seeding policy is a decision about what this node will replicate. It is a
-different question from `localListRepos("seeded")`, which reports repositories
-already present in local storage that this node is neither a delegate of nor
-which are private. The two disagree in both directions, and both disagreements
-are ordinary rather than faults: a repository can be seeded by policy with
-nothing yet replicated, and a repository can sit in storage with no policy
-seeding it.
+`unseedRepo`, and these MUST report and change the node's **seeding policy**:
+what this node will replicate, which is a different question from what local
+storage holds.
 
 `listSeeded` MUST report policies. It MUST NOT be implemented by filtering
 storage, and MUST NOT omit a seeded RID merely because nothing has replicated
@@ -40,18 +34,13 @@ for it yet.
 ### Requirement: Seeding takes a scope and the scope is reported back
 
 `seedRepo(rid, scope)` MUST accept a scope of `all` or `followed`, and MUST
-refuse any other value with `{"error":"..."}` naming both valid scopes.
-
-`listSeeded` MUST report each entry's scope alongside its RID, as
+refuse any other value with `{"error":"..."}` naming both. `listSeeded` MUST
+report each entry's scope alongside its RID, as
 `{"items":[{"rid":"...","scope":"all"|"followed"}]}`.
 
-The scope is not cosmetic and MUST NOT be defaulted silently on the caller's
-behalf: `all` seeds every remote, `followed` seeds only delegates and explicitly
-followed nodes, and the difference decides whether a private repository
-replicates at all.
-
-Seeding an RID that is already seeded with a different scope MUST replace the
-scope rather than add a second entry.
+The scope MUST NOT be defaulted silently: `all` seeds every remote, `followed`
+only delegates and explicitly followed nodes. Seeding an RID already seeded
+with a different scope MUST replace the scope rather than add a second entry.
 
 #### Scenario: Both scopes are accepted and reported back
 
@@ -131,17 +120,12 @@ replicates.
 
 ### Requirement: Seeding acts on the mode's own node and takes no home
 
-None of the three methods MUST accept a Radicle home as a parameter. Each MUST
-act on the home the mode in force resolved, for the same reason the node
-configuration methods do: a home crossing the boundary from a sandboxed view is
-a way to rewrite the policies of a node the module does not own.
+The three methods MUST NOT accept a Radicle home as a parameter, and each MUST
+act on the home the mode in force resolved.
 
 In `explore`, which resolves no home, all three MUST return `{"error":"..."}`
-naming the mode.
-
-In `local`, the node is the user's own. `listSeeded` MUST succeed, so a view can
-show what that node seeds. `seedRepo` and `unseedRepo` MUST refuse, naming the
-mode, and MUST write nothing.
+naming the mode. In `local`, `listSeeded` MUST succeed, while `seedRepo` and
+`unseedRepo` MUST refuse, naming the mode, and MUST write nothing.
 
 #### Scenario: No method takes a home
 
@@ -210,13 +194,10 @@ configuration change it MUST NOT set `restartRequired`.
 
 ### Requirement: The allow-is-not-enough consequence is stated where it applies
 
-Allow-listing a DID on a repository's identity document does not make that
-repository replicate to this node. Every node that is to hold it must also seed
-its RID, and a private repository requires the scope `all`.
-
-A view offering the seeding surface MUST state that, in words naming both halves
-— the delegate's allow-listing and this node's seeding — wherever it presents a
-repository as not replicating.
+A view offering the seeding surface MUST state, wherever it presents a
+repository as not replicating, that a delegate allow-listing this node's DID
+does not make the repository replicate on its own: this node must also seed its
+RID, and a private repository requires the scope `all`.
 
 A view MUST NOT present a seeded RID with scope `followed` as sufficient for a
 private repository.
@@ -240,10 +221,7 @@ boundary. Every call MUST return a well-formed JSON string: either the
 documented success shape or `{"error":"..."}`.
 
 A policy store that cannot be opened MUST come back as an error naming the
-problem, rather than as a crash, an empty string or an empty list. An empty list
-means "nothing is seeded", which is a different fact from "the policies could not
-be read", and a view acting on the first when the second is true would offer to
-seed a repository that is already seeded.
+problem, rather than as a crash, an empty string or an empty list.
 
 #### Scenario: An unopenable policy store is an error, not an empty list
 

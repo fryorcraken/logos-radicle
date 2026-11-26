@@ -149,17 +149,21 @@ QtObject {
     /// Whether the mode in force is one the user OPERATES AS AN IDENTITY in.
     ///
     /// **One rule covering every mode, deliberately not a list of modes.** A
-    /// mode has an identity exactly when it reads a Radicle home of its own —
-    /// which is what routing to the `local*` methods means — so this is derived
-    /// from `current` rather than from naming `local` and `embedded` again.
+    /// mode has an identity exactly when it derives the `local` method prefix
+    /// (`embedded-header`'s "One rule decides the header identity for every
+    /// mode") — it reads a Radicle home of its own — so this is derived from
+    /// `current` rather than from naming `local` and `embedded` a second time.
     ///
     /// The list version is what shipped, and what it cost: the header's DID was
     /// gated on `mode === "local"`, so Embedded — the mode where a user is most
     /// likely to believe they are operating as their own DID, because its
     /// identity is one the module created rather than one they made — showed
     /// nothing at all, while `radicle_impl.h` required a view to always show
-    /// `mode` and `nodeId`. A list has to be noticed and extended by somebody;
-    /// this rule is right for a fourth mode before anyone writes one.
+    /// `mode` and `nodeId`. That second list had to be noticed and extended by
+    /// somebody, and was not. With one list, a fourth mode gains an identity
+    /// in the same edit that adds it to `current`, and not before: until that
+    /// edit it routes to the seed and shows none, which is the safe direction
+    /// and what `source-modes` requires of a mode it does not recognise.
     ///
     /// Explore is the mode with no identity, and it is the fall-through rather
     /// than a named exception: it resolves no home and proxies to a seed, so
@@ -176,7 +180,8 @@ QtObject {
     /// `test_a_mode_with_no_identity_displays_nothing` and
     /// `test_having_an_identity_is_derived_rather_than_listed`, the last
     /// reporting `embedded:no` where it must report `embedded:yes`. Verified by
-    /// mutation rather than argued.
+    /// mutation rather than argued. The rule is also pinned, on what the header
+    /// displays, by `test_the_identity_is_shown_in_exactly_the_modes_that_derive_local`.
     readonly property bool modeHasIdentity: current === "local"
 
     /// Emitted when the user PICKS a different mode — on the click, while the

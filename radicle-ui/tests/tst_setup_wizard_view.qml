@@ -45,6 +45,15 @@ Item {
         /// that the embedded step offers nothing extra whatever it says.
         property var startableModes: ["explore", "local", "embedded"]
 
+        /// The findings `getCapabilities()` reports, held on the fake so there
+        /// is ONE place that builds the reply. A test moves the field it is
+        /// about and the next `capabilities()` carries it, which is what the
+        /// wizard-flow file does with its `capabilitiesMode`; a second builder
+        /// elsewhere in the file would be a copy that drifts from this one.
+        property bool gitFound: true
+        property string gitProblem: ""
+        property string pathsProblem: ""
+
         property var seedItems: [
             { url: "https://seed.radicle.xyz", alias: "radicle", source: "builtin" },
             { url: "https://seed.example.org", alias: "example", source: "builtin" }
@@ -61,7 +70,8 @@ Item {
             cb({ mode: mode,
                  startableModes: startableModes,
                  modeUnavailableReason: "",
-                 gitFound: true, gitProblem: "", pathsProblem: "",
+                 gitFound: gitFound, gitProblem: gitProblem,
+                 pathsProblem: pathsProblem,
                  nodeId: nodeId });
         }
         function identity(cb) {
@@ -162,6 +172,9 @@ Item {
             fake.nodeId = "";
             fake.mode = "embedded";
             fake.startableModes = ["explore", "local", "embedded"];
+            fake.gitFound = true;
+            fake.gitProblem = "";
+            fake.pathsProblem = "";
             fake.seedItems = [
                 { url: "https://seed.radicle.xyz", alias: "radicle",
                   source: "builtin" },
@@ -955,6 +968,275 @@ Item {
             compare(harness.textOf("wizardErrorText"),
                     "a distinctive rendered refusal",
                     "shown as the backend worded it");
+        }
+
+        // ---- the split-out scenarios of strict-spec-validation ---------------
+        //
+        // Rendered counterparts of scenarios whose rule lives in `SetupFlow`:
+        // each asks what the screen draws, where the flow-level test asks the
+        // state object, because a rule that is right and never drawn is the
+        // failure this file exists for.
+
+        // A test below that needs a capabilities reply carrying one distinctive
+        // difference sets that field on `fake` (`pathsProblem`, `gitFound`,
+        // `gitProblem`, `startableModes`) and re-runs what reads it. There is
+        // deliberately no second builder of the reply in this file.
+
+        /// **A paths problem is shown unaltered**, in what the preflight
+        /// displays, and its finding reads as failed. `gitFound` is true, so the
+        /// sentence cannot be arriving by way of the git finding.
+        ///
+        /// The control reruns the preflight over a home that resolves: the same
+        /// finding then reads as passed, so "failed" is the problem's doing.
+        function test_a_paths_problem_is_shown_unaltered_and_the_finding_reads_failed() {
+            var sentence = "the node control socket path is too long: 131 bytes "
+                         + "exceeds the 107-byte cap";
+            wizard.flow.reset();
+            fake.pathsProblem = sentence;
+            wizard.flow.runPreflight();
+            compare(wizard.flow.preflightDone, true, "precondition");
+            compare(wizard.flow.gitFound, true, "precondition: git passed");
+
+            compare(harness.outcomeOf("findingHome"), sentence,
+                    "the backend's sentence must be displayed verbatim");
+            var home = harness.findByName(wizard, "findingHome");
+            verify(home !== null && home.failed === true,
+                   "and the paths finding must be displayed as failed");
+            var git = harness.findByName(wizard, "findingGit");
+            verify(git !== null && git.failed === false,
+                   "while the git finding is not");
+
+            wizard.flow.reset();
+            fake.pathsProblem = "";
+            wizard.flow.runPreflight();
+            verify(home.failed === false,
+                   "control: over a home that resolves the finding passes");
+            verify(harness.outcomeOf("findingHome").indexOf(sentence) === -1,
+                   "and the sentence is gone, got: "
+                   + harness.outcomeOf("findingHome"));
+        }
+
+        /// **A paths problem blocks the identity step, and the reason is
+        /// displayed.** The control is enabled or not as rendered, and the
+        /// sentence on screen is the home finding's — which is what makes it
+        /// name what is blocking rather than the step merely being greyed.
+        ///
+        /// The control leg fails git instead and nothing else: that blocks
+        /// nothing and displays no reason, so "blocked with a reason" is keyed
+        /// on the home finding rather than on any failure at all.
+        function test_a_paths_problem_blocks_the_identity_step_and_the_reason_is_displayed() {
+            var sentence = "the node control socket path is too long: 131 bytes "
+                         + "exceeds the 107-byte cap";
+            wizard.flow.reset();
+            fake.pathsProblem = sentence;
+            wizard.flow.runPreflight();
+            goTo("identity");
+
+            var btn = harness.findByName(wizard, "identityForward");
+            verify(btn !== null && btn.visible, "the forward control is rendered");
+            compare(btn.enabled, false, "and must not be enabled");
+
+            var why = harness.findByName(wizard, "identityBlocked");
+            verify(why !== null && why.visible,
+                   "the reason must be displayed rather than left as a "
+                   + "disabled control");
+            verify(String(why.text).indexOf(sentence) !== -1,
+                   "and must be the home finding's sentence, got: " + why.text);
+
+            wizard.flow.reset();
+            fake.pathsProblem = "";
+            fake.gitFound = false;
+            fake.gitProblem = "no git found, tried /usr/bin/git";
+            wizard.flow.runPreflight();
+            goTo("identity");
+            compare(btn.enabled, true,
+                    "control: a missing git blocks nothing on this step");
+            verify(!why.visible,
+                   "control: and no reason is displayed for it");
+        }
+
+        /// **An empty startable set changes nothing either.** The existing
+        /// test swaps one populated set for another; the empty array is the
+        /// value a component reading "not yet reported" differently from
+        /// "reported" would treat as its own case, and the step must not.
+        ///
+        /// The step's own text is asserted present first, so the absences below
+        /// are findings about a screen that rendered rather than about one the
+        /// walk could not see.
+        function test_an_empty_startable_set_changes_nothing_either() {
+            goTo("embedded");
+            var before = harness.visibleTextUnder(wizard);
+            verify(before.toLowerCase().indexOf("embedded means") !== -1,
+                   "precondition: the walk sees the embedded step's own text");
+
+            fake.startableModes = [];
+            wizard.flow.refreshCapabilities();
+
+            compare(harness.findByName(wizard, "modePick_explore"), null,
+                    "no control selecting explore may be present");
+            compare(harness.findByName(wizard, "modePick_local"), null,
+                    "no control selecting local may be present");
+            compare(harness.findByName(wizard, "modeUnavailable_embedded"), null,
+                    "and no mode may be annotated as unstartable");
+            var after = harness.visibleTextUnder(wizard);
+            verify(after.toLowerCase().indexOf("cannot start this mode") === -1,
+                   "no text may state that a mode cannot be started, got: "
+                   + after);
+            compare(after, before,
+                    "and what is displayed must be unchanged");
+        }
+
+        /// **Closing from the embedded step writes no mode**, and reports that
+        /// the user has given up. The control has not been invoked and the
+        /// backend reports `local`, so the only way a mode could be written is
+        /// by the close itself.
+        function test_closing_from_the_embedded_step_writes_no_mode() {
+            fake.mode = "local";
+            wizard.flow.reset();
+            wizard.flow.runPreflight();
+            goTo("embedded");
+            compare(wizard.flow.modeInForce, "local", "precondition");
+            fake.reset();
+
+            var reported = 0;
+            function record() { reported = reported + 1; }
+            wizard.closed.connect(record);
+
+            var close = harness.findByName(wizard, "wizardClose");
+            verify(close !== null && close.visible,
+                   "the close control must be offered on the embedded step");
+            close.clicked();
+
+            compare(reported, 1, "the flow must report that the user gave up");
+            for (var i = 0; i < fake.callLog.length; i++)
+                verify(String(fake.callLog[i]).indexOf("setSetting") !== 0,
+                       "closing must write no setting, got: "
+                       + JSON.stringify(fake.callLog));
+            compare(wizard.flow.modeInForce, "local",
+                    "and the mode in force is where it was");
+
+            wizard.closed.disconnect(record);
+        }
+
+        /// **Embedded in force is stated as in force**, on the rendered step,
+        /// and advancing from it writes nothing. The statement was asserted
+        /// nowhere before: deleting the `Text` left every other test green.
+        ///
+        /// The control leg is `local`, where the same item must not be shown.
+        function test_embedded_in_force_is_stated_and_advancing_writes_nothing() {
+            fake.mode = "embedded";
+            wizard.flow.reset();
+            wizard.flow.runPreflight();
+            goTo("embedded");
+
+            var stated = harness.findByName(wizard, "embeddedInForce");
+            verify(stated !== null && stated.visible,
+                   "the step must state that Embedded is in force");
+            var t = String(stated.text).toLowerCase();
+            verify(t.indexOf("embedded") !== -1 && t.indexOf("in force") !== -1,
+                   "naming Embedded and that it is in force, got: " + stated.text);
+
+            fake.reset();
+            verify(wizard.flow.advance(), "advancing is permitted");
+            for (var i = 0; i < fake.callLog.length; i++)
+                verify(String(fake.callLog[i]).indexOf("setSetting") !== 0,
+                       "advancing must write no setting, got: "
+                       + JSON.stringify(fake.callLog));
+
+            fake.mode = "local";
+            wizard.flow.reset();
+            wizard.flow.runPreflight();
+            goTo("embedded");
+            verify(!stated.visible,
+                   "control: over `local` the same statement is not shown");
+        }
+
+        /// **The rendered label follows an identity created in THIS showing.**
+        /// The test beside this one reaches the "continue" label through an
+        /// identity that was there on arrival; here the identity is made by the
+        /// button and the user returns to the step.
+        function test_the_rendered_label_follows_an_identity_created_in_this_showing() {
+            goTo("identity");
+            var btn = harness.findByName(wizard, "identityForward");
+            verify(String(btn.text).toLowerCase().indexOf("create") !== -1,
+                   "precondition: with none the button names creating one, got: "
+                   + btn.text);
+
+            btn.clicked();
+            wizard.flow.back();
+            compare(wizard.flow.step, "identity", "precondition");
+
+            var label = String(btn.text).toLowerCase();
+            verify(label.indexOf("create") === -1,
+                   "after creating, the button must not name creating, got: "
+                   + btn.text);
+            verify(label.indexOf("continue") !== -1,
+                   "and must name continuing, got: " + btn.text);
+        }
+
+        /// **A refusal returned to this showing is shown as a refusal**, and
+        /// the step does not also say the identity was created. The control
+        /// leg succeeds against the same screen, where the creation IS stated
+        /// and the refusal box is not.
+        function test_a_refusal_is_shown_as_a_refusal_and_not_as_a_creation() {
+            goTo("identity");
+            wizard.flow.createIdentity = function (a, p, cb) {
+                cb({ error: "a distinctive refusal for this showing" });
+            };
+            wizard.flow.submitIdentity("tester", "");
+
+            var box = harness.findByName(wizard, "wizardError");
+            verify(box !== null && box.visible, "the refusal must be on screen");
+            compare(harness.textOf("wizardErrorText"),
+                    "a distinctive refusal for this showing",
+                    "as the backend worded it");
+            var made = harness.findByName(wizard, "identityCreated");
+            verify(made === null || !made.visible,
+                   "and the step must not display that the identity was created");
+
+            wizard.flow.createIdentity = function (a, p, cb) { fake.create(a, p, cb); };
+            wizard.flow.submitIdentity("tester", "");
+            wizard.flow.back();
+            compare(wizard.flow.step, "identity", "precondition");
+            verify(made !== null && made.visible,
+                   "control: a creation that succeeded IS stated");
+            verify(!box.visible,
+                   "control: and the refusal is gone with it");
+        }
+
+        /// **An existing identity states no passphrase trade, anywhere on the
+        /// step.** The existing test asks the one `Text` that carries the trade;
+        /// this asks every visible string, so a copy of the statement moved
+        /// under another name — or another item — would still be found.
+        ///
+        /// The control walks the same step with no identity, where the trade IS
+        /// displayed, so the absence is not a walk that cannot see it.
+        function test_an_existing_identity_states_no_passphrase_trade_anywhere() {
+            fake.identityExists = true;
+            fake.nodeId = "did:key:z6MkWASHERE";
+            wizard.flow.reset();
+            wizard.flow.runPreflight();
+            goTo("identity");
+            compare(wizard.flow.identityState, "present", "precondition");
+
+            var shown = harness.visibleTextUnder(wizard).toLowerCase();
+            verify(shown.indexOf("already set up here") !== -1,
+                   "precondition: the walk sees this step's own text, got: "
+                   + shown);
+            verify(shown.indexOf("unlocked") === -1,
+                   "the node must not be said to need unlocking each start, "
+                   + "got: " + shown);
+            verify(shown.indexOf("plaintext") === -1,
+                   "nor the other half of the trade, got: " + shown);
+
+            fake.identityExists = false;
+            fake.nodeId = "";
+            wizard.flow.reset();
+            wizard.flow.runPreflight();
+            goTo("identity");
+            var none = harness.visibleTextUnder(wizard).toLowerCase();
+            verify(none.indexOf("unlocked") !== -1,
+                   "control: with no identity the same walk finds the trade");
         }
     }
 }

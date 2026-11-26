@@ -1,0 +1,157 @@
+## MODIFIED Requirements
+
+### Requirement: Seeding is a policy, not a question about stored repositories
+
+The module MUST expose seeding through `listSeeded`, `seedRepo` and
+`unseedRepo`, and these MUST report and change the node's **seeding policy**:
+what this node will replicate, which is a different question from what local
+storage holds.
+
+`listSeeded` MUST report policies. It MUST NOT be implemented by filtering
+storage, and MUST NOT omit a seeded RID merely because nothing has replicated
+for it yet.
+
+#### Scenario: A newly seeded RID is listed before anything replicates
+
+- **WHEN** `seedRepo` succeeds for an RID that is not in local storage
+- **THEN** `listSeeded` MUST include that RID
+- **AND** `localListRepos` with scope `seeded` MUST NOT include it
+
+#### Scenario: The two surfaces are not derived from one another
+
+- **WHEN** a repository is present in local storage with no seeding policy for
+  it
+- **THEN** `listSeeded` MUST NOT include that RID
+- **AND** `localListRepos` with scope `all` MUST include it
+
+### Requirement: Seeding takes a scope and the scope is reported back
+
+`seedRepo(rid, scope)` MUST accept a scope of `all` or `followed`, and MUST
+refuse any other value with `{"error":"..."}` naming both. `listSeeded` MUST
+report each entry's scope alongside its RID, as
+`{"items":[{"rid":"...","scope":"all"|"followed"}]}`.
+
+The scope MUST NOT be defaulted silently: `all` seeds every remote, `followed`
+only delegates and explicitly followed nodes. Seeding an RID already seeded
+with a different scope MUST replace the scope rather than add a second entry.
+
+#### Scenario: Both scopes are accepted and reported back
+
+- **WHEN** `seedRepo` is called for one RID with scope `all` and for another
+  with scope `followed`
+- **THEN** neither reply MUST be an error
+- **AND** `listSeeded` MUST report the first RID with scope `all` and the
+  second with scope `followed`
+
+#### Scenario: A scope the module does not know is refused
+
+- **WHEN** `seedRepo` is called with scope `everything`
+- **THEN** the reply MUST be `{"error":"..."}`
+- **AND** the message MUST contain `all` and `followed`
+- **AND** `listSeeded` MUST NOT include that RID
+
+#### Scenario: Re-seeding with a different scope replaces the scope
+
+- **WHEN** `seedRepo` succeeds for an RID with scope `followed`
+- **AND** `seedRepo` is then called for the same RID with scope `all`
+- **THEN** `listSeeded` MUST report that RID exactly once
+- **AND** its scope MUST be `all`
+
+### Requirement: Seeding acts on the mode's own node and takes no home
+
+The three methods MUST NOT accept a Radicle home as a parameter, and each MUST
+act on the home the mode in force resolved.
+
+In `explore`, which resolves no home, all three MUST return `{"error":"..."}`
+naming the mode. In `local`, `listSeeded` MUST succeed, while `seedRepo` and
+`unseedRepo` MUST refuse, naming the mode, and MUST write nothing.
+
+#### Scenario: No method takes a home
+
+- **WHEN** a caller invokes any of the three across the module boundary
+- **THEN** the method signature MUST expose no home argument
+
+#### Scenario: Explore has no node to seed on
+
+- **WHEN** the mode is `explore` and `seedRepo` is called
+- **THEN** the reply MUST be `{"error":"..."}`
+- **AND** the message MUST name the mode
+
+#### Scenario: Local is readable but not writable
+
+- **WHEN** the mode is `local` against a home whose policy store seeds
+  `rad:z3gqcJUoA1n9HaHKufZs5FCSGazv5` with scope `followed`, and seeds nothing
+  else
+- **AND** the home `embedded` would resolve holds no policy store
+- **THEN** `listSeeded` MUST NOT return an error
+- **AND** its `items` MUST be exactly one entry, with `rid`
+  `rad:z3gqcJUoA1n9HaHKufZs5FCSGazv5` and `scope` `followed`
+- **AND WHEN** `seedRepo` is called for `rad:z2rHiZ6dDxcRSeYB1nT3FMc4qFcDR` with
+  scope `all`, and `unseedRepo` is called for
+  `rad:z3gqcJUoA1n9HaHKufZs5FCSGazv5`
+- **THEN** each reply MUST be `{"error":"..."}`
+- **AND** each message MUST contain `local`
+- **AND** a subsequent `listSeeded` reply's `items` MUST still be exactly that
+  one entry, with `rid` `rad:z3gqcJUoA1n9HaHKufZs5FCSGazv5` and `scope`
+  `followed`
+
+#### Scenario: Embedded seeds its own node
+
+- **WHEN** the mode is `embedded` with an identity created in its home, and
+  `seedRepo` succeeds for an RID
+- **THEN** `listSeeded` MUST include that RID
+- **AND** the policy store under the embedded home MUST hold it
+- **AND** no policy store under the home `local` would have resolved MUST have
+  been created or changed
+
+#### Scenario: Two homes yield two different policy sets
+
+- **WHEN** an RID is seeded against one home and a different RID against
+  another, where neither path is a prefix of the other
+- **THEN** each home's `listSeeded` MUST report its own RID
+- **AND** neither MUST report the other's, so the two are distinguishable by
+  their answer alone rather than only by their paths
+
+### Requirement: The allow-is-not-enough consequence is stated where it applies
+
+A view offering the seeding surface MUST state, wherever it presents a
+repository as not replicating, that a delegate allow-listing this node's DID
+does not make the repository replicate on its own: this node must also seed its
+RID, and a private repository requires the scope `all`.
+
+A view MUST NOT present a seeded RID with scope `followed` as sufficient for a
+private repository.
+
+#### Scenario: The seeding view states both halves
+
+- **WHEN** a view offers the seeding surface
+- **THEN** it MUST display text stating that a delegate allow-listing this
+  node's DID is not sufficient on its own
+- **AND** that text MUST state that this node must also seed the repository
+
+#### Scenario: A private repository's requirement names the scope
+
+- **WHEN** a view offers a scope choice for a repository it presents as private
+- **THEN** it MUST display text stating that scope `all` is required
+
+### Requirement: Every failure crosses the boundary as JSON
+
+None of the three methods may propagate a panic or an unwind across the FFI
+boundary. Every call MUST return a well-formed JSON string: either the
+documented success shape or `{"error":"..."}`.
+
+A policy store that cannot be opened MUST come back as an error naming the
+problem, rather than as a crash, an empty string or an empty list.
+
+#### Scenario: An unopenable policy store is an error, not an empty list
+
+- **WHEN** the policy store under the resolved home cannot be opened
+- **THEN** `listSeeded` MUST return a reply carrying a string `error` field
+- **AND** it MUST NOT return an items array
+
+#### Scenario: A null argument answers with an error object
+
+- **WHEN** the seeding backend is invoked across the FFI boundary with a null
+  home pointer
+- **THEN** the call MUST return a non-null, parseable JSON string
+- **AND** it MUST carry a string `error` field

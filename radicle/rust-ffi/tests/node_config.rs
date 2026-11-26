@@ -266,6 +266,123 @@ fn static_with_nobody_to_connect_to_is_refused_but_both_in_one_call_is_not() {
 }
 
 #[test]
+fn dynamic_with_nobody_to_connect_to_is_accepted() {
+    // The other half of the peer discipline, and the one the test above cannot
+    // see: a check that refused *any* `peers` write over an empty `connect`
+    // would pass it (`static` alone refused, `static` with addresses accepted)
+    // while refusing a perfectly good configuration. `dynamic` needs nobody to
+    // connect to — it finds peers itself — so an empty `connect` is its
+    // ordinary state.
+    let f = init_profile("nodeconfig-dynamic-peers");
+    let home = f.home();
+
+    let with_id = "z6MkrLMMsiPWUcNPHcRajuMi9mDfYckSoJyPwwnknocNYPm7@seed.example.test:8776";
+
+    // Move away from the default first, so that "dynamic" below is a change the
+    // read-back can show rather than the value the profile started with.
+    let to_static = set(
+        &home,
+        serde_json::json!({ "peers": "static", "connect": [with_id] }),
+    );
+    assert!(to_static.get("error").is_none(), "{to_static}");
+    assert_eq!(get(&home)["peers"], serde_json::json!("static"));
+
+    // `dynamic` together with an emptied `connect`: nobody to connect to, and
+    // that must not be an error.
+    let reply = set(
+        &home,
+        serde_json::json!({ "peers": "dynamic", "connect": [] }),
+    );
+    assert!(reply.get("error").is_none(), "{reply}");
+
+    let read_back = get(&home);
+    assert_eq!(read_back["peers"], serde_json::json!("dynamic"));
+    assert_eq!(read_back["connect"], serde_json::json!([]));
+
+    // And `dynamic` named alone, against a configuration whose `connect` is
+    // already empty — the scenario's own shape.
+    let alone = set(&home, serde_json::json!({ "peers": "dynamic" }));
+    assert!(alone.get("error").is_none(), "{alone}");
+    assert_eq!(get(&home)["peers"], serde_json::json!("dynamic"));
+}
+
+#[test]
+fn two_fields_set_at_once_are_both_reported_back_and_the_rest_hold_their_values() {
+    let f = init_profile("nodeconfig-two-fields");
+    let home = f.home();
+
+    let with_id = "z6MkrLMMsiPWUcNPHcRajuMi9mDfYckSoJyPwwnknocNYPm7@seed.example.test:8776";
+
+    // NON-default values in the three fields the next call will not name. A
+    // write that reset unnamed fields to their defaults would be invisible
+    // against `[]`, `[]` and `dynamic`, which is what a fresh profile holds.
+    let seeded = set(
+        &home,
+        serde_json::json!({
+            "listen": ["0.0.0.0:8776"],
+            "connect": [with_id],
+            "peers": "static",
+        }),
+    );
+    assert!(seeded.get("error").is_none(), "{seeded}");
+
+    let reply = set(
+        &home,
+        serde_json::json!({
+            "alias": "two-fields",
+            "externalAddresses": ["node.example.test:8776"],
+        }),
+    );
+    assert!(reply.get("error").is_none(), "{reply}");
+
+    // Both named fields carry what was submitted...
+    assert_eq!(reply["alias"], serde_json::json!("two-fields"));
+    assert_eq!(
+        reply["externalAddresses"],
+        serde_json::json!(["node.example.test:8776"])
+    );
+    // ...and the three that were not named hold what they held before.
+    assert_eq!(reply["listen"], serde_json::json!(["0.0.0.0:8776"]));
+    assert_eq!(reply["connect"], serde_json::json!([with_id]));
+    assert_eq!(reply["peers"], serde_json::json!("static"));
+
+    // The reply is not merely an echo: a fresh read agrees with it.
+    let read_back = get(&home);
+    assert_eq!(read_back["alias"], serde_json::json!("two-fields"));
+    assert_eq!(read_back["listen"], serde_json::json!(["0.0.0.0:8776"]));
+    assert_eq!(read_back["peers"], serde_json::json!("static"));
+}
+
+#[test]
+fn a_derived_member_cannot_be_written_and_the_refusal_names_it() {
+    // Through the real entry point and a real file, for both derived members.
+    // The unit test beside `nodeconfig.rs` covers `restartRequired` in
+    // isolation; `inboundReachable` had no test at all, and a caller handing a
+    // `getNodeConfig` reply straight back hits it first.
+    let f = init_profile("nodeconfig-derived-refused");
+    let home = f.home();
+
+    let before = std::fs::read(config_path(&home)).expect("read before");
+
+    for key in ["inboundReachable", "restartRequired"] {
+        let mut changes = serde_json::Map::new();
+        changes.insert(key.to_string(), serde_json::json!(true));
+        let reply = set(&home, serde_json::Value::Object(changes));
+
+        let message = reply["error"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{key} must be refused, got: {reply}"));
+        assert!(
+            message.contains(key),
+            "the refusal must name {key}, got: {message}"
+        );
+    }
+
+    let after = std::fs::read(config_path(&home)).expect("read after");
+    assert_eq!(before, after, "a refused write must not touch the file");
+}
+
+#[test]
 fn a_home_with_no_configuration_is_reported_as_such_and_none_is_created() {
     let dir = fixture::scratch_dir("nodeconfig-no-config");
     let home = dir.join("home");

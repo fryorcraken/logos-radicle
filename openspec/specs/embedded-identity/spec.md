@@ -14,10 +14,6 @@ does not own.
 NOT accept a Radicle home as a parameter. Both MUST resolve the embedded home
 themselves, from the module's data directory alone.
 
-This is a safety property, not a convenience. A home parameter crosses the
-QtRO boundary from a sandboxed view, and would be a way for a caller to point
-key creation at the user's own `~/.radicle`.
-
 The embedded home MUST be derived from `XDG_DATA_HOME`, falling back to
 `$HOME/.local/share` when `XDG_DATA_HOME` is unset. The derivation MUST NOT
 consult `RAD_HOME`, and MUST NOT consult `$HOME/.radicle`.
@@ -48,55 +44,14 @@ consult `RAD_HOME`, and MUST NOT consult `$HOME/.radicle`.
 
 ### Requirement: Reporting what the embedded home holds
 
-`getEmbeddedIdentity()` MUST report the state of the embedded home without
-creating, modifying or deleting anything in it.
-
-On success it MUST return
+`getEmbeddedIdentity()` MUST report the embedded home without creating,
+modifying or deleting anything in it, as
 `{"home":"<path>","exists":bool,"nodeId":"<did>","encrypted":bool,"problem":""}`.
 
-`exists` MUST be true only when the home holds a **complete** identity —
-`keys/radicle.pub` and `config.json` both present. `nodeId` MUST be the DID
-form (`did:key:z6Mk…`), read from the public half of the keystore, and MUST be
-`""` whenever `exists` is false.
-
-`encrypted` MUST report whether the identity's signing key is sealed with a
-passphrase, **observed from the key on disk** rather than echoed from an
-argument. It MUST be false whenever `exists` is false, because there is no key
-to describe.
-
-This field exists because **it is the only way a later session can learn whether
-starting the node needs a passphrase.** The node is handed an already-decrypted
-signing key when it is built, so a passphrase must be supplied at start or not
-at all; but the only other reply carrying an `encrypted` field is
-`createEmbeddedIdentity`'s, which by definition no later session has, and which
-computes the value from the passphrase argument rather than from what landed on
-disk. Without this field a surface offering to start an existing node can
-neither know to prompt nor know it may skip prompting — so it must either prompt
-always, which is wrong for an unencrypted key, or attempt a start and read the
-failure, which is a destructive probe rather than a question.
-
-`getCapabilities().canWriteLocal` MUST NOT be treated as a substitute for it.
-That field probes the home of the **mode in force**, so it says nothing about
-the embedded home from any other mode, and it conflates an encrypted key with a
-missing key, an unreadable one and several other causes — a caller cannot
-recover "encrypted" from it without matching on prose. `getEmbeddedIdentity()`
-always reads the embedded home whatever mode is in force, which is what makes it
-the right reply to carry this.
-
-Determining `encrypted` MUST NOT require a passphrase, an ssh-agent, or any
-attempt to load or use the private key: it is a property of the stored key that
-is readable without unlocking it. Reporting it MUST NOT unseal, rewrite or
-otherwise alter the key.
-
-When the key cannot be read at all, `encrypted` MUST be false and `problem` MUST
-be non-empty rather than the field reporting a guess — an unreadable key is not
-an unencrypted one, and the two MUST NOT be reported alike.
-
-When no data directory can be resolved — neither `XDG_DATA_HOME` nor `HOME` is
-set — the method MUST return `home:""`, `exists:false`, `nodeId:""`,
-`encrypted:false` and a non-empty `problem`. It MUST NOT return an
-`{"error":"..."}` object: the question was answered, and a caller must render a
-blocked state rather than a failed call it might retry.
+`exists` MUST be true only when `keys/radicle.pub` and `config.json` are both
+present. `nodeId` MUST be the DID form, read from the public key, and `""`
+when `exists` is false. `encrypted` MUST report whether the signing key on disk
+is sealed with a passphrase, and MUST be false when `exists` is false.
 
 #### Scenario: No identity yet is the ordinary state
 
@@ -149,23 +104,15 @@ blocked state rather than a failed call it might retry.
 
 ### Requirement: Three home states, not two
 
-The classification of an embedded home MUST distinguish three states rather
-than two:
+The classification of an embedded home MUST distinguish three states:
 
-- **Empty** — no `keys/radicle.pub`, whether or not the directory itself
-  exists. Safe to create into.
-- **Complete** — `keys/radicle.pub` and `config.json` both present. Creating
-  here would destroy a real identity.
+- **Empty** — no `keys/radicle.pub`, whether or not the directory exists.
+- **Complete** — `keys/radicle.pub` and `config.json` both present.
 - **Partial** — `keys/radicle.pub` present, `config.json` absent.
-  Initialisation did not finish; no usable identity exists here.
 
-`config.json` MUST be the completeness marker. `storage/` MUST NOT be used as
-that marker: the directory tree, `storage/` included, is created before any key
-is written, so a home in the Partial state holds `storage/` too.
-
-A Partial home MUST classify as "no complete identity" — that is, it reports
-`exists:false` — because creating into it is a recovery rather than a
-destructive act.
+`config.json` MUST be the completeness marker, and `storage/` MUST NOT be: it
+is created before any key is written. A Partial home MUST report
+`exists:false`.
 
 #### Scenario: An existing but empty directory is not a profile
 
@@ -184,21 +131,14 @@ destructive act.
 
 ### Requirement: An occupied home is refused and never overwritten
 
-`createEmbeddedIdentity(alias, passphrase)` MUST refuse when the embedded home
-is in the Complete state, and MUST leave the existing key material byte-for-byte
-unchanged.
+`createEmbeddedIdentity(alias, passphrase)` MUST refuse a Complete home, leave
+its key material byte-for-byte unchanged, and offer no `force` parameter or
+other way to overwrite an identity.
 
-There MUST NOT be a `force` parameter or any other caller-supplied way to
-overwrite an existing identity. The signing key *is* the identity: replacing it
-is unrecoverable, and every repository delegating to it becomes unreachable.
-
-The refusal MUST come back as `{"error":"..."}` whose message names the home
-that was in the way and states the consequence — that creating another would
-overwrite a signing key that cannot be recovered — rather than describing a
-keystore file.
-
-The refusal MUST happen before the home directory tree is created or modified,
-so a refused call leaves the filesystem exactly as it found it.
+The refusal MUST be `{"error":"..."}` naming the home that was in the way and
+stating that creating another would overwrite a signing key that cannot be
+recovered. It MUST happen before the home's directory tree is created or
+modified.
 
 #### Scenario: A second creation is refused and the first identity survives
 
@@ -220,19 +160,13 @@ so a refused call leaves the filesystem exactly as it found it.
 
 ### Requirement: A half-created home is reported as recoverable, not occupied
 
-`createEmbeddedIdentity` MUST refuse a home in the Partial state with a message
-distinct from the occupied-home refusal.
+`createEmbeddedIdentity` MUST refuse a Partial home with a message distinct from
+the occupied-home refusal. It MUST describe the home as half-created, MUST state
+that nothing has ever signed with the key material present, MUST name the `keys`
+directory as the path to remove, and MUST NOT claim a signing key is at stake.
 
-That message MUST describe the home as half-created, MUST state that nothing
-has ever signed with the key material present, and MUST name the `keys`
-directory as the path to remove. It MUST NOT claim a signing key is at stake:
-that claim is both false and unactionable for a stub left by a failed run.
-
-The Partial state MUST be reported rather than repaired. The module MUST NOT
-delete key material automatically, because a misclassification would then cost
-an identity — the one failure here with no recovery.
-
-Removing the named path MUST make creation succeed.
+The module MUST NOT delete key material automatically. Removing the named path
+MUST make creation succeed.
 
 #### Scenario: The half-created refusal differs from the occupied refusal
 
@@ -281,14 +215,10 @@ distinguish this from a shared fixed seed.
 A successful `createEmbeddedIdentity` MUST return
 `{"created":true,"nodeId":"did:key:z6Mk…","home":"<path>","alias":"<alias>","encrypted":bool}`.
 
-`home` MUST be the embedded home the module derived. `nodeId` MUST be the DID
-spelling, matching the spelling `getCapabilities().nodeId` reports, so a caller
-can compare the two without normalising between forms.
-
-The reported `nodeId` MUST be the identity actually written to the keystore: an
-independent read of `keys/radicle.pub` MUST yield the same value.
-
-The created profile MUST be openable by the module's existing local read path.
+`home` MUST be the embedded home the module derived, and `nodeId` MUST be
+spelled as `getCapabilities().nodeId` spells it. An independent read of
+`keys/radicle.pub` MUST yield the reported `nodeId`. The created profile MUST be
+openable by the module's existing local read path.
 
 #### Scenario: The reported identity is the one on disk
 
@@ -305,31 +235,14 @@ The created profile MUST be openable by the module's existing local read path.
 
 ### Requirement: The passphrase decides whether the profile can sign
 
-`createEmbeddedIdentity` MUST treat an empty `passphrase` as "no passphrase"
-and write the signing key **unencrypted**, matching `ssh-keygen` and the
-`radicle` crate's own passphrase handling. A non-empty `passphrase` MUST
-encrypt the key.
+`createEmbeddedIdentity` MUST treat an empty `passphrase` as no passphrase and
+write the signing key unencrypted; a non-empty one MUST encrypt it. The reply's
+`encrypted` MUST agree with the key on disk.
 
-The reply MUST report `encrypted`, and it MUST agree with whether the key on
-disk is encrypted.
-
-As shipped, `encrypted` is computed from the input (`!passphrase.is_empty()`)
-and the same value selects the passphrase passed to `Profile::init`, so the
-two cannot disagree in this code — but the field is not an observation of what
-was written. A future change that made key creation fall back to an
-unencrypted key on any path would satisfy the letter of this requirement while
-reporting `encrypted: true` over an unencrypted key. What closes that is the
-signability requirement below, which is checked against the key rather than
-against the input; an earlier draft of this requirement asserted the field was
-"derived from what was done", which the code does not do.
-
-An unencrypted key MUST be immediately signable: the module's write path MUST
-be able to load a signer with no prompt. An encrypted key MUST NOT be signable
-until it is unlocked — with no passphrase supplied through the environment and
-no agent holding the key, a write probe MUST report that it cannot write.
-
-Reads MUST NOT require the passphrase: only `keys/radicle.pub` is read, so the
-identity MUST remain visible while the key is locked.
+An unencrypted key MUST be signable at once, with no prompt. An encrypted key
+MUST NOT be: with no passphrase in the environment and no agent holding it, a
+write probe MUST report that it cannot write. Reads MUST NOT require the
+passphrase: the identity MUST stay visible while the key is locked.
 
 #### Scenario: An empty passphrase yields an immediately signable profile
 
@@ -402,19 +315,13 @@ report it as an error: the caller asked for a write that did not happen.
 
 ### Requirement: Creation does not change the mode, and repoints only in Embedded
 
-`createEmbeddedIdentity` MUST succeed regardless of which mode is in force.
+`createEmbeddedIdentity` MUST succeed whichever mode is in force, and MUST NOT
+change the persisted mode.
 
-It MUST NOT change the persisted mode. Choosing a mode is the user's decision,
-made through the settings; switching it as a side effect of creating an
-identity would move the whole view underneath someone setting an embedded node
-up for later.
-
-When `embedded` IS the mode in force, a successful creation MUST repoint this
-instance's local store at the new identity without requiring a restart, and
-MUST announce the changed capabilities so a view re-renders.
-
-When any other mode is in force, a successful creation MUST NOT repoint the
-local store: the module MUST go on reading the home that mode resolved.
+When `embedded` is the mode in force, a successful creation MUST repoint this
+instance's local store at the new identity without a restart, and MUST announce
+the changed capabilities. When any other mode is in force it MUST NOT repoint
+the local store: the module MUST go on reading the home that mode resolved.
 
 #### Scenario: In Embedded, the new identity is readable at once
 
@@ -437,19 +344,13 @@ local store: the module MUST go on reading the home that mode resolved.
 ### Requirement: The embedded identity is a new one and must be stated as such
 
 The identity `createEmbeddedIdentity` creates MUST be a new DID, distinct from
-any identity the user already holds. It is not, and cannot be, the user's
-existing DID: their repositories are not in this storage and their allow-listed
-DID is not this one.
+any the user already holds, and the reply MUST carry its `nodeId`. A view MUST
+state that it is a separate identity.
 
-The reply MUST carry `nodeId` so a confirmation step can show the user the DID
-they need to authorise elsewhere.
-
-A view MUST state that this is a separate identity rather than let the user
-discover it as missing repositories. Where the module explains why writes are
-unavailable in Embedded before an identity exists, that explanation MUST name
-the embedded home and MUST say that it is a separate identity from any Radicle
-node already running. It MUST NOT advise running `rad auth`, which is advice
-for a mode the user did not pick.
+Where the module explains why writes are unavailable in Embedded before an
+identity exists, the explanation MUST name the embedded home, MUST say it is a
+separate identity from any Radicle node already running, and MUST NOT advise
+running `rad auth`.
 
 #### Scenario: The absent-identity explanation fits Embedded, not Local
 
@@ -493,3 +394,61 @@ home depending on how the module was started.
   be absolute
 - **AND** no directory at that relative path MUST exist under the process's
   working directory afterwards
+
+### Requirement: Reporting encryption leaves the key untouched
+
+Determining `encrypted` MUST NOT require a passphrase, an ssh-agent, or any
+attempt to load or use the private key. Reporting it MUST NOT unseal, rewrite
+or otherwise alter the key.
+
+#### Scenario: A report leaves the sealed key as it was
+
+- **GIVEN** an embedded home holding an identity created with the passphrase
+  `correct horse battery`
+- **WHEN** `getEmbeddedIdentity()` is called
+- **THEN** every file under that home's `keys` directory MUST be byte-for-byte
+  what it was before the call
+- **AND** the reply MUST report `encrypted:true`
+
+### Requirement: An unreadable key is not reported as unencrypted
+
+When the signing key cannot be read, `getEmbeddedIdentity()` MUST report
+`encrypted:false` with a non-empty `problem`, so that an unreadable key and an
+unencrypted one are never reported alike.
+
+#### Scenario: An unreadable key carries a problem
+
+- **GIVEN** an embedded home holding a complete identity whose private key file
+  exists but cannot be read by the module
+- **WHEN** `getEmbeddedIdentity()` is called
+- **THEN** `encrypted` MUST be false
+- **AND** `problem` MUST be non-empty
+- **AND WHEN** the same home's key is readable and unencrypted
+- **THEN** `encrypted` MUST be false
+- **AND** `problem` MUST be `""`
+
+### Requirement: No data directory is an answer, not an error
+
+When neither `XDG_DATA_HOME` nor `HOME` is set, `getEmbeddedIdentity()` MUST
+return `home:""`, `exists:false`, `nodeId:""`, `encrypted:false` and a non-empty
+`problem`. It MUST NOT return an `{"error":"..."}` object.
+
+#### Scenario: No data directory still reports every field
+
+- **WHEN** neither `XDG_DATA_HOME` nor `HOME` is set
+- **THEN** `getEmbeddedIdentity()` MUST return `nodeId` as `""`
+- **AND** the reply MUST contain each of `home`, `exists`, `nodeId`,
+  `encrypted` and `problem`
+
+### Requirement: canWriteLocal is not a substitute for the encrypted field
+
+`getCapabilities().canWriteLocal` MUST NOT be treated as a substitute for
+`getEmbeddedIdentity().encrypted`.
+
+#### Scenario: A key that cannot sign is not taken for an encrypted one
+
+- **GIVEN** a repository list in `embedded` told `exists:true` with
+  `encrypted:false`, a node reporting `running:false` and `serving:false`, and
+  capabilities reporting `canWriteLocal:false`
+- **THEN** a `startNode` call with an empty passphrase MUST have been issued
+- **AND** no field for a passphrase MUST be present
