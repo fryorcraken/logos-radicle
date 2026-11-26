@@ -104,11 +104,9 @@ public:
     /// re-renders from one reply and cannot show a stale view of the rest.
     ///
     /// **Changes only the member `key` names.** Every other member of the file
-    /// keeps its JSON value, including ones this build cannot use (a newer
-    /// build's mode or key, a non-string value), and nothing else is added, so
-    /// a newer build's settings survive this build's writes. A file that is
-    /// absent, unreadable or not a JSON object is replaced by one holding only
-    /// `key`. A refusal writes nothing.
+    /// keeps its JSON value, including ones this build cannot use, and nothing
+    /// is added; the body says why, and what happens to a file it cannot read.
+    /// A refusal writes nothing.
     ///
     /// The reply is NOT the file: it is the normalised view `all()` reports
     /// next, the five keys with an uninterpretable mode as `explore`.
@@ -176,7 +174,7 @@ private:
     /// The settings file's JSON object exactly as it is on disk, members this
     /// build does not know included. An empty object when there is no path, no
     /// file, a file that cannot be read, or one that does not parse as an
-    /// object: all four hold no setting this store can use.
+    /// object.
     nlohmann::json readStored() const;
 
     /// What the store reports for `stored`: the five keys, a default for each

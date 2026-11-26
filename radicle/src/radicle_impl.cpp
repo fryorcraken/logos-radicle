@@ -97,7 +97,7 @@ namespace {
 /// not been taught about is by definition one whose intended behaviour is
 /// unknown, and the only safe guess about a node identity is not to claim one.
 ///
-/// `SettingsStore::load()` also refuses to hand out an unknown mode at all, so
+/// `SettingsStore::normalised()` also refuses to hand out an unknown mode at all, so
 /// in practice this branch is reached only by a KNOWN mode that a future change
 /// adds to `settings_store.h` and forgets to add here. Both halves are wanted:
 /// the store stops the corrupt-file case, and this stops the forgetful-edit

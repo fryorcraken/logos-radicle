@@ -87,6 +87,24 @@ bool authorityCarriesUserinfo(const std::string& url)
     return authority.find('@') != std::string::npos;
 }
 
+/// The five keys this store knows, stated once: `normalised()` builds its
+/// defaults from this list and `set()` refuses any key not on it, so a sixth
+/// key is one line here and both agree about it.
+constexpr const char* kKnownKeys[] = {
+    SettingsStore::kKeyMode,
+    SettingsStore::kKeyRadHome,
+    SettingsStore::kKeyRadSocket,
+    SettingsStore::kKeyGitPath,
+    SettingsStore::kKeyRemoteSeed,
+};
+
+bool isKnownKey(const std::string& key)
+{
+    for (const char* known : kKnownKeys)
+        if (key == known) return true;
+    return false;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -199,47 +217,44 @@ nlohmann::json SettingsStore::load() const
 
 nlohmann::json SettingsStore::normalised(const nlohmann::json& stored)
 {
-    nlohmann::json defaults{
-        // **Explore, because the default is what a user with NO settings file
-        // gets, and that is overwhelmingly a first run.**
-        //
-        // This was `local`, on the argument that it preserved what the module
-        // did before modes existed — read whatever Radicle home the environment
-        // names — so an existing user would not find the module behaving
-        // differently. That argument is about a user who ALREADY has a working
-        // profile, and it answers the wrong question: nobody who used a
-        // pre-settings build HAS a settings file, so every reader of this
-        // default is a fresh start, and a fresh start may have no Radicle home
-        // at all.
-        //
-        // In `local` with no profile the module can show nothing. The UI
-        // derives its method prefix from the mode, so `localListRepos` is the
-        // only list call it will issue; that returns the "no local profile"
-        // error, the repository list stays empty, and the seed is never asked.
-        // A first-run user sees an empty app and no way to tell it apart from a
-        // node with no repositories.
-        //
-        // Not hypothetical: every seed-browsing end-to-end spec runs under a
-        // throwaway `$HOME` with no profile, and all of them broke at once when
-        // the `local` default landed.
-        //
-        // The continuity that was being protected costs exactly one click, once
-        // — picking Local persists, so a user with a node clicks it on first
-        // launch and never again. Weighed against a first-run user who cannot
-        // reach anything at all, that is not close.
-        //
-        // This also makes the file self-consistent: the fallback below sends an
-        // uninterpretable stored mode to Explore too. Two different questions —
-        // "what should a NEW user get" and "what should a user whose stored
-        // choice is unreadable get" — that happen to have the same answer, for
-        // different reasons. `the_default_and_the_unknown_mode_fallback_agree`
-        // pins the coincidence so a future change to either is deliberate.
-        {kKeyMode,       kModeExplore},
-        {kKeyRadHome,    ""},
-        {kKeyRadSocket,  ""},
-        {kKeyGitPath,    ""},
-        {kKeyRemoteSeed, ""},
-    };
+    nlohmann::json defaults = nlohmann::json::object();
+    for (const char* key : kKnownKeys) defaults[key] = "";
+
+    // **The default mode is Explore, because the default is what a user with
+    // NO settings file gets, and that is overwhelmingly a first run.**
+    //
+    // This was `local`, on the argument that it preserved what the module
+    // did before modes existed — read whatever Radicle home the environment
+    // names — so an existing user would not find the module behaving
+    // differently. That argument is about a user who ALREADY has a working
+    // profile, and it answers the wrong question: nobody who used a
+    // pre-settings build HAS a settings file, so every reader of this
+    // default is a fresh start, and a fresh start may have no Radicle home
+    // at all.
+    //
+    // In `local` with no profile the module can show nothing. The UI
+    // derives its method prefix from the mode, so `localListRepos` is the
+    // only list call it will issue; that returns the "no local profile"
+    // error, the repository list stays empty, and the seed is never asked.
+    // A first-run user sees an empty app and no way to tell it apart from a
+    // node with no repositories.
+    //
+    // Not hypothetical: every seed-browsing end-to-end spec runs under a
+    // throwaway `$HOME` with no profile, and all of them broke at once when
+    // the `local` default landed.
+    //
+    // The continuity that was being protected costs exactly one click, once
+    // — picking Local persists, so a user with a node clicks it on first
+    // launch and never again. Weighed against a first-run user who cannot
+    // reach anything at all, that is not close.
+    //
+    // This also makes the file self-consistent: the fallback below sends an
+    // uninterpretable stored mode to Explore too. Two different questions —
+    // "what should a NEW user get" and "what should a user whose stored
+    // choice is unreadable get" — that happen to have the same answer, for
+    // different reasons. `the_default_and_the_unknown_mode_fallback_agree`
+    // pins the coincidence so a future change to either is deliberate.
+    defaults[kKeyMode] = kModeExplore;
 
     for (const auto& [key, value] : stored.items()) {
         if (defaults.contains(key) && value.is_string()) defaults[key] = value;
@@ -368,26 +383,10 @@ std::string SettingsStore::get(const std::string& key) const
 
 nlohmann::json SettingsStore::set(const std::string& key, const std::string& value)
 {
-    // The file as it is, not as a read reports it. Saving the normalised view
-    // instead is what this function used to do, and it lost, on the first
-    // write after a newer build or a hand edit, every member that view leaves
-    // out: a mode this build cannot interpret (saved as `explore`), every key
-    // it does not know, and any known key holding a non-string value. The read
-    // side promises an uninterpretable mode stays as it was found; a write
-    // that rewrote it would break that promise one click later.
-    //
-    // A file that is absent, unreadable or not a JSON object reads as an empty
-    // object, so the write replaces it with the one key written rather than
-    // refusing: the write is the user's way out of a file this build cannot
-    // read. Nothing else is added — defaults written out would read, to a
-    // later build, as choices the user made.
-    auto stored = readStored();
-
     // An unknown key is refused rather than stored. Silently accepting one
     // gives the user a setting that appears saved and does nothing, which is
-    // strictly worse than being told the name is wrong. Judged against the
-    // normalised view, whose keys are exactly the five this store knows.
-    if (!normalised(stored).contains(key))
+    // strictly worse than being told the name is wrong.
+    if (!isKnownKey(key))
         return makeError("unknown setting '" + key + "'");
 
     const auto refusal = validate(key, value);
@@ -401,6 +400,25 @@ nlohmann::json SettingsStore::set(const std::string& key, const std::string& val
         return makeError("settings cannot be saved: there is no settings file, because "
                          "neither XDG_DATA_HOME nor HOME is set");
 
+    // The file as it is, not as a read reports it. Saving the normalised view
+    // instead is what this function used to do, and it lost, on the first
+    // write after a newer build or a hand edit, every member that view leaves
+    // out: a mode this build cannot interpret (saved as `explore`), every key
+    // it does not know, and any known key holding a non-string value. The read
+    // side promises an uninterpretable mode stays as it was found; a write
+    // that rewrote it would break that promise one click later.
+    //
+    // A file that is absent, unreadable or not a JSON object reads as an empty
+    // object, so the write replaces it with the one key written rather than
+    // refusing: the write is the user's way out of a file this build cannot
+    // read. Nothing else is added — defaults written out would read, to a
+    // later build, as choices the user made.
+    //
+    // Read after every refusal, not before: nothing above needs the file, and
+    // the span from this read to the rename in `save()` is the window in which
+    // another instance's write is lost. `validate` can run a git binary, so
+    // reading first held the window open for as long as that probe took.
+    auto stored = readStored();
     stored[key] = value;
     if (!save(stored))
         return makeError("could not write settings to " + m_path);

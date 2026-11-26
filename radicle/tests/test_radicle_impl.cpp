@@ -1289,7 +1289,7 @@ LOGOS_TEST(get_settings_reports_defaults_when_nothing_has_been_persisted)
 
     // `explore` — the first-run default, because a fresh install may have no
     // Radicle home and `local` there can show nothing at all. See
-    // SettingsStore::load() for the whole argument.
+    // SettingsStore::normalised() for the whole argument.
     const auto out = parse(impl.getSettings());
     LOGOS_ASSERT_EQ(out["mode"].get<std::string>(), std::string("explore"));
     LOGOS_ASSERT_TRUE(out["gitPath"].get<std::string>().empty());
@@ -2144,7 +2144,7 @@ LOGOS_TEST(a_persisted_mode_this_build_does_not_know_does_not_alias_the_local_pr
     // The unknown value never reaches a consumer. It resolves to Explore — the
     // one mode that touches no local profile — rather than to the `local`
     // default, because a file this build cannot interpret is no basis for
-    // claiming a node identity. See SettingsStore::load().
+    // claiming a node identity. See SettingsStore::normalised().
     LOGOS_ASSERT_EQ(caps["mode"].get<std::string>(), std::string("explore"));
     // And no profile leaks through, which is the property that matters: home,
     // availability and write access are all as if no node existed.

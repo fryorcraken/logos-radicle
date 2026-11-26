@@ -184,7 +184,7 @@ public:
      * local profile, rather than being passed through: a caller must never have
      * to defend against a mode it has no UI for, and interpreting an
      * uninterpretable file as "read the user's node" is the identity confusion
-     * this design exists to prevent. See `SettingsStore::load()`.
+     * this design exists to prevent. See `SettingsStore::normalised()`.
      */
     std::string getSettings();
 
