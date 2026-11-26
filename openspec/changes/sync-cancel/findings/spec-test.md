@@ -109,7 +109,7 @@ direct call needs).
       is shown for `remote`). That makes the `tester` finding below on a
       `source: "local"` data row moot as written.
 
-- [ ] **`tester`** — `tst_sync_cancel.qml`, the "still opens" tests: they
+- [x] **`tester`** — `tst_sync_cancel.qml`, the "still opens" tests: they
       assert `viewerBodyLength` against `"content of f59".length` and
       `viewerTitle` against `"f59"`. The title comes from the entry the test
       passed in, not from the reply, and the length is the same for `f10`
@@ -122,8 +122,24 @@ direct call needs).
       needed to compare the content itself (a change to `SourceTab.qml`, so
       the `dev-writer` may need to add it).
       **Severity:** medium.
+      **Outcome (`tester`): fixed in the tests, with no change to
+      `SourceTab.qml`.** No accessor is needed: the fake now gives each path a
+      body whose length no other path's has (`node.bodyOf()`, a counter handed
+      out on first ask, so no two paths collide), and the three "still opens"
+      tests compare `viewerBodyLength` against `node.bodyOf(path).length`. A
+      viewer showing any other file's contents shows a different number of
+      characters. Measured, with the other file's body painted by the reply
+      path under test (`tab.app.bodyOf("f10")`): in `openEntry()`'s reply,
+      `test_a_file_queued_by_the_sync_still_opens_after_the_cancel` and
+      `test_a_file_the_cancelled_sync_had_queued_opens_after_the_cancel` fail
+      (21 against 20); in `fetchSyncBlob()`'s reply,
+      `test_a_file_the_sync_is_already_fetching_still_opens` fails (17 against
+      15). The reviewer's mutation 2 sat in the sync's reply, which only the
+      third test reaches: the first two open a file the sync has not
+      dispatched, so their content comes from `openEntry()`'s own request.
+      Both reply paths are now killed, each by the test that reaches it.
 
-- [ ] **`tester`** — "A cancel settles every request it stops" has no
+- [x] **`tester`** — "A cancel settles every request it stops" has no
       component-layer test, and the refusal path after a cancel has none at
       all. `busy clears` and `no error` are asserted only in `sync.yaml`'s last
       steps, which is a CI-only, seed-dependent run I could not execute. In
@@ -138,6 +154,29 @@ direct call needs).
       the stale reads with `onFail`, and assert no error is raised and the new
       sync's counters do not move.
       **Severity:** medium.
+      **Outcome (`tester`): the refusal half fixed; the busy and error half
+      rejected at this layer, left to `sync.yaml`.** Added to
+      `tst_sync_cancel.qml`, each over two rows (the cancelled sync's reads
+      are listings, then files, since each has its own failure callback):
+      `test_refusing_what_a_cancelled_sync_had_out_changes_nothing` (nothing
+      counts, completes or is recorded, and the cancelled sync asks for
+      nothing more) and
+      `test_refusing_what_a_cancelled_sync_had_out_frees_no_slot_in_the_next_sync`
+      (the next sync's counters do not move, it never has more than 4 out, and
+      it completes). Mutated by writing the reviewer's case, a failure
+      callback without the epoch check (`syncOutstanding--;
+      completeSyncRead(); pumpSync(run)`): in `GetTree`'s, both tests fail on
+      the listings row (`syncDone` 5 against 1); in `GetBlob`'s, both fail on
+      the files row, the same numbers; the other row of each passes, as
+      predicted. A slot-only version in `GetTree`'s (`syncOutstanding--` with
+      no count) leaves the counters alone and is killed by the second test's
+      bound alone (8 outstanding against 4). The busy strip and the error are
+      `Main.call()`'s (`nav.begin()`/`settle()`/`fail()`), above the `app`
+      every component test fakes, so no test here can observe them, the same
+      reason the local-node scenario could not be tested here. `tst_sync_cancel.qml`'s
+      header now says so. The CI-only `sync.yaml` steps "the busy strip clears
+      after the cancel" and "no error surfaced during the syncs" remain the
+      only observers; I did not run them.
 
 - [x] **`spec-writer`** — `tst_sync_cancel.qml`,
       `test_a_late_reply_does_not_free_a_slot_in_the_next_sync`: it pins that a
@@ -179,7 +218,7 @@ direct call needs).
       later one; that call is the owner's, and this outcome does not pre-empt
       it.
 
-- [ ] **`tester`** — `sync.yaml`, "Cancel, then poll": the scenario's GIVEN is
+- [x] **`tester`** — `sync.yaml`, "Cancel, then poll": the scenario's GIVEN is
       "a sync whose full download takes longer than a staleness poll is allowed
       to wait", but the spec runs against whichever repository the seed lists
       first, and the only precondition step asserts `syncing === true` at the
@@ -193,8 +232,22 @@ direct call needs).
       end. **Not run here:** `sync.yaml` is CI-only; I read it, I did not
       mutate it.
       **Severity:** low.
+      **Outcome (`tester`): fixed in `sync.yaml`, not run.** A new step, "enough
+      of the sync is left for the cancel to matter", sits before the cancel
+      click and asserts `syncQueued - syncDone > 10` on the source tab. The
+      threshold is derived, not the reviewer's example: the poll's wait is
+      30 s and the backlog this change measured was 116 s on a 33-entry
+      repository (3.5 s a read at most), so 30 s serves about 9 reads; the
+      step's comment says so, says that `syncQueued` can only understate what
+      is left, and says the value is this spec's, not the spec's. I could not
+      run it (no Basecamp in this pod), so two things are unverified: that the
+      step parses under sitometres (it copies the shape of the step above it),
+      and that the seed's first repository clears 10. A seed faster than 3.5 s
+      a read makes the step red at itself, naming itself, which is the
+      intended failure for a repository too small to test the cancel, and the
+      comment says to raise the number then.
 
-- [ ] **`tester`** — local scenario, if the spec keeps it: the cheapest test
+- [x] **`tester`** — local scenario, if the spec keeps it: the cheapest test
       available. `tst_sync_cancel.qml`'s fake carries no `source` property, so
       nothing shows that `SourceTab`'s dispatch does not branch on the mode.
       Give the fake `source: "local"` as a data row of the large-sync test.
@@ -202,3 +255,13 @@ direct call needs).
       the only part of "the same for every mode" the component layer can see.
       Moot if the spec-writer strikes the scenario.
       **Severity:** low.
+      **Outcome (`tester`): rejected, as the finding itself says it would be.**
+      The spec-writer struck the scenario and the `local*` clause (the second
+      box above), so a `source: "local"` row on the large-sync test would pin
+      nothing the spec still says. The new requirement "The sync control is the
+      seed's" is covered one layer up, where the prefix is visible:
+      `tst_sync_cancel_view.qml`'s
+      `test_the_sync_control_is_shown_for_the_seed_only`, one row per prefix.
+      Mutated with the control's `visible` changed to
+      `page.app.source !== "embedded"` (shown for `local`): the `local` row
+      fails (`true` against `false`), the `remote` row passes.

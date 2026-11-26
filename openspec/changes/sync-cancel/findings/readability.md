@@ -133,14 +133,17 @@ Defects are marked **defect**; the rest are **preference**.
       `completeSyncRead()` called by both slotless paths and by
       `settleSyncRead()` (the architecture reviewer's second finding).
 
-- [ ] **`tester`** — `tst_sync_cancel.qml:22` — **preference**. The header says
+- [x] **`tester`** — `tst_sync_cancel.qml:22` — **preference**. The header says
       the bound is "recorded in the change's design.md". After the archive
       commit that file is at `openspec/changes/archive/<date>-sync-cancel/`,
       so the pointer stops resolving by name. The component and `docs/e2e.md`
       say "the `sync-cancel` design's Decisions", which survives the move by
       grep. Use the same wording here.
+      **Outcome (`tester`): fixed.** The header now says the bound is the
+      `repo-sync` spec's number and that "the `sync-cancel` design's Decisions
+      say why it is 4". Comment only.
 
-- [ ] **`tester`** — `tst_sync_cancel.qml:47`, `:67`, `:134`, `:377`;
+- [x] **`tester`** — `tst_sync_cancel.qml:47`, `:67`, `:134`, `:377`;
       `tst_sync_cancel_view.qml:36`, `:64`, `:117-123` — **preference**. The
       request key `r.method + ":" + (r.args.length > 2 ? r.args[2] : "")` is
       built inline twice in each fake (`serveNext`, `serveThrough`) and the
@@ -153,6 +156,19 @@ Defects are marked **defect**; the rest are **preference**.
       twice with nothing between that can change it (only a `verify` on the
       queue), so the second line says nothing the first did not. Low value;
       take it if the file is touched again.
+      **Outcome (`tester`): fixed, the file being touched.** In
+      `tst_sync_cancel.qml` the fake has `keyOf(r)` (used by `serveNext()` and
+      `serveThrough()`) and `isSyncRead(r)`; the test file's two other
+      predicates (`isSyncKey` on a `served` key, `queuedSyncReads`) now use the
+      latter or are named for the form they read, and the in-test
+      `mineWithTheNode` is `queuedSyncReads(except)`, shared with the two new
+      refusal tests. In `tst_sync_cancel_view.qml` the fake has `keyOf(r)`, the
+      second `compare(page.syncing, true)` is gone (its message moved to the
+      first), and `serveThrough()`, which nothing in that file called, is
+      removed. The fake itself is still copied between the two files: a
+      shared one needs a shared QML component, and the view's fake answers
+      for `RepoView` calls this file's does not, so I left the duplication.
+      Behaviour unchanged: both files pass as before.
 
 - [x] **`dev-writer`** — `sync.yaml:213-214` — **preference** (wording). The
       comment calls the poll's wait "the file's default of 30 s", but the step
