@@ -90,9 +90,13 @@ requires the reply to equal what `getSettings` reports next. Deriving it from
 the object just written gives that without reading the file a second time,
 and it describes this write rather than whatever another instance wrote in
 between. Returning `stored` itself would hand a view a sixth key and a mode it
-has no segment for; that mutation turns red
+has no segment for, or fewer than five keys for a file that never held them.
+Run as a mutation, that turns red the two new reply tests,
 `the_reply_is_the_normalised_view_while_the_file_keeps_its_members` and
-`a_settings_write_replies_with_what_get_settings_reports_not_the_file`.
+`a_settings_write_replies_with_what_get_settings_reports_not_the_file`, and
+three that were already there: `set_returns_the_whole_settings_object_not_just_the_changed_key`,
+`the_store_reports_exactly_five_keys_before_and_after_each_write` and
+`get_settings_reports_exactly_five_keys_before_and_after_every_write`.
 
 ### 4. A write over an unreadable file replaces it rather than refusing
 
@@ -164,7 +168,10 @@ run against it, and these went red:
 `a_refused_write_leaves_the_file_as_it_was` stayed green under it, correctly:
 the old `set()` also refused before it saved. It guards a different mutation,
 a save that happens before a refusal returns, and compares the file byte for
-byte so that a rewrite with equal members would still show.
+byte so that a rewrite with equal members would still show. Run as a mutation
+(a `save(stored)` straight after `readStored()`), together with Decision 3's
+reply mutation in one build, it went red, and it was the only failure that
+the reply mutation does not explain.
 
 Every assertion about the file parses the file in the test itself, never
 through the store: the reply is the normalised view and would hide exactly
