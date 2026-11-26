@@ -678,16 +678,22 @@ LOGOS_TEST(a_seed_that_answers_but_cannot_be_stored_is_refused)
     logos_test::EventCapture events;
     FakeSeed fake;
     fake.replies["/api/v1"] = kSeedIndex;
-    auto impl = makeRadicleImpl(fakeSeedClient(fake, "https://good.example.test"), LocalStore{},
-                                SettingsStore{""});
+    // The seed in force has answered its own probe, so what the refusal must
+    // leave alone includes `remoteReachable` and `remoteApiVersion`.
+    SeedClient inForce = fakeSeedClient(fake, "https://good.example.test");
+    inForce.probe();
+    auto impl = makeRadicleImpl(std::move(inForce), LocalStore{}, SettingsStore{""});
 
     const auto out = parse(impl.setRemoteSeed("https://answers.example.test"));
     LOGOS_ASSERT_TRUE(out.contains("error"));
-    // The seed did answer: the refusal is the store's, not the probe's.
-    LOGOS_ASSERT_FALSE(fake.requested.empty());
+    // The seed did answer: the refusal is the store's, not the probe's. (The
+    // in-force probe above is also in `requested`, so name the last request.)
+    LOGOS_ASSERT_CONTAINS(fake.requested.back(), std::string("answers.example.test"));
 
-    LOGOS_ASSERT_EQ(parse(impl.getCapabilities())["remoteSeed"].get<std::string>(),
-                    std::string("https://good.example.test"));
+    const auto caps = parse(impl.getCapabilities());
+    LOGOS_ASSERT_EQ(caps["remoteSeed"].get<std::string>(), std::string("https://good.example.test"));
+    LOGOS_ASSERT_TRUE(caps["remoteReachable"].get<bool>());
+    LOGOS_ASSERT_EQ(caps["remoteApiVersion"].get<std::string>(), std::string("6.2.0"));
     LOGOS_ASSERT_TRUE(events.all("remoteSeedChanged").empty());
 }
 
@@ -706,14 +712,17 @@ LOGOS_TEST(a_seed_that_answers_but_whose_settings_file_cannot_be_written_is_refu
     logos_test::EventCapture events;
     FakeSeed fake;
     fake.replies["/api/v1"] = kSeedIndex;
-    auto impl = makeRadicleImpl(fakeSeedClient(fake, "https://good.example.test"), LocalStore{},
-                                SettingsStore{path});
+    SeedClient inForce = fakeSeedClient(fake, "https://good.example.test");
+    inForce.probe();
+    auto impl = makeRadicleImpl(std::move(inForce), LocalStore{}, SettingsStore{path});
 
     const auto out = parse(impl.setRemoteSeed("https://answers.example.test"));
     LOGOS_ASSERT_TRUE(out.contains("error"));
-    LOGOS_ASSERT_FALSE(fake.requested.empty());
-    LOGOS_ASSERT_EQ(parse(impl.getCapabilities())["remoteSeed"].get<std::string>(),
-                    std::string("https://good.example.test"));
+    LOGOS_ASSERT_CONTAINS(fake.requested.back(), std::string("answers.example.test"));
+    const auto caps = parse(impl.getCapabilities());
+    LOGOS_ASSERT_EQ(caps["remoteSeed"].get<std::string>(), std::string("https://good.example.test"));
+    LOGOS_ASSERT_TRUE(caps["remoteReachable"].get<bool>());
+    LOGOS_ASSERT_EQ(caps["remoteApiVersion"].get<std::string>(), std::string("6.2.0"));
     LOGOS_ASSERT_TRUE(events.all("remoteSeedChanged").empty());
 }
 
@@ -885,6 +894,36 @@ LOGOS_TEST(the_stored_seed_is_the_url_in_force_without_a_trailing_slash)
                     std::string("https://chosen.example.test"));
 }
 
+/// "A seed answers its probe only with a Radicle seed index": the probe is one
+/// GET of `<normalised URL>/api/v1`, and the normalised URL has EVERY trailing
+/// `/` removed, not just one. Two slashes, so a normaliser that strips a single
+/// one still leaves a `//` in the request and in everything reported. The
+/// expected strings are written out, not built from the implementation's.
+LOGOS_TEST(the_probe_is_one_get_of_the_normalised_url_with_every_trailing_slash_removed)
+{
+    logos_test::EventCapture events;
+    FakeSeed fake;
+    fake.replies["/api/v1"] = kSeedIndex;
+    auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{},
+                                SettingsStore{freshSettingsPath("seed-two-slashes")});
+
+    const auto out = parse(impl.setRemoteSeed("https://chosen.example.test//"));
+    LOGOS_ASSERT_FALSE(out.contains("error"));
+
+    LOGOS_ASSERT_EQ(fake.requested.size(), size_t(1));
+    LOGOS_ASSERT_EQ(fake.requested[0], std::string("https://chosen.example.test/api/v1"));
+    LOGOS_ASSERT_EQ(out["seed"].get<std::string>(), std::string("https://chosen.example.test"));
+    LOGOS_ASSERT_EQ(parse(impl.getCapabilities())["remoteSeed"].get<std::string>(),
+                    std::string("https://chosen.example.test"));
+    LOGOS_ASSERT_EQ(parse(impl.getSettings())["remoteSeed"].get<std::string>(),
+                    std::string("https://chosen.example.test"));
+
+    // The event names the normalised URL too, not the one as typed.
+    const auto emitted = events.all("remoteSeedChanged");
+    LOGOS_ASSERT_EQ(emitted.size(), size_t(1));
+    LOGOS_ASSERT_EQ(emitted[0].data, std::string("https://chosen.example.test"));
+}
+
 /// "The reply carries what the probe learned". Values distinct from
 /// `kSeedIndex`'s, so a reply that came from anywhere but this probe differs.
 LOGOS_TEST(the_reply_carries_the_api_version_and_nid_the_probe_learned)
@@ -919,9 +958,10 @@ LOGOS_TEST(a_nid_that_is_absent_or_not_a_string_is_reported_empty)
 }
 
 /// "A seed answers its probe only with a Radicle seed index": a 2xx reply
-/// that is JSON but not an object carrying a string `apiVersion` is a failed
-/// probe. Each of these was once adopted for the session, and the non-objects
-/// made the call throw after the seed had been stored and adopted.
+/// that is not a JSON object carrying a string `apiVersion` is a failed probe,
+/// and the call replies `{"error":"..."}` for every one of these bodies rather
+/// than throwing. A mistyped URL that lands on some other JSON API answers 200
+/// with exactly these shapes.
 LOGOS_TEST(a_success_that_is_not_a_seed_index_is_a_failed_probe)
 {
     for (const std::string body : {"[]", "null", R"("ok")", "42", "{}",
@@ -947,7 +987,7 @@ LOGOS_TEST(a_success_that_is_not_a_seed_index_is_a_failed_probe)
 
 /// "A failure status is a failed probe whatever its body": including a body
 /// that is itself a seed index, and a seed error whose `error` is not a
-/// string, which once made the call throw rather than reply.
+/// string, which the reply must survive rather than throw on.
 LOGOS_TEST(a_failure_status_is_a_failed_probe_whatever_its_body)
 {
     for (const std::string body : {R"({"apiVersion":"6.2.0"})", R"({"error":5})"}) {
