@@ -48,7 +48,7 @@ Findings:
       watched failing first: "[could not write settings to ] does not contain
       [XDG_DATA_HOME]".
 
-- [ ] **`dev-writer`** — `radicle-ui/src/qml/Main.qml:1015-1020` — comment says
+- [x] **`dev-writer`** — `radicle-ui/src/qml/Main.qml:1015-1020` — comment says
       `setRemoteSeed` "reverts to the previous one if it does not answer", which is no
       longer a description of what happens
       **Scenario:** a reader of the `onSeedChosen` handler learns that the core adopts
@@ -58,8 +58,13 @@ Findings:
       `tasks.md` 2.4 scoped its stale-comment sweep to `radicle/src` and `docs`, so the
       QML comment was not looked at. A comment-only edit, no behaviour change.
       **Severity:** low (comment drift, a defect not a preference).
+      **Fixed** in "Say what the settings store and the seed picker do, not what they
+      did": the comment now says `setRemoteSeed` refuses a seed that does not answer
+      or cannot be saved and keeps the one in force, and that `setSeed` reports it and
+      puts the picker back. `check-qml-syntax.sh` passes. Comment only; no test can
+      see it. `tasks.md` 2.4's sweep now names `radicle-ui/src` too.
 
-- [ ] **`dev-writer`** — `radicle/src/settings_store.h:17-22` — the new class-comment
+- [x] **`dev-writer`** — `radicle/src/settings_store.h:17-22` — the new class-comment
       paragraph is a time-relative changelog entry, which `CLAUDE.md`'s "Keeping
       documents true" says not to write
       **Scenario:** "which for a while after this store landed adopted a seed in
@@ -70,8 +75,12 @@ Findings:
       `setRemoteSeed` and `setSetting("remoteSeed", …)` write the `remoteSeed` key, and
       `radicle_impl.h` says how they differ. The history is already in `design.md` and
       the M3 annotation. **Severity:** low; stylistic against this repo's stated rule.
+      **Fixed** in "Say what the settings store and the seed picker do, not what they
+      did": the paragraph is now the durable clause only — the two module methods
+      that write `remoteSeed`, and that `setRemoteSeed` in `radicle_impl.h` says how
+      they differ. Comment only.
 
-- [ ] **`dev-writer`** — `radicle/src/settings_store.h:109-119` — `validate`'s
+- [x] **`dev-writer`** — `radicle/src/settings_store.h:109-119` — `validate`'s
       contract implies a cheap pure check, but for `gitPath` it runs a child process
       **Scenario:** the doc says "without storing anything" and justifies making it
       public so callers ask it before doing anything else. A reader taking that as pure
@@ -81,6 +90,11 @@ Findings:
       is broken, but the next caller is invited to be surprised. One sentence in the
       doc ("may run the configured git to check it") closes it. **Severity:** low;
       a missing "why/what a reader would ask".
+      **Fixed** in "Say what the settings store and the seed picker do, not what they
+      did": `validate`'s doc now says it is not a pure check for every key — a
+      non-empty `gitPath` is validated by running `<value> --version` through
+      `LocalReader::gitProbe` — and that the other keys are checked in memory.
+      Comment only.
 
 - [x] **`dev-writer`** — `radicle/src/radicle_impl.cpp:465-468` — "The rollback this
       replaced" narrates the diff rather than the code

@@ -15,11 +15,9 @@ namespace radicle {
  * seed all have to survive a restart or every one of them is a thing the user
  * re-chooses on every launch.
  *
- * A store is not the same as every caller writing to it. The seed picker calls
- * `setRemoteSeed`, which for a while after this store landed adopted a seed in
- * memory only, so the chosen seed was still lost on restart. Both it and
- * `setSetting("remoteSeed", …)` write the `remoteSeed` key; see
- * `setRemoteSeed` in `radicle_impl.h` for how the two differ.
+ * Two module methods write the `remoteSeed` key: `setSetting("remoteSeed", …)`
+ * and `setRemoteSeed`, which the seed picker calls. `setRemoteSeed` in
+ * `radicle_impl.h` says how the two differ.
  *
  * ## Where the file lives, and why not `~/.radicle/config.json`
  *
@@ -109,8 +107,13 @@ public:
     /// The per-key rule `set()` applies to `value`, without storing anything.
     ///
     /// -> `{"error":"..."}` when `set(key, value)` would refuse the value, and
-    /// an empty object when the value's shape is acceptable. A key this store
-    /// does not know is not judged here; `set()` refuses it separately.
+    /// an empty object when the value is acceptable (so `isError` reads it as
+    /// an acceptance). A key this store does not know is not judged here;
+    /// `set()` refuses it separately.
+    ///
+    /// **Not a pure check for every key.** A non-empty `gitPath` is validated
+    /// by running it (`<value> --version`, through `LocalReader::gitProbe`), so
+    /// that call spawns a process; the other keys are checked in memory.
     ///
     /// Public so that a caller which must refuse exactly what `set()` refuses,
     /// before it does anything else, asks the same function rather than keeping

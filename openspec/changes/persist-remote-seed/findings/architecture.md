@@ -33,7 +33,7 @@ Findings below are low severity. None is a defect in behaviour. The first,
 second and fourth are stylistic; the third is a documented-claim accuracy gap;
 the fifth is a missing contract note.
 
-- [ ] **`dev-writer`** — `radicle/src/settings_store.h:13-22` — the class comment now carries a changelog paragraph
+- [x] **`dev-writer`** — `radicle/src/settings_store.h:13-22` — the class comment now carries a changelog paragraph
       **Scenario:** the added paragraph ("for a while after this store landed
       adopted a seed in memory only, so the chosen seed was still lost on
       restart") describes a past state of `setRemoteSeed`, not what this class
@@ -45,6 +45,10 @@ the fifth is a missing contract note.
       `setSetting("remoteSeed", …)` write the key; see `radicle_impl.h`); the
       history belongs in `design.md`, which already has it. **Severity:** low,
       stylistic preference.
+      **Fixed** in "Say what the settings store and the seed picker do, not
+      what they did": the paragraph keeps only the lasting content (both
+      methods write the key; `radicle_impl.h` says how they differ). Comment
+      only.
 
 - [x] **`dev-writer`** — `radicle/src/radicle_impl.cpp:462-468`, `radicle/tests/test_radicle_impl.cpp` (the `a_failed_probe_stores_nothing_and_keeps_the_seed_in_force` doc comment, `a_seed_that_answers_but_cannot_be_stored_is_refused`, the `NO SPEC:` block above `a_failed_probe_leaves_the_seed_in_force_reachable`) — comments narrate the code this change replaced
       **Scenario:** "The rollback this replaced re-set the old URL…", "The
@@ -101,7 +105,7 @@ the fifth is a missing contract note.
       the client in force, or a copy that stops compiling far from the edit).
       Comment only; no test can see it.
 
-- [ ] **`dev-writer`** — `radicle/src/settings_store.h:109-119` — the public `validate` contract is incomplete about what it does
+- [x] **`dev-writer`** — `radicle/src/settings_store.h:109-119` — the public `validate` contract is incomplete about what it does
       **Scenario:** the doc says validation happens "without storing anything",
       which suggests a pure check. For `gitPath` it runs `LocalReader::gitProbe`,
       which spawns the configured executable; a caller reading only the header
@@ -113,3 +117,7 @@ the fifth is a missing contract note.
       is what keeps the next caller from learning it the hard way. A narrower
       `validateRemoteSeed` was weighed and rejected in `design.md` with a
       reason that holds, so this is not a request to reshape. **Severity:** low.
+      **Fixed** in "Say what the settings store and the seed picker do, not
+      what they did": the header now says success is an empty object (which
+      `isError` reads as an acceptance) and that a non-empty `gitPath` is
+      checked by running it, spawning a process. Comment only.

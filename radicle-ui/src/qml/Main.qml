@@ -1012,12 +1012,12 @@ Item {
                             root.callPlain("listKnownSeeds", [], cb);
                         }
                         onSeedChosen: function (url) {
-                            // setRemoteSeed validates the seed and reverts to
-                            // the previous one if it does not answer. Report
-                            // that and put the picker back, rather than leaving
-                            // it naming a seed whose data is not on screen —
-                            // plenty of preferred seeds run the p2p node
-                            // without the HTTP API.
+                            // setRemoteSeed refuses a seed that does not answer
+                            // (or cannot be saved) and keeps the one in force.
+                            // setSeed reports the refusal and puts the picker
+                            // back, rather than leaving it naming a seed whose
+                            // data is not on screen — plenty of preferred seeds
+                            // run the p2p node without the HTTP API.
                             root.setSeed(url);
                         }
                     }
