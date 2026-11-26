@@ -132,3 +132,73 @@ Findings:
       Comment-only; no test can see it. Pre-existing "this milestone" and "used to"
       comments elsewhere in the file (lines predating this change) are not this
       piece's and are left.
+
+## Round 2
+
+Dimension: **readability** only. Reviewed `git diff 1973b69 HEAD` for the code,
+comments, tests, `design.md`, `proposal.md`, `tasks.md` and the spec delta, and
+re-read each changed function whole rather than as a hunk. `openspec validate
+persist-remote-seed --strict` passes. Nothing here is a logic defect.
+
+Clean areas:
+
+- The round 1 fixes hold: the empty-path message in `SettingsStore::set` is
+  accurate (`moduleDataDir` returns empty only when neither variable is set) and
+  its comment says why it is a separate check; `validate`'s "not a pure check"
+  paragraph, the QML `onSeedChosen` comment and the `settings_store.h` class
+  paragraph read as durable statements.
+- `setRemoteSeed` still reads shape, probe, store, adopt. The new loop over
+  `{seedUrl, candidate.seedUrl()}` is explained by the `https://` example beside
+  it, and the empty-URL refusal now says why it is not left to the shape rule.
+- `SeedClient::probe` and `getJson`: the new comments say why (a foreign JSON
+  API answers 200; the body is the seed's, so only a string `error` is a
+  message), and the `probe` doc lists every outcome it refuses.
+- Test comments: the `///` headers quote requirement and scenario names, and I
+  checked each quoted name against `specs/module-settings/spec.md`; all match.
+  The `NO SPEC:` markers remain only on the test whose behaviour the spec still
+  does not state (`a_store_with_no_path_says_why_it_cannot_write`). The two
+  store-refusal tests share setup by design and each says why it exists.
+- `git grep` for rollback / revert / "for the session" wording over
+  `radicle/src`, `radicle-ui/src`, `radicle/tests` and the M3 plan finds no
+  comment still describing the old behaviour.
+- Not raised: `proposal.md` line 79 and spec line 124 are ragged after an edit
+  (cosmetic, no reader is misled), and `design.md` uses "now" and "before"
+  throughout; as the decision record that is what it is for.
+
+Findings:
+
+- [ ] **`dev-writer`** — `radicle/src/seed_client.h:23` — the "keep this a value
+      type" comment says a copy shares nothing mutable "beyond the stateless
+      transport", and the transport is not stateless
+      **Scenario:** `Transport` is a `std::function`, and the tests' own
+      (`FakeSeed::transport()`, `test_radicle_impl.cpp:195-217`) captures `this`
+      and appends to `requested`. The candidate copy and the client in force
+      therefore share that mutable log, which is exactly why
+      `fake.requested.back()` can name the candidate's request in the new
+      tests. A maintainer reading the comment concludes a capturing transport is
+      forbidden, or that it cannot leak between the two clients; neither is what
+      the code needs. The true invariant is that the transport is the one thing
+      a copy shares, and a transport must not make the candidate's probe
+      observable through the client in force (production's default is empty and
+      calls `httpGet`, which keeps no state). `design.md` repeats "the stateless
+      transport" and "shares the transport" in the candidate-client section.
+      **Severity:** low; a comment that is wrong on a point a reader would act
+      on, a defect rather than a preference.
+
+- [ ] **`dev-writer`** — `radicle/src/radicle_impl.cpp:437-443` — the
+      `setSetting("remoteSeed", …)` branch emits `remoteSeedChanged(value)`
+      verbatim beside a `setRemoteSeed` that now emits the normalised URL, with
+      no comment saying the difference is known
+      **Scenario:** `setSetting("remoteSeed", "https://x/")` stores
+      `https://x/`, adopts `https://x` (`m_seed.setSeedUrl` strips it) and
+      emits `https://x/`, so the event names a URL that is not the one in force.
+      The new spec requires an accepted `setRemoteSeed` to emit the normalised
+      URL, so a reader moving from the `setRemoteSeed` body (which spends a
+      comment on "stored as the client normalised it ... agree") to the `setSetting`
+      branch just above it will take this as an oversight and "fix" it, or take it as
+      settled. `design.md` records it under Risks as a consequence of leaving
+      `setSetting`'s seed path to #65, but the code, where a reader asks, does
+      not. A one-line comment at the call ("stored and announced as given, unlike
+      `setRemoteSeed`, which normalises; see the design's Risks") closes it.
+      **Severity:** low; a missing "why" at a place the change itself made
+      conspicuous.
