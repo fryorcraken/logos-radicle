@@ -453,6 +453,70 @@ LOGOS_TEST(a_transport_failure_becomes_an_error_object)
     LOGOS_ASSERT_CONTAINS(res["error"].get<std::string>(), "network unreachable");
 }
 
+/// A seed's own error message is surfaced when its error body carries one.
+/// Also the control for the test below: it shows the body is read at all.
+// NO SPEC: no scenario says a failure status's own message reaches the caller
+// (the spec requires only a non-empty string `error` from a failed probe); this
+// pins that the seed's message is surfaced, as every remote* call does, and is
+// kept as the control for the next two tests, which pass without it if the body
+// is never read.
+LOGOS_TEST(an_error_status_surfaces_the_seeds_own_message)
+{
+    SeedClient client("https://example.test");
+    client.setTransport([](const std::string&) {
+        HttpResponse res;
+        res.status = 404;
+        res.error = "HTTP 404";
+        res.body = R"({"error":"repository rad:zTEST was not found"})";
+        return res;
+    });
+
+    const auto res = client.getRepo("rad:zTEST");
+    LOGOS_ASSERT_TRUE(isError(res));
+    LOGOS_ASSERT_CONTAINS(res["error"].get<std::string>(), "was not found");
+}
+
+/// An error body whose `error` is not a string is not a message to surface,
+/// and must still come back as the one failure shape rather than throwing:
+/// every `remote*` call, and `setRemoteSeed`'s probe, go through here.
+LOGOS_TEST(an_error_status_whose_error_is_not_a_string_still_becomes_an_error_object)
+{
+    SeedClient client("https://example.test");
+    client.setTransport([](const std::string&) {
+        HttpResponse res;
+        res.status = 500;
+        res.error = "HTTP 500";
+        res.body = R"({"error":5})";
+        return res;
+    });
+
+    const auto res = client.getRepo("rad:zTEST");
+    LOGOS_ASSERT_TRUE(isError(res));
+    LOGOS_ASSERT_CONTAINS(res["error"].get<std::string>(), "HTTP 500");
+}
+
+/// An empty `error` string names nothing either, and an empty message is one
+/// a caller reading `error` as "did it fail" takes for success. It falls back
+/// to the status, like a non-string one.
+// NO SPEC: the spec requires a non-empty `error` from setRemoteSeed's probe,
+// not from getRepo, and fixes no wording; this pins that every remote* call
+// gets the same fallback, and that the fallback is the status.
+LOGOS_TEST(an_error_status_whose_error_is_empty_falls_back_to_the_status)
+{
+    SeedClient client("https://example.test");
+    client.setTransport([](const std::string&) {
+        HttpResponse res;
+        res.status = 500;
+        res.error = "HTTP 500";
+        res.body = R"({"error":""})";
+        return res;
+    });
+
+    const auto res = client.getRepo("rad:zTEST");
+    LOGOS_ASSERT_TRUE(isError(res));
+    LOGOS_ASSERT_CONTAINS(res["error"].get<std::string>(), "HTTP 500");
+}
+
 LOGOS_TEST(an_unresolvable_ref_reports_which_ref_failed)
 {
     FakeSeed seed;
@@ -544,4 +608,36 @@ LOGOS_TEST(changing_the_seed_clears_the_previous_versions_state)
     // Stale version/reachability from the old seed must not linger.
     LOGOS_ASSERT_EQ(client.apiVersion(), std::string(""));
     LOGOS_ASSERT_FALSE(client.reachable());
+}
+
+/// `probe`'s contract on its own, not through `setRemoteSeed`: a probe that
+/// fails leaves `reachable()` false and `apiVersion()` / `nid()` empty, even on
+/// a client that a moment ago held a good answer. `setRemoteSeed` cannot show
+/// this, because its candidate's `setSeedUrl` has cleared that state before the
+/// probe runs. One row per way a probe fails after the transport answered or
+/// did not: a 2xx body that is not an index, a 2xx index carrying an `error`
+/// member, and no answer at all.
+// NO SPEC: no module method can re-probe a client that already answered, so no
+// scenario reaches this; it pins `probe`'s header contract, which the design
+// records as a guard.
+LOGOS_TEST(a_failed_probe_leaves_nothing_from_an_earlier_answer)
+{
+    for (const std::string body : {"[]", R"({"apiVersion":"6.2.0","error":"x"})", ""}) {
+        FakeSeed seed;
+        seed.replies["/api/v1"] = R"({"apiVersion":"6.2.0","nid":"z6MkTEST"})";
+        SeedClient client("https://example.test");
+        client.setTransport(seed.transport());
+        LOGOS_ASSERT_FALSE(isError(client.probe()));
+        // Control: there is an earlier answer for the failure to leave behind.
+        LOGOS_ASSERT_EQ(client.nid(), std::string("z6MkTEST"));
+        LOGOS_ASSERT_TRUE(client.reachable());
+
+        if (body.empty()) seed.failEverything = true;
+        else seed.replies["/api/v1"] = body;
+
+        LOGOS_ASSERT_TRUE(isError(client.probe()));
+        LOGOS_ASSERT_FALSE(client.reachable());
+        LOGOS_ASSERT_EQ(client.apiVersion(), std::string(""));
+        LOGOS_ASSERT_EQ(client.nid(), std::string(""));
+    }
 }

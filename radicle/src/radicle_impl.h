@@ -197,7 +197,10 @@ public:
      *
      * **Validation happens on write, not on use.** A git path is checked by
      * running its `--version`; a socket path is checked against the 108-byte
-     * `sun_path` cap; a mode must be one of the three known ones. Refusing
+     * `sun_path` cap; a mode must be one of the three known ones; a seed URL
+     * must start with `http://` or `https://` and carry no `user:password@`,
+     * and is otherwise stored as given (`setRemoteSeed` says how its own write
+     * of the same key differs). Refusing
      * here — while the user is still looking at the field they typed into —
      * is the whole point: discovering a bad git path at the moment someone
      * pushes their first patch is the deferred-failure shape this module
@@ -215,9 +218,35 @@ public:
 
     /**
      * Point the remote proxy at a different seed (e.g.
-     * "https://seed.radicle.xyz"). Validates by fetching `/api/v1` and
-     * recording its apiVersion. Affects only `remote*` calls.
+     * "https://seed.radicle.xyz"), and store it as the `remoteSeed` setting so
+     * the next start adopts it. Affects only `remote*` calls.
      * -> {"seed":"<url>","apiVersion":"6.2.0","nid":"z6Mk..."}
+     *
+     * `seed` is the URL with its trailing slashes removed, which is also what
+     * is stored, put in force and carried by the one `remoteSeedChanged`.
+     * `nid` is "" when the seed's index carries none, or one that is not a
+     * string.
+     *
+     * The seed must pass, in order: non-empty; the shape `setSetting` checks
+     * (`http://` or `https://`, and no `user:password@` in the authority), of
+     * the URL as given and as it will be stored, before any request is made; a
+     * probe of `/api/v1` answered with 2xx and a JSON object carrying a string
+     * `apiVersion` and no `error` member; and the settings write. Any failure
+     * is `{"error":"..."}` with a non-empty message and no other member, never
+     * the seed's own body, and changes nothing — not the seed in force or what
+     * was learned about it, not the stored seed, and no `remoteSeedChanged` is
+     * emitted. A seed that answers but cannot be stored (a module with no
+     * settings path, or a settings file that cannot be written) is refused
+     * rather than adopted for the session only.
+     *
+     * `setSetting("remoteSeed", …)` is the other way into the same stored key,
+     * and the difference is deliberate: it checks shape only and never touches
+     * the network, where this proves the seed answers before storing it. They
+     * also differ in what they store: this stores, adopts and announces the
+     * URL with its trailing slashes removed, while `setSetting` stores and
+     * announces the value as given and adopts it with the slashes removed, so
+     * after a `setSetting` write ending in `/`, `getSettings().remoteSeed` and
+     * `getCapabilities().remoteSeed` differ by that slash.
      */
     std::string setRemoteSeed(const std::string& seedUrl);
 

@@ -372,15 +372,15 @@ extended `getCapabilities`, and the `git` preflight plus its configurable path.
 M2.1 honest about *which* node it is reading, and makes the chosen seed survive
 a restart.
 
-> **That last clause is false, and is corrected here rather than left for a
-> reader to trip over.** The settings *store* survives a restart; the seed
-> picker does not use it. `setRemoteSeed` probes and adopts but never persists,
-> `setSetting("remoteSeed", …)` persists but never probes, and the UI calls the
-> first. This sentence is the origin of a claim that was later copied into a
-> design document before review caught it — which is why it is annotated in
-> place, even though this file is otherwise frozen. See the
-> `module-settings` capability and task 4.1 of the
-> `2026-09-12-m3-embedded-node-foundations` change.
+> **That last clause was false when Phase 1 shipped, and is annotated here
+> rather than left for a reader to trip over.** Phase 1 delivered the settings
+> *store*, not the seed picker's use of it: `setRemoteSeed`, the call the
+> picker makes, probed and adopted but never wrote the store. This sentence is
+> the origin of a claim that was later copied into a design document before
+> review caught it — which is why it is annotated in place, even though this
+> file is otherwise frozen. The `persist-remote-seed` change made
+> `setRemoteSeed` store the seed it accepts; its `design.md` has the
+> reasoning, and the `module-settings` capability states the behaviour.
 
 Six things Phase 1 settled that this document had left open or got wrong.
 Recorded so Phase 2 does not re-litigate them:

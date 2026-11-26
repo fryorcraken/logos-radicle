@@ -665,3 +665,18 @@ LOGOS_TEST(a_store_with_no_path_still_reports_defaults_rather_than_failing)
     LOGOS_ASSERT_EQ(store.get(SettingsStore::kKeyMode),
                     std::string(SettingsStore::kModeExplore));
 }
+
+// NO SPEC: the spec requires a store with no path to refuse every write, and
+// is silent on what the refusal says. This pins that it names the cause, the
+// two variables `settingsPathFor` reads, rather than "could not write settings
+// to " followed by an empty path, a sentence that ends on nothing a user can
+// act on. `setRemoteSeed` passes this message on.
+LOGOS_TEST(a_store_with_no_path_says_why_it_cannot_write)
+{
+    const auto result = SettingsStore{""}.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
+    LOGOS_ASSERT_TRUE(isError(result));
+    const auto message = result["error"].get<std::string>();
+    LOGOS_ASSERT_CONTAINS(message, "XDG_DATA_HOME");
+    LOGOS_ASSERT_CONTAINS(message, "HOME");
+    LOGOS_ASSERT_TRUE(message.back() != ' ');
+}
