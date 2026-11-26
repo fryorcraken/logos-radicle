@@ -14,13 +14,23 @@ import "../src/qml" as Ui
  * order relative to a request made afterwards.
  *
  * Every reply is input-dependent: a tree listing depends on the path asked
- * for, a blob's content names its path, and the branch head is the fake's own
- * value. A fake that answered everything identically could not tell "this
- * file's contents arrived" from "some file's contents arrived".
+ * for, a blob's content names its path AND has a length no other path's has
+ * (see bodyOf()), and the branch head is the fake's own value. A fake that
+ * answered everything identically could not tell "this file's contents
+ * arrived" from "some file's contents arrived", and one whose bodies differ
+ * only in a digit cannot tell one file's contents from another's by length.
  *
- * The bound is 4: SourceTab.syncMaxOutstanding, recorded in the change's
- * design.md. It is written here as a literal, not read off the component, so
- * that a change to the bound is a change to this file as well.
+ * The bound is 4, the `repo-sync` spec's number: SourceTab.syncMaxOutstanding
+ * is the same value, and the `sync-cancel` design's Decisions say why it is 4.
+ * It is written here as a literal, not read off the component, so that a
+ * change to the bound is a change to this file as well.
+ *
+ * Not covered here, and why: "A cancel settles every request it stops" says
+ * the view's busy strip clears and no error shows. Both belong to Main.call()'s
+ * wrapper (nav.begin(), nav.settle(), nav.fail()), which sits above the `app`
+ * this file fakes, so no test here can see them; `ui/sync.yaml` does. What this
+ * file can see of that requirement is the SourceTab half: a refused read from
+ * a cancelled sync leaves the sync, and the next sync, alone.
  */
 Item {
     width: 900
@@ -37,6 +47,28 @@ Item {
         /// Directory path -> its entries. "" is the root.
         property var trees: ({})
         property string head: "head-on-the-node"
+        /// Path -> the number of '#' its body carries, handed out in the order
+        /// paths are first asked about, so no two paths share a length.
+        property var sizes: ({})
+
+        /// "<method>:<path>", the form `served` and serveThrough() use.
+        function keyOf(r) {
+            return r.method + ":" + (r.args.length > 2 ? r.args[2] : "");
+        }
+
+        /// A tree or file read: what a sync makes.
+        function isSyncRead(r) {
+            return r.method === "GetTree" || r.method === "GetBlob";
+        }
+
+        /// A file's contents. They name the path, and their length is the
+        /// path's alone, so a viewer showing another file's contents shows a
+        /// different number of characters.
+        function bodyOf(path) {
+            if (sizes[path] === undefined)
+                sizes[path] = Object.keys(sizes).length + 1;
+            return "content of " + path + " " + "#".repeat(sizes[path]);
+        }
 
         function call(method, args, onOk, onFail) {
             queue.push({ method: method, args: args, onOk: onOk, onFail: onFail });
@@ -44,15 +76,20 @@ Item {
 
         function serveNext() {
             var r = queue.shift();
-            served.push(r.method + ":" + (r.args.length > 2 ? r.args[2] : ""));
+            served.push(keyOf(r));
             if (r.method === "ListBranches")
                 r.onOk({ items: [{ name: "main", head: head }], default: "main" });
             else if (r.method === "GetTree")
                 r.onOk({ entries: trees[r.args[2]] || [] });
             else if (r.method === "GetBlob")
-                r.onOk({ path: r.args[2], content: "content of " + r.args[2] });
+                r.onOk({ path: r.args[2], content: bodyOf(r.args[2]) });
             else
                 r.onFail();
+        }
+
+        /// The node refuses the oldest request instead of answering it.
+        function refuseNext() {
+            queue.shift().onFail();
         }
 
         /// Serve until nothing is left, including what serving itself asks.
@@ -63,8 +100,7 @@ Item {
         /// Serve up to and including the first request for `key`.
         function serveThrough(key) {
             while (queue.length > 0) {
-                var r = queue[0];
-                var k = r.method + ":" + (r.args.length > 2 ? r.args[2] : "");
+                var k = keyOf(queue[0]);
                 serveNext();
                 if (k === key) return;
             }
@@ -75,6 +111,7 @@ Item {
             served = [];
             trees = ({});
             head = "head-on-the-node";
+            sizes = ({});
         }
     }
 
@@ -117,21 +154,36 @@ Item {
             return 1 + dirs + files + 3 * dirs;
         }
 
-        function isSyncRead(key) {
+        /// Two repositories to run a test over: one whose first outstanding
+        /// reads are directory listings, and one whose are files (a root with
+        /// no directories).
+        function outstandingKindRows() {
+            return [
+                { tag: "listings outstanding", files: 60, dirs: 10 },
+                { tag: "files outstanding", files: 60, dirs: 0 }
+            ];
+        }
+
+        /// Is a `served` key one of a sync's reads.
+        function isSyncKey(key) {
             return key.indexOf("GetTree:") === 0 || key.indexOf("GetBlob:") === 0;
         }
 
         function syncReadsServedSince(mark) {
             var n = 0;
             for (var i = mark; i < node.served.length; i++)
-                if (isSyncRead(node.served[i])) n++;
+                if (isSyncKey(node.served[i])) n++;
             return n;
         }
 
-        function queuedSyncReads() {
+        /// Sync reads with the node unanswered, other than those in `except`
+        /// (requests the cancelled sync had already handed over).
+        function queuedSyncReads(except) {
             var n = 0;
-            for (var i = 0; i < node.queue.length; i++)
-                if (node.queue[i].method === "GetTree" || node.queue[i].method === "GetBlob") n++;
+            for (var i = 0; i < node.queue.length; i++) {
+                var r = node.queue[i];
+                if (node.isSyncRead(r) && (!except || except.indexOf(r) < 0)) n++;
+            }
             return n;
         }
 
@@ -256,7 +308,9 @@ Item {
             source.cancelSync();
             node.serveAll();
             compare(source.viewerTitle, "f59");
-            compare(source.viewerBodyLength, "content of f59".length);
+            // The title is the entry the test passed in; the length is the
+            // reply's, and no other file's reply has this length.
+            compare(source.viewerBodyLength, node.bodyOf("f59").length);
         }
 
         // The same file, opened after the cancel rather than before it. The
@@ -270,7 +324,7 @@ Item {
             source.openEntry({ name: "f59", kind: "blob", path: "f59" });
             node.serveAll();
             compare(source.viewerTitle, "f59");
-            compare(source.viewerBodyLength, "content of f59".length);
+            compare(source.viewerBodyLength, node.bodyOf("f59").length);
         }
 
         // A request the sync did not make is not the sync's to stop, whenever
@@ -305,7 +359,7 @@ Item {
             source.cancelSync();
             node.serveAll();
             compare(source.viewerTitle, "f0");
-            compare(source.viewerBodyLength, "content of f0".length);
+            compare(source.viewerBodyLength, node.bodyOf("f0").length);
         }
 
         // Run twice: the next sync starts once the node has answered what the
@@ -334,7 +388,7 @@ Item {
             // queued it.
             var asked = {};
             for (var i = 0; i < node.served.length; i++)
-                if (isSyncRead(node.served[i])) asked[node.served[i]] = true;
+                if (isSyncKey(node.served[i])) asked[node.served[i]] = true;
             compare(Object.keys(asked).length, total);
         }
 
@@ -362,10 +416,7 @@ Item {
         // outstanding reads are listings; with none, they are files. Each
         // reply path has its own epoch check.
         function test_a_late_reply_does_not_free_a_slot_in_the_next_sync_data() {
-            return [
-                { tag: "listings outstanding", files: 60, dirs: 10 },
-                { tag: "files outstanding", files: 60, dirs: 0 }
-            ];
+            return outstandingKindRows();
         }
 
         function test_a_late_reply_does_not_free_a_slot_in_the_next_sync(data) {
@@ -386,20 +437,78 @@ Item {
             // now and after each request served. A late reply from the
             // cancelled sync that was taken as one of the new sync's own
             // would let it put a fifth read out.
-            function mineWithTheNode() {
-                var n = 0;
-                for (var i = 0; i < node.queue.length; i++) {
-                    var r = node.queue[i];
-                    if (old.indexOf(r) < 0 && (r.method === "GetTree" || r.method === "GetBlob"))
-                        n++;
-                }
-                return n;
-            }
-            var most = mineWithTheNode();
+            var most = queuedSyncReads(old);
             verify(most > 0, "the new sync must have asked for something before any old reply arrived");
             while (node.queue.length > 0) {
                 node.serveNext();
-                most = Math.max(most, mineWithTheNode());
+                most = Math.max(most, queuedSyncReads(old));
+            }
+            verify(most <= bound, "the new sync had " + most + " reads with the node at once");
+            compare(source.syncedOnce, true);
+        }
+
+        // -- A cancel settles every request it stops ----------------------
+        //
+        // The node REFUSES what a cancelled sync had with it ("answered or
+        // refused"). Each reply path has its own failure callback, so the rows
+        // reach both: listings outstanding, and files outstanding.
+        function test_refusing_what_a_cancelled_sync_had_out_changes_nothing_data() {
+            return outstandingKindRows();
+        }
+
+        function test_refusing_what_a_cancelled_sync_had_out_changes_nothing(data) {
+            makeRepo(data.files, data.dirs);
+            startAndAnswerRoot();
+            source.cancelSync();
+            var stale = node.queue.length;
+            verify(stale > 0, "the cancelled sync must still have reads with the node");
+            var done = source.syncDone, queued = source.syncQueued;
+            var progress = source.syncProgress;
+            var recorded = source.lastSyncedCommit;
+
+            for (var i = 0; i < stale; i++)
+                node.refuseNext();
+
+            compare(source.syncing, false);
+            compare(source.syncedOnce, false);
+            compare(source.syncDone, done, "a refusal must not count a stopped read as done");
+            compare(source.syncQueued, queued);
+            compare(source.syncProgress, progress);
+            compare(source.lastSyncedCommit, recorded);
+            compare(node.queue.length, 0, "a refusal must not make a cancelled sync ask for more");
+        }
+
+        function test_refusing_what_a_cancelled_sync_had_out_frees_no_slot_in_the_next_sync_data() {
+            return outstandingKindRows();
+        }
+
+        function test_refusing_what_a_cancelled_sync_had_out_frees_no_slot_in_the_next_sync(data) {
+            makeRepo(data.files, data.dirs);
+            startAndAnswerRoot();
+            source.cancelSync();
+            var old = node.queue.slice();
+            verify(old.length > 0, "the cancelled sync must still have reads with the node");
+            // As in the late-reply tests: the next sync starts first, so it
+            // has its own reads out before the node answers any old one.
+            source.syncAll();
+            var done = source.syncDone, queued = source.syncQueued;
+            var progress = source.syncProgress;
+            var mine = queuedSyncReads(old);
+            verify(mine > 0, "the new sync must have asked for something before any old read was refused");
+
+            // The old reads are at the front of the node's queue.
+            for (var i = 0; i < old.length; i++)
+                node.refuseNext();
+
+            compare(source.syncDone, done, "a refused read of the cancelled sync must not count in the new one");
+            compare(source.syncQueued, queued);
+            compare(source.syncProgress, progress);
+            compare(queuedSyncReads(old), mine, "a refusal must not let the new sync hand over more");
+
+            var most = mine;
+            while (node.queue.length > 0) {
+                node.serveNext();
+                most = Math.max(most, queuedSyncReads(old));
             }
             verify(most <= bound, "the new sync had " + most + " reads with the node at once");
             compare(source.syncedOnce, true);

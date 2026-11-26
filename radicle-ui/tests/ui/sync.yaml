@@ -179,6 +179,23 @@ steps:
     expect:
       state: "root.syncing === true"
 
+  # The other half of that dependence, and what the poll step below needs: the
+  # poll's wait is 30 s, and it fails a module that kept serving the cancelled
+  # sync only if more was left than the seed serves in 30 s. `syncing` alone
+  # does not say so: a sync with five reads left is still running, and its
+  # whole backlog is served inside the wait with or without a cancel, so the
+  # poll would pass on a module that cancelled nothing. This fails HERE,
+  # naming itself, for a repository too small to test the cancel. 10 reads is
+  # from the backlog this change measured, 116 s for the reads of a 33-entry
+  # repository (3.5 s a read at most), so 30 s serves about 9; it is this
+  # spec's value, not the spec's, and it was not run against a seed from here
+  # (no Basecamp built in that pod), so a faster seed than that one wants it
+  # raised. syncQueued counts reads discovered so far, so it can only
+  # understate what is left.
+  - name: enough of the sync is left for the cancel to matter
+    expect:
+      state: "root.sourceTabItem.syncQueued - root.sourceTabItem.syncDone > 10"
+
   - name: click the button again to cancel
     click: { objectName: "syncButton" }
 

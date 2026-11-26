@@ -31,9 +31,14 @@ Item {
         queue.push({ method: method, args: args, onOk: onOk, onFail: onFail });
     }
 
+    /// "<method>:<path>", the form `served` uses.
+    function keyOf(r) {
+        return r.method + ":" + (r.args.length > 2 ? r.args[2] : "");
+    }
+
     function serveNext() {
         var r = queue.shift();
-        served.push(r.method + ":" + (r.args.length > 2 ? r.args[2] : ""));
+        served.push(keyOf(r));
         if (r.method === "ListBranches") {
             r.onOk({ items: [{ name: "main", head: "head-on-the-node",
                                remote: "z6MkSelf", isLocal: true }],
@@ -55,16 +60,6 @@ Item {
 
     function serveAll() {
         while (queue.length > 0) serveNext();
-    }
-
-    /// Serve up to and including the first request for `key`.
-    function serveThrough(key) {
-        while (queue.length > 0) {
-            var r = queue[0];
-            var k = r.method + ":" + (r.args.length > 2 ? r.args[2] : "");
-            serveNext();
-            if (k === key) return;
-        }
     }
 
     Ui.RepoView {
@@ -133,13 +128,12 @@ Item {
             compare(page.syncLabel, "Download All", "a repository never synced offers the first download");
 
             clickSync();
-            compare(page.syncing, true);
+            compare(page.syncing, true, "the sync is running, with reads outstanding");
             verify(/^[0-9]+%$/.test(page.syncLabel),
                    "a running sync shows a percentage, not '" + page.syncLabel + "'");
             // The view already holds the root listing, so the sync has walked
             // it and handed over its first reads without asking for it again.
             verify(queue.length > 1, "the sync must have reads with the node");
-            compare(page.syncing, true, "the sync is still running with reads outstanding");
 
             clickSync();
             // At once: nothing has been served since the click.
