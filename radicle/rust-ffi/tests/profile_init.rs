@@ -569,23 +569,93 @@ fn reporting_encryption_needs_no_passphrase_and_no_agent() {
     cleanup(&dir);
 }
 
-/// Every file under `<home>/keys`, by name, with its bytes.
+// ---------------------------------------------------------------------------
+// Recording a directory tree, for "nothing under here changed".
+//
+// Two tests need that statement: a report leaves the sealed key as it was, and
+// creating into one home leaves another as it was. Both are answered by the
+// same record, so there is one recorder rather than one per depth.
+// ---------------------------------------------------------------------------
+
+/// One entry under a recorded directory.
 ///
-/// A map rather than the one private-key file: the requirement is that **every
-/// file under the `keys` directory** is byte-for-byte what it was, so a probe
-/// that left `keys/radicle` alone and rewrote `keys/radicle.pub` (or dropped a
-/// sibling file next to them) must be seen. Names are part of the snapshot, so
-/// a file created or removed by the probe changes the map as well.
-fn keys_snapshot(home: &str) -> std::collections::BTreeMap<String, Vec<u8>> {
-    let keys = std::path::Path::new(home).join("keys");
-    let mut out = std::collections::BTreeMap::new();
-    for entry in std::fs::read_dir(&keys).expect("the keys directory must exist") {
-        let entry = entry.expect("a keys entry must be readable");
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let bytes = std::fs::read(entry.path()).expect("a keys file must be readable");
-        out.insert(name, bytes);
-    }
+/// A directory is an entry in its own right, so an empty directory created or
+/// removed under the root changes the record. A symlink is recorded by its
+/// target and never followed, so the record cannot read outside the root it
+/// was asked about.
+#[derive(Debug, PartialEq, Eq)]
+enum Entry {
+    Dir,
+    File(Vec<u8>),
+    Link(std::path::PathBuf),
+}
+
+type TreeRecord = std::collections::BTreeMap<std::path::PathBuf, Entry>;
+
+/// Every entry under `root`, recursively, by its path relative to `root`, with
+/// the bytes of every file.
+///
+/// Names are part of the record, so an entry added or removed changes the map
+/// as well as a file whose bytes changed. An entry that cannot be read panics
+/// rather than being skipped: a record with a hole in it would compare equal
+/// across exactly the change it was meant to see.
+fn tree_record(root: &std::path::Path) -> TreeRecord {
+    let mut out = TreeRecord::new();
+    record_under(root, std::path::Path::new(""), &mut out);
     out
+}
+
+fn record_under(root: &std::path::Path, rel: &std::path::Path, out: &mut TreeRecord) {
+    let dir = root.join(rel);
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("could not list {} for the record: {e}", dir.display()));
+    for entry in entries {
+        let entry = entry.unwrap_or_else(|e| panic!("unreadable entry in {}: {e}", dir.display()));
+        let path = rel.join(entry.file_name());
+        // `DirEntry::file_type` does not follow symlinks, which is what keeps
+        // the record inside `root`.
+        let kind = entry
+            .file_type()
+            .unwrap_or_else(|e| panic!("no file type for {}: {e}", path.display()));
+        if kind.is_symlink() {
+            let target = std::fs::read_link(entry.path())
+                .unwrap_or_else(|e| panic!("unreadable link {}: {e}", path.display()));
+            out.insert(path, Entry::Link(target));
+        } else if kind.is_dir() {
+            out.insert(path.clone(), Entry::Dir);
+            record_under(root, &path, out);
+        } else {
+            let bytes = std::fs::read(entry.path())
+                .unwrap_or_else(|e| panic!("unreadable file {}: {e}", path.display()));
+            out.insert(path, Entry::File(bytes));
+        }
+    }
+}
+
+/// What differs between two records, one line per path, empty when they agree.
+///
+/// Compared this way rather than with `assert_eq!` on the maps, whose failure
+/// would print every byte of every SQLite file in a home and bury the one path
+/// that moved.
+fn record_changes(before: &TreeRecord, after: &TreeRecord) -> Vec<String> {
+    let mut changes = Vec::new();
+    for (path, was) in before {
+        match after.get(path) {
+            None => changes.push(format!("removed: {}", path.display())),
+            Some(now) if now != was => changes.push(format!("changed: {}", path.display())),
+            Some(_) => {}
+        }
+    }
+    for path in after.keys().filter(|p| !before.contains_key(*p)) {
+        changes.push(format!("added: {}", path.display()));
+    }
+    changes
+}
+
+/// Whether `record` holds `rel` as a file, for the preconditions that stop two
+/// empty records comparing equal.
+fn holds_file(record: &TreeRecord, rel: &str) -> bool {
+    matches!(record.get(std::path::Path::new(rel)), Some(Entry::File(_)))
 }
 
 /// Reading the key does not change it — any of it.
@@ -594,7 +664,7 @@ fn keys_snapshot(home: &str) -> std::collections::BTreeMap<String, Vec<u8>> {
 /// destroy the property it reported. The bytes of every file under `keys` are
 /// compared before and after, which is the only observation that would notice.
 ///
-/// The snapshot is asserted to hold the private key AND the public one before
+/// The record is asserted to hold the private key AND the public one before
 /// anything is probed, so a comparison of two empty maps cannot pass for a
 /// home whose keys directory was never populated.
 ///
@@ -606,10 +676,11 @@ fn reporting_encryption_leaves_the_key_untouched() {
     let (dir, home) = fresh_home("key-encrypted-immutable");
     let _ = init_profile(&home, "tester", "correct horse battery");
 
-    let before = keys_snapshot(&home);
+    let keys = std::path::Path::new(&home).join("keys");
+    let before = tree_record(&keys);
     assert!(
-        before.contains_key("radicle") && before.contains_key("radicle.pub"),
-        "precondition: the snapshot must hold both halves of the key, got {:?}",
+        holds_file(&before, "radicle") && holds_file(&before, "radicle.pub"),
+        "precondition: the record must hold both halves of the key, got {:?}",
         before.keys().collect::<Vec<_>>()
     );
 
@@ -620,11 +691,11 @@ fn reporting_encryption_leaves_the_key_untouched() {
         "precondition: the existence probe must see the identity it reports on"
     );
 
-    let after = keys_snapshot(&home);
-    assert_eq!(
-        before, after,
+    let changes = record_changes(&before, &tree_record(&keys));
+    assert!(
+        changes.is_empty(),
         "reporting whether the key is encrypted must not rewrite, remove or add \
-         any file under keys/"
+         any file under keys/, got: {changes:?}"
     );
 
     cleanup(&dir);
