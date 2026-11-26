@@ -20,8 +20,27 @@ so the only missing link is the write.
   (for example one constructed with no settings path) now refuses a seed it
   previously adopted for the session only. The alternative, adopting it
   anyway, is exactly the silent non-persistence this change exists to remove.
+- What "the seed answers its probe" means is stated, because it is now the
+  gate on what gets persisted: one GET of `/api/v1` that succeeds with a 2xx
+  status and a JSON object carrying a string `apiVersion`. **Behaviour
+  change:** a server that answers with any other JSON (an array, a scalar, an
+  object with no `apiVersion`) was adopted for the session, or made the call
+  throw after adopting it; it is now a failed probe. Persisting turns such a
+  mistyped or foreign URL into a standing misconfiguration, so "returns JSON"
+  is no longer enough.
+- A failure status is a failed probe whatever its body says, including an
+  error body whose `error` is not a string, so the call always replies.
+- A URL that would be stored in a shape `setSetting` refuses is refused before
+  any request, with `setSetting`'s reason. That covers the URL after its
+  trailing slashes are removed (`https://` becomes `https:`), not only as
+  typed.
 - A refusal emits no `remoteSeedChanged`, so a view never hears of a seed
-  that is not in force.
+  that is not in force; an acceptance emits exactly one, naming the seed. A
+  refusal also leaves what was learned about the seed in force
+  (`remoteReachable`, `remoteApiVersion`) as it was.
+- The stored seed, the seed in force, the reply's `seed` and the event all
+  carry the URL with trailing slashes removed, so they agree. The reply's
+  `nid` is the probe's when it is a string, and empty otherwise.
 - `setSetting("remoteSeed", …)` keeps its shape-only, no-network check; its
   requirement is reworded to name `setSetting` rather than "a settings write",
   because `setRemoteSeed` is now also a settings write and does probe.
@@ -57,8 +76,9 @@ None.
 ### Modified Capabilities
 
 - `module-settings`: adds that a seed accepted by `setRemoteSeed` survives a
-  restart, and that a seed it refuses changes neither the seed in force nor
-  the persisted one; rewords "A seed URL is checked for its shape only" to
+  restart and is reported as its normalised URL, what answering the probe
+  means, that a malformed URL is refused before any request, and that a seed
+  it refuses changes neither the seed in force nor the persisted one; rewords "A seed URL is checked for its shape only" to
   scope the no-network rule to `setSetting`.
 
 ## Impact

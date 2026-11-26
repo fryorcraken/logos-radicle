@@ -64,7 +64,7 @@ the proposal's extra refusals (shape, unstorable) are a recorded decision, not
 stale scope. No requirement moved between capabilities, so part 4 does not
 apply.
 
-- [ ] **`spec-writer`** — `specs/module-settings/spec.md`, both new requirements
+- [x] **`spec-writer`** — `specs/module-settings/spec.md`, both new requirements
       use "answers its probe" / "a seed whose probe fails", and nothing defines it
       **Scenario:** no live spec mentions the seed probe (`grep -rni probe
       openspec/specs` hits only the unrelated write-probe in `embedded-identity`
@@ -75,8 +75,24 @@ apply.
       call it wrong. State what an answer is: the request, and what response
       counts as answering. Then the tester can pin the 200-with-garbage case.
       **Severity:** medium, the gate on what gets persisted.
+      **Outcome: fixed (spec).** New requirement "A seed answers its probe only
+      with a Radicle seed index": the probe is one GET of
+      `<normalised URL>/api/v1`; it answers only with a 2xx status and a body
+      that is a JSON object whose `apiVersion` is a string. A transport error,
+      any other status, non-JSON, non-object JSON, or an object with no string
+      `apiVersion` is a failed probe, refused under "A seed setRemoteSeed
+      refuses changes nothing". Scenarios pin the control (`{"apiVersion":"6.2.0"}`
+      answers), 2xx bodies `[]`, `null`, `"ok"`, `42`, `{}`,
+      `{"apiVersion":6}`, `not json` (each refused, nothing stored or adopted,
+      no event), and status 500 with `{"apiVersion":"6.2.0"}` and `{"error":5}`
+      (each refused). This is the definition the `dev-writer` entries in
+      `correctness.md` (non-object reply) and `security.md` (non-object reply,
+      `{"error":5}`, any-JSON-is-a-seed) now have to meet; none of their code
+      or tests is changed here. Not measured: that every real seed's `/api/v1`
+      carries a string `apiVersion` (the module's own contract and fixtures
+      assume it; no seed was reachable from this sandbox).
 
-- [ ] **`spec-writer`** — `NO SPEC` at
+- [x] **`spec-writer`** — `NO SPEC` at
       `an_accepted_seed_emits_one_remote_seed_changed_naming_it` (line 618)
       **Scenario:** the delta requires a refusal to emit no `remoteSeedChanged`
       and says nothing about an acceptance. The test pins one event carrying the
@@ -85,8 +101,12 @@ apply.
       learn of a pick. Add a requirement that an accepted seed emits it once,
       naming the seed in force. **Severity:** low-medium; it is also the control
       the no-event assertions rely on.
+      **Outcome: fixed (spec).** New requirement "An accepted seed is reported
+      as its normalised URL" requires exactly one `remoteSeedChanged` on
+      acceptance, carrying the normalised URL; scenario "An accepted seed emits
+      one event naming it". The `NO SPEC:` marker on the test can now go.
 
-- [ ] **`spec-writer`** — `NO SPEC` at
+- [x] **`spec-writer`** — `NO SPEC` at
       `the_stored_seed_is_the_url_in_force_without_a_trailing_slash` (line 820)
       **Scenario:** the requirement says the store holds "that URL"; the
       implementation stores the URL as the client normalised it. Input
@@ -94,8 +114,18 @@ apply.
       `https://chosen.example.test`. A reader of the spec would expect the
       stored value to equal the argument. State the normalisation, or say that
       stored, in-force and replied seed agree. **Severity:** low.
+      **Outcome: fixed (spec), both ways.** "An accepted seed is reported as
+      its normalised URL" defines the normalised URL (the given URL with every
+      trailing `/` removed) and requires the reply's `seed`,
+      `getCapabilities().remoteSeed` and the event to be it; "A seed accepted
+      by setRemoteSeed survives a restart" now stores the normalised URL rather
+      than "that URL". Scenario "A trailing slash is removed wherever the seed
+      is reported" checks all three of reply, capabilities and settings. The
+      same requirement also pins the reply's `nid` (the probe's when a string,
+      else empty), which the probe definition above made reachable with a
+      non-string `nid`. The `NO SPEC:` marker can go.
 
-- [ ] **`spec-writer`** — `NO SPEC` at
+- [x] **`spec-writer`** — `NO SPEC` at
       `a_url_with_no_scheme_is_refused_before_any_request_and_says_why` (line 711)
       **Scenario:** the spec requires only that a malformed URL be refused. The
       shape-first ordering (no request made, and the refusal carries the shape's
@@ -105,8 +135,19 @@ apply.
       every-shape loop stayed green (command above). If the ordering matters,
       the spec should say so. If it does not, the test is pinning an
       implementation choice. **Severity:** low.
+      **Outcome: fixed (spec): the ordering matters.** Both halves are
+      observable to a caller (a typed URL is or is not sent over the network;
+      the message does or does not name the shape), and the live "A settings
+      refusal names what was wrong" already holds `setSetting` to that. New
+      requirement "A malformed seed URL is refused before any request": a URL
+      whose given or normalised form `setSetting` would refuse is refused with
+      no request made, carrying `setSetting`'s reason. Covering the normalised
+      form takes in `https://` and `http://` (normalised to `https:` /
+      `http:`), which is the `dev-writer` entry in `correctness.md` on the
+      wasted request and wrong reason; scenario "A scheme with no host is
+      refused before any request" pins it. The `NO SPEC:` marker can go.
 
-- [ ] **`spec-writer`** — `NO SPEC` at
+- [x] **`spec-writer`** — `NO SPEC` at
       `a_failed_probe_leaves_the_seed_in_force_reachable` (line 792)
       **Scenario:** "leaves the seed in force as it was" is observed by the spec
       only through `getCapabilities().remoteSeed`. The test pins that
@@ -116,3 +157,8 @@ apply.
       mistyped pick. Say whether "the seed in force" includes what was last
       learned about it. **Severity:** low-medium, a user-visible regression the
       scenarios cannot catch.
+      **Outcome: fixed (spec): it does.** "A seed setRemoteSeed refuses changes
+      nothing" now requires a refusal to leave the seed in force as it was,
+      including the `remoteReachable` and `remoteApiVersion` `getCapabilities`
+      reports for it. New scenario "A failed probe leaves the seed in force
+      reachable". The `NO SPEC:` marker can go.
