@@ -56,6 +56,18 @@
 //! twice. Eight lines of `File::read_exact` is what `getrandom` does on Linux
 //! anyway, and a short read is treated as a failure rather than padded, because
 //! a partially-random seed is worse than no key at all.
+//!
+//! ## Why the source can be swapped, and by whom
+//!
+//! `/dev/urandom` cannot be made to short-read, fail or chunk on demand, so a
+//! draw that only ever reads it can never be shown to refuse a short read —
+//! and it was not: replacing `read_exact` with a lenient `read` once left every
+//! identity-creation test green. `init_profile_with_entropy` therefore takes
+//! the source's opener as an argument, and `init_profile` is that function
+//! with `/dev/urandom` fixed. The `extern "C"` entry point calls
+//! `init_profile`, so nothing across the FFI boundary can choose the source.
+
+use std::io::Read;
 
 use radicle::crypto::ssh::keystore::Passphrase;
 use radicle::crypto::ssh::Keystore;
@@ -64,19 +76,51 @@ use radicle::node::Alias;
 use radicle::profile::{Home, Profile};
 use serde_json::json;
 
-/// Draw `Seed::BYTES` of entropy from the operating system.
-///
-/// A short read is an error, never padded or retried into something shorter.
-/// The seed becomes a permanent signing identity, so "mostly random" is not a
-/// degraded success — it is a silent weakness nothing downstream can detect.
-fn os_seed() -> Result<Seed, String> {
-    use std::io::Read;
+/// The operating system's random source, and the only one production reads.
+const SYSTEM_ENTROPY: &str = "/dev/urandom";
 
-    let mut bytes = [0u8; 32];
-    let mut f = std::fs::File::open("/dev/urandom")
-        .map_err(|e| format!("could not open the system random source: {e}"))?;
-    f.read_exact(&mut bytes)
-        .map_err(|e| format!("could not read enough entropy for a new key: {e}"))?;
+/// How many bytes of entropy a key seed takes.
+const SEED_BYTES: usize = 32;
+
+/// Open the operating system's random source.
+///
+/// The error names the path, so an unopenable source says which one it was.
+fn open_system_entropy() -> std::io::Result<std::fs::File> {
+    std::fs::File::open(SYSTEM_ENTROPY).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("the system random source {SYSTEM_ENTROPY} could not be opened: {e}"),
+        )
+    })
+}
+
+/// Draw a key seed: open the source, then fill exactly `SEED_BYTES` from it.
+///
+/// A short read is an error, never padded or completed from elsewhere. The
+/// seed becomes a permanent signing identity, so "mostly random" is not a
+/// degraded success — it is a silent weakness nothing downstream can detect.
+///
+/// `read_exact` is what makes a seed supplied across several reads, or after
+/// an interrupted one, a full read: std's default loops until the buffer is
+/// full, retries `ErrorKind::Interrupted`, and reports `UnexpectedEof` when a
+/// read returns 0 first. Hand-writing that loop would be a second copy of it.
+///
+/// Every failure carries one prefix naming entropy, whichever step failed.
+fn draw_seed<R: Read>(open: impl FnOnce() -> std::io::Result<R>) -> Result<Seed, String> {
+    let unreadable =
+        |cause: String| format!("the entropy for a new key could not be read: {cause}");
+
+    let mut source = open().map_err(|e| unreadable(e.to_string()))?;
+    let mut bytes = [0u8; SEED_BYTES];
+    source.read_exact(&mut bytes).map_err(|e| {
+        unreadable(if e.kind() == std::io::ErrorKind::UnexpectedEof {
+            // std's own text here is "failed to fill whole buffer", which
+            // says nothing a user could act on.
+            format!("the source ended before supplying {SEED_BYTES} bytes")
+        } else {
+            e.to_string()
+        })
+    })?;
     Ok(Seed::new(bytes))
 }
 
@@ -311,13 +355,41 @@ pub fn key_encrypted(home: &str) -> String {
 /// have to unlock; that is a legitimate choice, and it is why this reports the
 /// outcome instead of quietly preferring one.
 pub fn init_profile(home: &str, alias: &str, passphrase: &str) -> String {
-    match init_profile_inner(home, alias, passphrase) {
+    init_profile_with_entropy(home, alias, passphrase, open_system_entropy)
+}
+
+/// `init_profile`, drawing the key seed from whatever `open_entropy` opens.
+///
+/// **This exists for tests, and production never comes through it with
+/// anything but `/dev/urandom`.** `init_profile` is the only caller outside
+/// the tests, and it fixes the source; the `extern "C"` entry point calls
+/// `init_profile`, and this function is not `extern "C"`, so nothing across
+/// the FFI boundary can reach it. A test hands it a reader that ends early,
+/// fails, chunks or is interrupted — the cases `/dev/urandom` cannot be made
+/// to produce.
+///
+/// The source is passed as an opener rather than an open reader so that it is
+/// opened where the seed is drawn, after every refusal: a call refused for its
+/// home or alias never touches the source, and so is never reported as an
+/// entropy failure.
+pub fn init_profile_with_entropy<R: Read>(
+    home: &str,
+    alias: &str,
+    passphrase: &str,
+    open_entropy: impl FnOnce() -> std::io::Result<R>,
+) -> String {
+    match init_profile_inner(home, alias, passphrase, open_entropy) {
         Ok(v) => v,
         Err(e) => crate::local::error(e),
     }
 }
 
-fn init_profile_inner(home: &str, alias: &str, passphrase: &str) -> Result<String, String> {
+fn init_profile_inner<R: Read>(
+    home: &str,
+    alias: &str,
+    passphrase: &str,
+    open_entropy: impl FnOnce() -> std::io::Result<R>,
+) -> Result<String, String> {
     if home.is_empty() {
         return Err("no home given to create the profile in".to_string());
     }
@@ -400,6 +472,12 @@ fn init_profile_inner(home: &str, alias: &str, passphrase: &str) -> Result<Strin
         None
     };
 
+    // The seed is drawn after every refusal, so a refused call never opens the
+    // source, and before `Home::new`, so a failed draw — like every refusal
+    // above — leaves the filesystem exactly as it found it rather than an
+    // empty Radicle home with no key in it.
+    let seed = draw_seed(open_entropy)?;
+
     // `Home::new` creates the directory tree. It runs after both refusals above
     // so that a bad alias or an occupied home does not leave a half-made home
     // behind for the next attempt to trip over.
@@ -407,7 +485,7 @@ fn init_profile_inner(home: &str, alias: &str, passphrase: &str) -> Result<Strin
     let radicle_home = Home::new(&home_path)
         .map_err(|e| format!("could not create a Radicle home at {home}: {e}"))?;
 
-    let profile = Profile::init(radicle_home, alias.clone(), passphrase, os_seed()?)
+    let profile = Profile::init(radicle_home, alias.clone(), passphrase, seed)
         .map_err(|e| format!("could not create a Radicle identity at {home}: {e}"))?;
 
     Ok(json!({
