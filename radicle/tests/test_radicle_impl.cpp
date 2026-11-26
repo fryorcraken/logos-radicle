@@ -596,6 +596,10 @@ LOGOS_TEST(the_later_of_two_accepted_seeds_is_the_one_stored)
     // Two different URLs, so a store that kept the first write, or appended
     // rather than replaced, is told apart from one that kept the second.
     const auto path = freshSettingsPath("seed-later-of-two");
+    // A file left by an earlier run would carry a value from it; the restart
+    // below must be reading only what this test wrote.
+    std::error_code ec;
+    LOGOS_ASSERT_FALSE(std::filesystem::exists(path, ec));
     {
         FakeSeed fake;
         fake.replies["/api/v1"] = kSeedIndex;
@@ -724,6 +728,10 @@ LOGOS_TEST(a_url_with_no_scheme_is_refused_before_any_request_and_says_why)
 
 LOGOS_TEST(an_empty_url_is_refused_and_leaves_the_stored_seed_alone)
 {
+    // The empty fragment matches every URL, so an implementation that let an
+    // empty URL through to the probe would see it answer and store it: the
+    // refusal below can only be the empty-URL check's.
+    logos_test::EventCapture events;
     const auto path = settingsCarryingSeed("seed-empty-url", "https://kept.example.test");
     FakeSeed fake;
     fake.replies[""] = kSeedIndex;
@@ -735,6 +743,50 @@ LOGOS_TEST(an_empty_url_is_refused_and_leaves_the_stored_seed_alone)
                     std::string("https://kept.example.test"));
     LOGOS_ASSERT_EQ(parse(impl.getSettings())["remoteSeed"].get<std::string>(),
                     std::string("https://kept.example.test"));
+    LOGOS_ASSERT_TRUE(events.all("remoteSeedChanged").empty());
+
+    auto restarted = makeRadicleImpl(SeedClient{}, LocalStore{}, SettingsStore{path});
+    LOGOS_ASSERT_EQ(parse(restarted.getCapabilities())["remoteSeed"].get<std::string>(),
+                    std::string("https://kept.example.test"));
+}
+
+/// "A URL `setSetting` would refuse MUST be refused whether or not that seed
+/// would answer a probe", for more shapes than the one missing scheme. Each
+/// row is hardcoded, and the loop first asks `setSetting` — the rule the spec
+/// names — whether it refuses the row too, so a row that is in fact a valid
+/// seed cannot sit in this table and make the test vacuous.
+LOGOS_TEST(every_url_set_setting_refuses_is_refused_by_set_remote_seed_though_it_would_answer)
+{
+    const std::vector<std::string> malformed = {
+        "ftp://seed.example.test",
+        "//seed.example.test",
+        " https://seed.example.test",
+        "https:/seed.example.test",
+        "https:seed.example.test",
+        "HTTPS://seed.example.test",
+    };
+
+    for (const auto& url : malformed) {
+        // Controls: the rule `setSetting` applies refuses this row.
+        {
+            auto control = makeRadicleImpl(SeedClient{}, LocalStore{},
+                                           SettingsStore{freshSettingsPath("seed-malformed-control")});
+            LOGOS_ASSERT_TRUE(parse(control.setSetting("remoteSeed", url)).contains("error"));
+        }
+
+        logos_test::EventCapture events;
+        const auto path = settingsCarryingSeed("seed-malformed", "https://kept.example.test");
+        FakeSeed fake;
+        fake.replies[""] = kSeedIndex;   // every request would succeed
+        auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{}, SettingsStore{path});
+
+        LOGOS_ASSERT_TRUE(parse(impl.setRemoteSeed(url)).contains("error"));
+        LOGOS_ASSERT_EQ(parse(impl.getCapabilities())["remoteSeed"].get<std::string>(),
+                        std::string("https://kept.example.test"));
+        LOGOS_ASSERT_EQ(parse(impl.getSettings())["remoteSeed"].get<std::string>(),
+                        std::string("https://kept.example.test"));
+        LOGOS_ASSERT_TRUE(events.all("remoteSeedChanged").empty());
+    }
 }
 
 // NO SPEC: the spec says a refusal leaves "the seed in force" as it was, and
@@ -755,6 +807,9 @@ LOGOS_TEST(a_failed_probe_leaves_the_seed_in_force_reachable)
 
     LOGOS_ASSERT_TRUE(parse(impl.setRemoteSeed("https://unreachable.example.test"))
                           .contains("error"));
+    // The refusal was the probe's: a request really went to the new seed, and
+    // it is the 404 this fake gives it (no reply is keyed to that host).
+    LOGOS_ASSERT_CONTAINS(fake.requested.back(), std::string("unreachable.example.test"));
 
     const auto caps = parse(impl.getCapabilities());
     LOGOS_ASSERT_EQ(caps["remoteSeed"].get<std::string>(), std::string("https://good.example.test"));
