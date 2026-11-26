@@ -699,6 +699,166 @@ fn holds_file(record: &TreeRecord, rel: &str) -> bool {
     matches!(record.get(std::path::Path::new(rel)), Some(Entry::File(_)))
 }
 
+/// A small tree with every kind of entry the recorder distinguishes, built by
+/// hand so its expected record is written down here and not derived from the
+/// recorder.
+///
+/// ```text
+/// a/b/deep.txt   "one"
+/// empty/         (an empty directory)
+/// top.bin        0x00 0x01
+/// ```
+fn recorder_tree(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let dir = scratch_dir(name);
+    let root = dir.join("root");
+    std::fs::create_dir_all(root.join("a").join("b")).expect("fixture: a/b");
+    std::fs::create_dir(root.join("empty")).expect("fixture: empty");
+    std::fs::write(root.join("a").join("b").join("deep.txt"), b"one").expect("fixture: deep.txt");
+    std::fs::write(root.join("top.bin"), [0u8, 1u8]).expect("fixture: top.bin");
+    (dir, root)
+}
+
+fn sorted(mut lines: Vec<String>) -> Vec<String> {
+    lines.sort();
+    lines
+}
+
+/// The recorder lists every entry, at every depth, directories included.
+///
+/// The two isolation tests are only as sharp as this instrument: a recorder
+/// that stopped at the first level, or left directories out, would compare
+/// equal across a write into `cobs/` or the removal of an empty `storage/`, and
+/// those tests would stay green. The expected record is spelled out by hand.
+#[test]
+fn the_recorder_lists_every_entry_at_every_depth_with_directories() {
+    let (dir, root) = recorder_tree("tree-record-shape");
+
+    let record = tree_record(&root);
+
+    let paths: Vec<String> = record.keys().map(|p| p.display().to_string()).collect();
+    assert_eq!(
+        paths,
+        ["a", "a/b", "a/b/deep.txt", "empty", "top.bin"],
+        "the record must list directories as entries and descend into them"
+    );
+    assert_eq!(
+        record[std::path::Path::new("a/b/deep.txt")],
+        Entry::File(b"one".to_vec())
+    );
+    assert_eq!(
+        record[std::path::Path::new("top.bin")],
+        Entry::File(vec![0, 1])
+    );
+    assert_eq!(record[std::path::Path::new("empty")], Entry::Dir);
+    assert!(holds_file(&record, "a/b/deep.txt"));
+    assert!(
+        !holds_file(&record, "a/b"),
+        "a directory is not a file, even one with files under it"
+    );
+    assert!(!holds_file(&record, "missing"));
+
+    cleanup(&dir);
+}
+
+/// Each kind of change is reported, by path, under its own word.
+///
+/// A table, because the failure each row guards against is a different branch
+/// of `record_changes`: dropping the `changed` arm, the `removed` arm or the
+/// `added` loop each turns exactly one row red.
+#[test]
+fn the_recorder_names_each_kind_of_change_by_path() {
+    type Edit = fn(&std::path::Path);
+    let cases: [(&str, Edit, &[&str]); 7] = [
+        ("nothing is touched", |_| {}, &[]),
+        (
+            "a deep file's bytes change",
+            |r| std::fs::write(r.join("a/b/deep.txt"), b"two").unwrap(),
+            &["changed: a/b/deep.txt"],
+        ),
+        (
+            "a file is removed",
+            |r| std::fs::remove_file(r.join("top.bin")).unwrap(),
+            &["removed: top.bin"],
+        ),
+        (
+            "an empty directory is removed",
+            |r| std::fs::remove_dir(r.join("empty")).unwrap(),
+            &["removed: empty"],
+        ),
+        (
+            "an empty directory is added",
+            |r| std::fs::create_dir(r.join("fresh")).unwrap(),
+            &["added: fresh"],
+        ),
+        (
+            "a file is added deep down",
+            |r| std::fs::write(r.join("a/b/extra"), b"").unwrap(),
+            &["added: a/b/extra"],
+        ),
+        (
+            "one of each at once",
+            |r| {
+                std::fs::write(r.join("a/b/deep.txt"), b"two").unwrap();
+                std::fs::remove_dir(r.join("empty")).unwrap();
+                std::fs::write(r.join("new"), b"x").unwrap();
+            },
+            &["changed: a/b/deep.txt", "removed: empty", "added: new"],
+        ),
+    ];
+
+    for (i, (what, edit, expected)) in cases.iter().enumerate() {
+        let (dir, root) = recorder_tree(&format!("tree-record-changes-{i}"));
+        let before = tree_record(&root);
+        edit(&root);
+        let got = sorted(record_changes(&before, &tree_record(&root)));
+        let want = sorted(expected.iter().map(|s| s.to_string()).collect());
+        assert_eq!(got, want, "case {i}: {what}");
+        cleanup(&dir);
+    }
+}
+
+/// A symlink is recorded by its target and never followed.
+///
+/// What it must not do is read through the link: a link out of the root would
+/// otherwise pull the outside tree into the record, so the record of one home
+/// could change when another does.
+#[cfg(unix)]
+#[test]
+fn the_recorder_does_not_follow_a_symlink_out_of_its_root() {
+    let (dir, root) = recorder_tree("tree-record-link");
+    let outside = dir.join("outside");
+    std::fs::create_dir(&outside).expect("fixture: outside");
+    std::fs::write(outside.join("secret"), b"not under root").expect("fixture: secret");
+    std::os::unix::fs::symlink(&outside, root.join("link")).expect("fixture: link");
+
+    let before = tree_record(&root);
+    assert_eq!(
+        before[std::path::Path::new("link")],
+        Entry::Link(outside.clone()),
+        "a link is recorded as its target"
+    );
+    assert!(
+        !before.contains_key(std::path::Path::new("link/secret")),
+        "the record read through a symlink: {:?}",
+        before.keys().collect::<Vec<_>>()
+    );
+
+    // Changing what the link points at is a change; changing what is behind it
+    // is not one this root can see.
+    std::fs::write(outside.join("secret"), b"rewritten").unwrap();
+    assert!(record_changes(&before, &tree_record(&root)).is_empty());
+
+    std::fs::remove_file(root.join("link")).unwrap();
+    std::os::unix::fs::symlink(root.join("empty"), root.join("link")).unwrap();
+    assert_eq!(
+        record_changes(&before, &tree_record(&root)),
+        ["changed: link"],
+        "retargeting a link must show as a change"
+    );
+
+    cleanup(&dir);
+}
+
 /// Reading the key does not change it — any of it.
 ///
 /// A probe that unsealed and rewrote the key would report the right answer and
