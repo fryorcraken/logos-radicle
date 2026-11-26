@@ -15,10 +15,18 @@
 //! input-dependent form CLAUDE.md's branch-switch lesson asks for: a fixture
 //! answering the same for every input cannot tell working from broken.
 //!
+//! Its second half has the same trap in another shape: "each home holds a
+//! profile" passes against a creation that overwrote the other home's key. So
+//! the other home is recorded, whole, byte for byte and with each entry's
+//! permissions, before the second creation, and compared after it.
+//!
 //! ## Never the developer's real profile
 //!
-//! Every home here is under this crate's own `tmp/` and removed on drop, via
-//! the same `fixture::scratch_dir` the read tests use. Nothing in this file
+//! Every home here is under this crate's own `tmp/`, made by the same
+//! `fixture::scratch_dir` the read tests use. A passing test removes its homes
+//! with `cleanup` at its end; a failing one leaves them, throwaway keys
+//! included, until the next run's `scratch_dir` clears that name. Nothing in
+//! this file
 //! reads `RAD_HOME` or `HOME`, and nothing may: a test that created an identity
 //! in a real `~/.radicle` would be writing a permanent key into a directory it
 //! then deletes.
@@ -44,24 +52,65 @@ fn cleanup(dir: &std::path::Path) {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// **The isolation test.** Two homes must yield two *different* identities.
+/// **The isolation test.** Two homes must yield two *different* identities,
+/// and creating one must leave the other exactly as it was.
 ///
-/// Asserting on the node ids rather than on the paths is the whole point: see
+/// Asserting on the node ids rather than on the paths is the first half: see
 /// this file's header for why the path-shaped version of this test passes
 /// against an implementation that gives every profile the same key.
+///
+/// The second half needs B to exist, populated, *before* A is created. A
+/// record of a home that does not exist yet is empty, and an empty record can
+/// only see entries appear; it cannot see a rewrite. So B is created first, its
+/// whole tree recorded (keys, `config.json`, every database under it, and the
+/// permissions of each entry), and the record compared after A. Checking only
+/// `profile_exists` and that the paths do not nest — what this test used to do —
+/// passes against a creation that overwrites the sibling's key pair, which was
+/// measured.
+///
+/// Creating B must also not bring A into being: A's path must not exist until A
+/// is created.
 #[test]
 fn two_homes_get_two_different_identities() {
     let (dir_a, home_a) = fresh_home("profile-init-iso-a");
     let (dir_b, home_b) = fresh_home("profile-init-iso-b");
+    let path_a = std::path::Path::new(&home_a);
+    let path_b = std::path::Path::new(&home_b);
+
+    assert!(
+        !home_a.starts_with(&home_b) && !home_b.starts_with(&home_a),
+        "precondition: the homes must not nest: {home_a} / {home_b}"
+    );
+    assert!(
+        !path_a.exists(),
+        "precondition: home A must not exist before anything is created"
+    );
+
+    let b = parse(&init_profile(&home_b, "bob", ""));
+    let nid_b = b["nodeId"].as_str().unwrap_or_default().to_string();
+    assert!(!nid_b.is_empty(), "home B reported no node id: {b}");
+    assert!(
+        profile_exists(&home_b),
+        "creating an identity into home B reported {nid_b} but left no profile \
+         there: {home_b}"
+    );
+    assert!(
+        !path_a.exists(),
+        "creating an identity into home B brought home A into being: {home_a}"
+    );
+
+    let before = tree_record(path_b);
+    for required in ["keys/radicle", "keys/radicle.pub", "config.json"] {
+        assert!(
+            holds_file(&before, required),
+            "precondition: the record of home B must hold {required}, got {:?}",
+            before.keys().collect::<Vec<_>>()
+        );
+    }
 
     let a = parse(&init_profile(&home_a, "alice", ""));
-    let b = parse(&init_profile(&home_b, "bob", ""));
-
     let nid_a = a["nodeId"].as_str().unwrap_or_default().to_string();
-    let nid_b = b["nodeId"].as_str().unwrap_or_default().to_string();
-
-    assert!(!nid_a.is_empty(), "first profile reported no node id: {a}");
-    assert!(!nid_b.is_empty(), "second profile reported no node id: {b}");
+    assert!(!nid_a.is_empty(), "home A reported no node id: {a}");
     assert_ne!(
         nid_a, nid_b,
         "two embedded profiles share one identity — an embedded node would be \
@@ -69,15 +118,16 @@ fn two_homes_get_two_different_identities() {
          mode promises. A fixed seed produces exactly this."
     );
 
-    // And neither wrote into the other. Checked after the ids, because a shared
-    // identity is the failure that matters and this would pass regardless of it.
+    // Checked after the ids, because a shared identity is the failure that
+    // matters most, and this would pass regardless of it.
+    let changes = record_changes(&before, &tree_record(path_b));
+    assert!(
+        changes.is_empty(),
+        "creating an identity into home A changed home B: {changes:?}"
+    );
     assert!(
         profile_exists(&home_a) && profile_exists(&home_b),
         "each home must hold its own profile"
-    );
-    assert!(
-        !home_a.starts_with(&home_b) && !home_b.starts_with(&home_a),
-        "the homes must not nest: {home_a} / {home_b}"
     );
 
     cleanup(&dir_a);
@@ -569,32 +619,377 @@ fn reporting_encryption_needs_no_passphrase_and_no_agent() {
     cleanup(&dir);
 }
 
-/// Every file under `<home>/keys`, by name, with its bytes.
+// ---------------------------------------------------------------------------
+// Recording a directory tree, for "nothing under here changed".
+//
+// Two tests need that statement: a report leaves the sealed key as it was, and
+// creating into one home leaves another as it was. Both are answered by the
+// same record, so there is one recorder rather than one per depth.
+// ---------------------------------------------------------------------------
+
+/// One entry under a recorded directory: what it is, and its permissions.
 ///
-/// A map rather than the one private-key file: the requirement is that **every
-/// file under the `keys` directory** is byte-for-byte what it was, so a probe
-/// that left `keys/radicle` alone and rewrote `keys/radicle.pub` (or dropped a
-/// sibling file next to them) must be seen. Names are part of the snapshot, so
-/// a file created or removed by the probe changes the map as well.
-fn keys_snapshot(home: &str) -> std::collections::BTreeMap<String, Vec<u8>> {
-    let keys = std::path::Path::new(home).join("keys");
-    let mut out = std::collections::BTreeMap::new();
-    for entry in std::fs::read_dir(&keys).expect("the keys directory must exist") {
-        let entry = entry.expect("a keys entry must be readable");
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let bytes = std::fs::read(entry.path()).expect("a keys file must be readable");
-        out.insert(name, bytes);
-    }
+/// Permissions are part of the entry because a `chmod` is the one way to harm
+/// a home's private key without changing a byte of it: making it
+/// world-readable. Timestamps and ownership are not recorded; nothing about a
+/// home's isolation depends on them.
+#[derive(Debug, PartialEq, Eq)]
+struct Entry {
+    kind: Kind,
+    permissions: std::fs::Permissions,
+}
+
+/// What an entry is, with what the record compares for that kind.
+///
+/// A directory is an entry in its own right, so an empty directory created or
+/// removed under the root changes the record. A symlink is recorded by its
+/// target and never followed, so the record cannot read outside the root it
+/// was asked about. A socket, FIFO or device is recorded as `Special`, with
+/// nothing read from it.
+#[derive(Debug, PartialEq, Eq)]
+enum Kind {
+    Dir,
+    File(Vec<u8>),
+    Link(std::path::PathBuf),
+    Special,
+}
+
+type TreeRecord = std::collections::BTreeMap<std::path::PathBuf, Entry>;
+
+/// Every entry under `root`, recursively, by its path relative to `root`, with
+/// the permissions of every entry and the bytes of every file.
+///
+/// Names are part of the record, so an entry added or removed changes the map
+/// as well as a file whose bytes changed. An entry that cannot be read panics
+/// rather than being skipped: a record with a hole in it would compare equal
+/// across exactly the change it was meant to see.
+fn tree_record(root: &std::path::Path) -> TreeRecord {
+    let mut out = TreeRecord::new();
+    record_under(root, std::path::Path::new(""), &mut out);
     out
 }
+
+fn record_under(root: &std::path::Path, rel: &std::path::Path, out: &mut TreeRecord) {
+    let dir = root.join(rel);
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("could not list {} for the record: {e}", dir.display()));
+    for entry in entries {
+        let entry = entry.unwrap_or_else(|e| panic!("unreadable entry in {}: {e}", dir.display()));
+        let path = rel.join(entry.file_name());
+        // `DirEntry::metadata`, unlike `fs::metadata`, does not follow
+        // symlinks: the type and permissions are the link's own, which is what
+        // keeps the record inside `root`.
+        let meta = entry
+            .metadata()
+            .unwrap_or_else(|e| panic!("no metadata for {}: {e}", path.display()));
+        let permissions = meta.permissions();
+        let file_type = meta.file_type();
+        if file_type.is_symlink() {
+            let target = std::fs::read_link(entry.path())
+                .unwrap_or_else(|e| panic!("unreadable link {}: {e}", path.display()));
+            let kind = Kind::Link(target);
+            out.insert(path, Entry { kind, permissions });
+        } else if file_type.is_dir() {
+            let kind = Kind::Dir;
+            out.insert(path.clone(), Entry { kind, permissions });
+            record_under(root, &path, out);
+        } else if file_type.is_file() {
+            let bytes = std::fs::read(entry.path())
+                .unwrap_or_else(|e| panic!("unreadable file {}: {e}", path.display()));
+            let kind = Kind::File(bytes);
+            out.insert(path, Entry { kind, permissions });
+        } else {
+            // A socket, a FIFO or a device: reading one fails or blocks, so it
+            // is recorded by existing and by its permissions alone.
+            let kind = Kind::Special;
+            out.insert(path, Entry { kind, permissions });
+        }
+    }
+}
+
+/// What differs between two records, one line per path, empty when they agree.
+///
+/// Compared this way rather than with `assert_eq!` on the maps, whose failure
+/// would print every byte of every SQLite file in a home and bury the one path
+/// that moved.
+///
+/// A path whose contents changed is `changed:`; one whose contents are the
+/// same but whose permissions moved is `permissions changed:`. A path where
+/// both moved gets the `changed:` line only, so each path still has one line.
+fn record_changes(before: &TreeRecord, after: &TreeRecord) -> Vec<String> {
+    let mut changes = Vec::new();
+    for (path, was) in before {
+        match after.get(path) {
+            None => changes.push(format!("removed: {}", path.display())),
+            Some(now) if now.kind != was.kind => {
+                changes.push(format!("changed: {}", path.display()))
+            }
+            Some(now) if now.permissions != was.permissions => {
+                changes.push(format!("permissions changed: {}", path.display()))
+            }
+            Some(_) => {}
+        }
+    }
+    for path in after.keys().filter(|p| !before.contains_key(*p)) {
+        changes.push(format!("added: {}", path.display()));
+    }
+    changes
+}
+
+/// Whether `record` holds `rel` as a file, for the preconditions that stop two
+/// empty records comparing equal.
+fn holds_file(record: &TreeRecord, rel: &str) -> bool {
+    matches!(
+        record.get(std::path::Path::new(rel)),
+        Some(Entry {
+            kind: Kind::File(_),
+            ..
+        })
+    )
+}
+
+/// A small tree with every kind of entry the recorder distinguishes, built by
+/// hand so its expected record is written down here and not derived from the
+/// recorder.
+///
+/// ```text
+/// a/b/deep.txt   "one"
+/// empty/         (an empty directory)
+/// top.bin        0x00 0x01
+/// ```
+fn recorder_tree(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let dir = scratch_dir(name);
+    let root = dir.join("root");
+    std::fs::create_dir_all(root.join("a").join("b")).expect("fixture: a/b");
+    std::fs::create_dir(root.join("empty")).expect("fixture: empty");
+    std::fs::write(root.join("a").join("b").join("deep.txt"), b"one").expect("fixture: deep.txt");
+    std::fs::write(root.join("top.bin"), [0u8, 1u8]).expect("fixture: top.bin");
+    (dir, root)
+}
+
+fn sorted(mut lines: Vec<String>) -> Vec<String> {
+    lines.sort();
+    lines
+}
+
+/// The recorder lists every entry, at every depth, directories included.
+///
+/// The two isolation tests are only as sharp as this instrument: a recorder
+/// that stopped at the first level, or left directories out, would compare
+/// equal across a write into `cobs/` or the removal of an empty `storage/`, and
+/// those tests would stay green. The expected record is spelled out by hand.
+#[test]
+fn the_recorder_lists_every_entry_at_every_depth_with_directories() {
+    let (dir, root) = recorder_tree("tree-record-shape");
+
+    let record = tree_record(&root);
+
+    let paths: Vec<String> = record.keys().map(|p| p.display().to_string()).collect();
+    assert_eq!(
+        paths,
+        ["a", "a/b", "a/b/deep.txt", "empty", "top.bin"],
+        "the record must list directories as entries and descend into them"
+    );
+    assert_eq!(
+        record[std::path::Path::new("a/b/deep.txt")].kind,
+        Kind::File(b"one".to_vec())
+    );
+    assert_eq!(
+        record[std::path::Path::new("top.bin")].kind,
+        Kind::File(vec![0, 1])
+    );
+    assert_eq!(record[std::path::Path::new("empty")].kind, Kind::Dir);
+    assert!(holds_file(&record, "a/b/deep.txt"));
+    assert!(
+        !holds_file(&record, "a/b"),
+        "a directory is not a file, even one with files under it"
+    );
+    assert!(!holds_file(&record, "missing"));
+
+    cleanup(&dir);
+}
+
+/// Each kind of change is reported, by path, under its own word.
+///
+/// A table, because the failure each row guards against is a different branch
+/// of `record_changes`. Dropping the `changed` arm, the `removed` arm, the
+/// `permissions changed` arm or the `added` loop each turns at least one row
+/// red; the loop stops at the first, so the output names one row, not all.
+///
+/// The two permissions rows are the guard for the `permissions changed` arm,
+/// which no other test in this file reaches: a file and a directory each have
+/// their mode moved with their contents left alone, and a row where bytes and
+/// mode both move shows that the path gets its one `changed:` line only.
+#[test]
+fn the_recorder_names_each_kind_of_change_by_path() {
+    type Edit = fn(&std::path::Path);
+    // Read-only is the one permissions change `std::fs` can make on every
+    // platform, which is why it is the edit here and not a particular mode.
+    fn make_read_only(path: &std::path::Path) {
+        let mut permissions = std::fs::metadata(path).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(path, permissions).unwrap();
+    }
+    let cases: &[(&str, Edit, &[&str])] = &[
+        ("nothing is touched", |_| {}, &[]),
+        (
+            "a file's permissions change and its bytes do not",
+            |r| make_read_only(&r.join("top.bin")),
+            &["permissions changed: top.bin"],
+        ),
+        (
+            "a directory's permissions change and its entries do not",
+            |r| make_read_only(&r.join("empty")),
+            &["permissions changed: empty"],
+        ),
+        (
+            "a file's bytes and permissions both change",
+            |r| {
+                std::fs::write(r.join("top.bin"), b"new").unwrap();
+                make_read_only(&r.join("top.bin"));
+            },
+            &["changed: top.bin"],
+        ),
+        (
+            "a deep file's bytes change",
+            |r| std::fs::write(r.join("a/b/deep.txt"), b"two").unwrap(),
+            &["changed: a/b/deep.txt"],
+        ),
+        (
+            "a file is removed",
+            |r| std::fs::remove_file(r.join("top.bin")).unwrap(),
+            &["removed: top.bin"],
+        ),
+        (
+            "an empty directory is removed",
+            |r| std::fs::remove_dir(r.join("empty")).unwrap(),
+            &["removed: empty"],
+        ),
+        (
+            "an empty directory is added",
+            |r| std::fs::create_dir(r.join("fresh")).unwrap(),
+            &["added: fresh"],
+        ),
+        (
+            "a file is added deep down",
+            |r| std::fs::write(r.join("a/b/extra"), b"").unwrap(),
+            &["added: a/b/extra"],
+        ),
+        (
+            "one of each at once",
+            |r| {
+                std::fs::write(r.join("a/b/deep.txt"), b"two").unwrap();
+                std::fs::remove_dir(r.join("empty")).unwrap();
+                std::fs::write(r.join("new"), b"x").unwrap();
+            },
+            &["changed: a/b/deep.txt", "removed: empty", "added: new"],
+        ),
+    ];
+
+    for (i, (what, edit, expected)) in cases.iter().enumerate() {
+        let (dir, root) = recorder_tree(&format!("tree-record-changes-{i}"));
+        let before = tree_record(&root);
+        edit(&root);
+        let got = sorted(record_changes(&before, &tree_record(&root)));
+        let want = sorted(expected.iter().map(|s| s.to_string()).collect());
+        assert_eq!(got, want, "case {i}: {what}");
+        cleanup(&dir);
+    }
+}
+
+/// A symlink is recorded by its target and never followed.
+///
+/// The recorder must not read through the link: a link out of the root would
+/// otherwise pull the outside tree into the record, so the record of one home
+/// could change when another does.
+#[cfg(unix)]
+#[test]
+fn the_recorder_does_not_follow_a_symlink_out_of_its_root() {
+    let (dir, root) = recorder_tree("tree-record-link");
+    let outside = dir.join("outside");
+    std::fs::create_dir(&outside).expect("fixture: outside");
+    std::fs::write(outside.join("secret"), b"not under root").expect("fixture: secret");
+    std::os::unix::fs::symlink(&outside, root.join("link")).expect("fixture: link");
+
+    let before = tree_record(&root);
+    assert_eq!(
+        before[std::path::Path::new("link")].kind,
+        Kind::Link(outside.clone()),
+        "a link is recorded as its target"
+    );
+    assert!(
+        !before.contains_key(std::path::Path::new("link/secret")),
+        "the record read through a symlink: {:?}",
+        before.keys().collect::<Vec<_>>()
+    );
+
+    // Changing what the link points at is a change; changing what is behind it
+    // is not one this root can see.
+    std::fs::write(outside.join("secret"), b"rewritten").unwrap();
+    assert!(record_changes(&before, &tree_record(&root)).is_empty());
+
+    std::fs::remove_file(root.join("link")).unwrap();
+    std::os::unix::fs::symlink(root.join("empty"), root.join("link")).unwrap();
+    assert_eq!(
+        record_changes(&before, &tree_record(&root)),
+        ["changed: link"],
+        "retargeting a link must show as a change"
+    );
+
+    cleanup(&dir);
+}
+
+/// A socket in the tree is recorded by its kind, not read.
+///
+/// A home with a running node holds the node's control socket. `fs::read` on a
+/// socket fails, and on a FIFO with no writer it never returns, so a recorder
+/// that treated every non-directory, non-link entry as a file would panic or
+/// hang over such a home instead of recording it.
+///
+/// The socket is bound through `/proc/self/fd/<n>`, because a path under this
+/// crate's scratch directory can be longer than the 107 bytes a Unix socket
+/// address holds, and the kernel resolves that short path to the same directory.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_recorder_records_a_socket_by_its_kind_without_reading_it() {
+    use std::os::fd::AsRawFd;
+
+    let (dir, root) = recorder_tree("tree-record-socket");
+    let root_fd = std::fs::File::open(&root).expect("fixture: open root");
+    let short = format!("/proc/self/fd/{}/sock", root_fd.as_raw_fd());
+    let _listener = std::os::unix::net::UnixListener::bind(&short).expect("fixture: bind socket");
+
+    let before = tree_record(&root);
+    assert!(
+        before.contains_key(std::path::Path::new("sock")),
+        "a socket under the root must be listed: {:?}",
+        before.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        before[std::path::Path::new("sock")].kind,
+        Kind::Special,
+        "a socket is recorded by its kind, not as a file"
+    );
+    assert!(record_changes(&before, &tree_record(&root)).is_empty());
+
+    cleanup(&dir);
+}
+
+// ---------------------------------------------------------------------------
+// Reporting whether an EXISTING key is encrypted, continued: this test uses
+// the recorder above to ask that a report changes nothing under `keys/`.
+// ---------------------------------------------------------------------------
 
 /// Reading the key does not change it — any of it.
 ///
 /// A probe that unsealed and rewrote the key would report the right answer and
 /// destroy the property it reported. The bytes of every file under `keys` are
 /// compared before and after, which is the only observation that would notice.
+/// The same record also compares each entry's permissions, which falls under
+/// the requirement's "or otherwise alter the key" though its scenario names
+/// bytes only.
 ///
-/// The snapshot is asserted to hold the private key AND the public one before
+/// The record is asserted to hold the private key AND the public one before
 /// anything is probed, so a comparison of two empty maps cannot pass for a
 /// home whose keys directory was never populated.
 ///
@@ -606,10 +1001,11 @@ fn reporting_encryption_leaves_the_key_untouched() {
     let (dir, home) = fresh_home("key-encrypted-immutable");
     let _ = init_profile(&home, "tester", "correct horse battery");
 
-    let before = keys_snapshot(&home);
+    let keys = std::path::Path::new(&home).join("keys");
+    let before = tree_record(&keys);
     assert!(
-        before.contains_key("radicle") && before.contains_key("radicle.pub"),
-        "precondition: the snapshot must hold both halves of the key, got {:?}",
+        holds_file(&before, "radicle") && holds_file(&before, "radicle.pub"),
+        "precondition: the record must hold both halves of the key, got {:?}",
         before.keys().collect::<Vec<_>>()
     );
 
@@ -620,11 +1016,11 @@ fn reporting_encryption_leaves_the_key_untouched() {
         "precondition: the existence probe must see the identity it reports on"
     );
 
-    let after = keys_snapshot(&home);
-    assert_eq!(
-        before, after,
-        "reporting whether the key is encrypted must not rewrite, remove or add \
-         any file under keys/"
+    let changes = record_changes(&before, &tree_record(&keys));
+    assert!(
+        changes.is_empty(),
+        "reporting whether the key is encrypted must not rewrite, remove, add \
+         or change the permissions of any entry under keys/, got: {changes:?}"
     );
 
     cleanup(&dir);
