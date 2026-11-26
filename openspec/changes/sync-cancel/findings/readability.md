@@ -25,7 +25,7 @@ user's. Test names read as sentences and say what they pin.
 
 Defects are marked **defect**; the rest are **preference**.
 
-- [ ] **`dev-writer`** — `SourceTab.qml:485` — **defect** (misleading comment).
+- [x] **`dev-writer`** — `SourceTab.qml:485` — **defect** (misleading comment).
       `walkSyncListing()`'s doc says "Counts the listing itself as done."
       It does not: it only queues the children. The listing is counted by
       `settleSyncRead()` on the reply path and by an inline `syncDone++` in
@@ -35,8 +35,13 @@ Defects are marked **defect**; the rest are **preference**.
       the cached listing is counted twice or not at all; `syncDone >=
       syncQueued` then fires early or never. Reword to what it does ("Queue a
       listed directory's children; the caller counts the listing").
+      **Fixed** in the commit "Sync: one epoch check, one completion, one
+      blob decode, clearer names": the comment now says the caller counts
+      the listing, and names who (`settleSyncRead()` for a reply,
+      `completeSyncRead()` for a cached listing). Prose only; no test can see
+      a comment.
 
-- [ ] **`dev-writer`** — `SourceTab.qml:117`, `:503`, `:532-533` — **defect**
+- [x] **`dev-writer`** — `SourceTab.qml:117`, `:503`, `:532-533` — **defect**
       (name collision). `syncInFlight` is a count of the running sync's
       outstanding reads; the existing `inFlight` is a map of blob keys being
       fetched by anyone (click, hover, sync). They sit on adjacent lines in
@@ -46,8 +51,16 @@ Defects are marked **defect**; the rest are **preference**.
       sync's slice of `inFlight`" and clears or tests one where the other is
       meant. A name that does not echo the map (for example the count of
       outstanding reads, `syncOutstanding`) removes the question.
+      **Fixed** in the commit "Sync: one epoch check, one completion, one
+      blob decode, clearer names": `syncInFlight` is `syncOutstanding` and
+      `syncMaxInFlight` is `syncMaxOutstanding`, the word the spec now uses
+      ("A running sync keeps at most 4 requests outstanding"), and the
+      count's doc comment says it has nothing to do with the `inFlight` map.
+      The two references outside `SourceTab.qml` (`docs/e2e.md` and a
+      comment in `tst_sync_cancel.qml`'s header) follow the rename. A rename;
+      no test distinguishes it.
 
-- [ ] **`dev-writer`** — `SourceTab.qml:443-458` vs `:494`, `:520` —
+- [x] **`dev-writer`** — `SourceTab.qml:443-458` vs `:494`, `:520` —
       **preference**, leaning defect. `syncDir()` and `syncBlob()` now only
       *queue*; `fetchSyncTree()` and `fetchSyncBlob()` dispatch. The old names
       read as "do the sync of a directory/file" and now describe neither, and
@@ -58,8 +71,10 @@ Defects are marked **defect**; the rest are **preference**.
       would make the two stages legible at the call site in `walkSyncListing()`
       and `pumpSync()`. Only `SourceTab.qml` mentions either name (grep over
       `radicle-ui/`), so the rename is local.
+      **Fixed** in the same commit: `queueSyncTree()`/`queueSyncBlob()`
+      against `fetchSyncTree()`/`fetchSyncBlob()`, "Tree" on both sides.
 
-- [ ] **`dev-writer`** — `SourceTab.qml:546` against `:336` and `:365` —
+- [x] **`dev-writer`** — `SourceTab.qml:546` against `:336` and `:365` —
       **preference**. `fetchSyncBlob()`'s reply is now the third copy of the
       "decode the blob, store it, paint it if the user is waiting" block
       (`openEntry()`, `prefetch()`, here), and the "is the user waiting on this
@@ -74,8 +89,17 @@ Defects are marked **defect**; the rest are **preference**.
       `cacheKey` comparison saying why it differs from `prefetch()`'s, so the
       next copy starts from the right one. Whether the helper belongs here or
       in a separate change is the architecture reviewer's call.
+      **Fixed**, both halves, in the commit "Sync: one epoch check, one
+      completion, one blob decode, clearer names" and the one after it: the
+      decode is one `blobBody(data, entry)` used by all three readers, and
+      the `cacheKey` comparison now carries a comment saying why it differs
+      from `openEntry()`'s and `prefetch()`'s (the sync's read is pinned to
+      the branch the sync started on, and the key is what carries the
+      branch). The paint guards are not unified, per issue #29; design
+      Decision 4 says so. Behaviour unchanged: every sync and view test file
+      passes as before.
 
-- [ ] **`dev-writer`** — `SourceTab.qml:119-124` — **preference**.
+- [x] **`dev-writer`** — `SourceTab.qml:119-124` — **preference**.
       `dropSyncQueue()` also sets `syncInFlight = 0`, which is the slot count,
       not the queue. The doc comment says "empty queue and every slot", so it
       is documented; but the name and the one job disagree (the tell in
@@ -86,8 +110,16 @@ Defects are marked **defect**; the rest are **preference**.
       A name that covers both (`clearSyncDispatch()`) or moving the zeroing of
       the counters in with it would make "what does starting a sync reset?"
       answerable from one place.
+      **Fixed**, the first of your two options, in the commit "Sync: one
+      epoch check, one completion, one blob decode, clearer names":
+      `dropSyncQueue()` is `resetSyncDispatch()`, documented as emptying the
+      dispatch window (the queue and the outstanding count). The progress
+      counters were not moved in: `cancelSync()` calls the function and does
+      not zero them, so moving them would change what a cancel leaves, and
+      the doc comment now says which two callers zero them and why they are
+      outside.
 
-- [ ] **`dev-writer`** — `SourceTab.qml:524-528` — **preference**. The skipped
+- [x] **`dev-writer`** — `SourceTab.qml:524-528` — **preference**. The skipped
       blob in `fetchSyncBlob()` is counted done and takes no slot; the
       matching branch in `fetchSyncTree()` says why ("A cached listing is no
       request: walk it without taking a slot") and this one does not. The
@@ -96,6 +128,10 @@ Defects are marked **defect**; the rest are **preference**.
       slot. A one-line comment here ("not a request: counts as done, takes no
       slot") is enough; a reader otherwise has to work out why this branch does
       not call `settleSyncRead()` and why that is right.
+      **Fixed** in the same commit: the branch says the read "sends nothing,
+      so it completes without taking a slot", and the pair is now one
+      `completeSyncRead()` called by both slotless paths and by
+      `settleSyncRead()` (the architecture reviewer's second finding).
 
 - [ ] **`tester`** — `tst_sync_cancel.qml:22` — **preference**. The header says
       the bound is "recorded in the change's design.md". After the archive
@@ -118,9 +154,11 @@ Defects are marked **defect**; the rest are **preference**.
       queue), so the second line says nothing the first did not. Low value;
       take it if the file is touched again.
 
-- [ ] **`dev-writer`** — `sync.yaml:213-214` — **preference** (wording). The
+- [x] **`dev-writer`** — `sync.yaml:213-214` — **preference** (wording). The
       comment calls the poll's wait "the file's default of 30 s", but the step
       right below sets `timeout: 30s` itself, so it is not the default, and
       the `tasks.md` text ("each given 30 s") says it is set. If the file's
       default (line 38) moves, the comment will claim the step follows it when
       it does not. Say "30 s" and drop "default".
+      **Fixed** in the commit "Pin the running sync's cap and the seed-only
+      sync control": "Its wait is 30 s, set on the step". Comment only.
