@@ -34,23 +34,44 @@
       `SettingsStore::validate`, probe a candidate `SeedClient`, store
       `remoteSeed`, and only then replace the client in force and emit
       `remoteSeedChanged`; verify every test from 2.1 passes
-- [x] 2.3 Pin the unspecified choices with `NO SPEC:` tests — an acceptance
-      emits one `remoteSeedChanged` (also the control for the no-event
-      assertions), no request is made for a URL with no scheme, a failed probe
-      leaves the in-force seed reachable, and the stored URL has its trailing
-      slash stripped; verify each is green after 2.2 and that the no-scheme,
-      reachability and trailing-slash ones were red before it
+- [x] 2.3 Test an acceptance emitting one `remoteSeedChanged` (also the
+      control for the no-event assertions), no request for a URL with no
+      scheme, a failed probe leaving the in-force seed reachable, and the
+      stored URL losing its trailing slash; verify each is green after 2.2 and
+      that the no-scheme, reachability and trailing-slash ones were red before
+      it. These were first `NO SPEC:` tests; the spec now requires each, and
+      the markers are gone
 - [x] 2.4 Correct the comments that describe `setRemoteSeed` as never storing
       or as rolling back (`radicle_impl.h`, `settings_store.h`,
-      `settings_store.cpp`, the test comment on adoption) and the annotation in
-      `docs/M3-embedded-node-plan.md`; verify with
-      `git grep -n "setRemoteSeed" radicle/src docs` that no comment in
-      `radicle/src` still says so. The plan document's pre-Phase-1 section
-      (its lines on "persists no configuration at all") is frozen planning
-      prose describing the state before the store existed, and is left as
-      written; the annotation below it is what was corrected
+      `settings_store.cpp`, the test comments, `Main.qml`'s seed picker) and
+      the annotation in `docs/M3-embedded-node-plan.md`; verify with
+      `git grep -n "setRemoteSeed" radicle/src radicle-ui/src docs` that no
+      comment still says so. The plan document's pre-Phase-1 section (its
+      lines on "persists no configuration at all") is frozen planning prose
+      describing the state before the store existed, and is left as written;
+      the annotation below it is what was corrected
 - [x] 2.5 Record in `design.md` which test each guard turns red, and verify each
       claim by applying the mutation it names and watching that test fail
+
+## 3. What answering means, and the normalised URL (review findings)
+
+- [x] 3.1 Write the failing tests first for the new requirements: a 2xx body
+      that is not a seed index (`[]`, `null`, `"ok"`, `42`, `{}`,
+      `{"apiVersion":6}`, `not json`), a failure status with a seed-index body
+      and with `{"error":5}`, `https://` and `http://` refused before any
+      request, a `nid` that is absent or not a string, and the reply carrying
+      the probe's `apiVersion` and `nid`; verify each defect test is red
+      against the code before 3.2
+- [x] 3.2 `SeedClient::probe` refuses anything but a JSON object with a string
+      `apiVersion`; `getJson` surfaces a seed's `error` only when it is a
+      string; `setRemoteSeed` shape-checks the URL as given and as stored, and
+      replies with `SeedClient::nid()`; verify the core unit tests leave only
+      the two sandbox socket-cap failures
+- [x] 3.3 Test the store-write refusal for a store with a path whose file
+      cannot be written, not only for a store with no path; and have a store
+      with no path say why it cannot write
+- [x] 3.4 Re-measure each ordering guard in `design.md` by moving the gate and
+      naming the tests that go red, and the assertion that does
 
 ## Workflow follow-up
 

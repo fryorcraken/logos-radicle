@@ -72,7 +72,7 @@ the fifth is a missing contract note.
       `tester`'s box in `readability.md`, which is left for the `tester`.
       Comments only; no test can see them.
 
-- [ ] **`dev-writer`** — `radicle/src/radicle_impl.cpp:441-443`, `radicle/src/radicle_impl.cpp:478-479`, `design.md` "The stored URL is the one in force" — the claim that stored, in-force and reported URLs "all agree" holds for one of the two doors only
+- [x] **`dev-writer`** — `radicle/src/radicle_impl.cpp:441-443`, `radicle/src/radicle_impl.cpp:478-479`, `design.md` "The stored URL is the one in force" — the claim that stored, in-force and reported URLs "all agree" holds for one of the two doors only
       **Scenario:** `setSetting("remoteSeed", "https://x.example.test/")` stores
       the raw string (`m_settings.set(key, value)`) and adopts the normalised
       one (`m_seed.setSeedUrl` strips the slash), so `getSettings().remoteSeed`
@@ -86,6 +86,16 @@ the fifth is a missing contract note.
       is #65), but `design.md` should say so under Non-Goals or Risks, so the
       claim is scoped to `setRemoteSeed`. **Severity:** low; documentation
       accuracy, not a regression.
+      **Fixed** in "Fold the review findings into design.md": the Decisions
+      entry is now "The URL is normalised once, and everything reports that
+      form", citing the spec's "An accepted seed is reported as its normalised
+      URL", which is scoped to `setRemoteSeed`; a Risks entry, "The two doors
+      store the seed in different forms", states the `setSetting` divergence
+      and that "normalised once" holds for `setRemoteSeed` only, with #65 as
+      the issue owning `setSetting`'s seed path (it does not yet name this;
+      flagged to the runner). The comment at `radicle_impl.cpp` beside the
+      store now says only that this call's stored seed, in-force seed and
+      reply agree. The same point as `design-review.md`'s second box.
 
 - [x] **`dev-writer`** — `radicle/src/seed_client.h:21-89`, `radicle/src/radicle_impl.cpp:469` — `setRemoteSeed` now depends on `SeedClient` staying a cheap, copyable value type, and the class does not say so
       **Scenario:** `design.md` justifies the copy ("a URL, three cached

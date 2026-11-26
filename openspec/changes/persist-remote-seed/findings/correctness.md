@@ -90,7 +90,7 @@ are the only defects found; the mutation is left in the tree (see hand-off).
       `http://`; error naming both schemes, no request, stored seed kept, no
       event) was watched failing first on `fake.requested.empty()`.
 
-- [ ] **`dev-writer`** — `radicle/src/radicle_impl.cpp:480-481` via
+- [x] **`dev-writer`** — `radicle/src/radicle_impl.cpp:480-481` via
       `radicle/src/settings_store.cpp:343-361` — a seed pick now rewrites the
       whole settings file from `load()`, which normalises what a newer build
       wrote, so choosing a seed can destroy the stored mode
@@ -109,3 +109,13 @@ are the only defects found; the mutation is left in the tree (see hand-off).
       covered by a test or named in `design.md`'s risks; either record it as an
       accepted consequence there or have `set` leave keys and values it did not
       change as it found them.
+      **Rejected** as a fix in this change; recorded as an accepted consequence
+      under `design.md`'s Risks ("A seed pick rewrites the whole settings file
+      from `load()`"), in "Fold the review findings into design.md". Having
+      `set` preserve what it did not change is a behaviour of every write
+      through the store, `setSetting`'s included, and no requirement asks for
+      it, so building it here would be building past the spec; whether a
+      write must preserve a newer build's keys and mode is an observable
+      behaviour for the `spec-writer` to decide, and is in the hand-back as
+      such. No issue tracks it yet (#63 covers a read leaving the file alone,
+      not a write); filing one is a `gh issue` write, left to the runner.
