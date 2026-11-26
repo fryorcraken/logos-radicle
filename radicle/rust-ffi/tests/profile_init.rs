@@ -751,6 +751,10 @@ enum Step {
     Interrupt,
     /// Report a hard read error.
     Fail,
+    /// Report an error of kind `UnexpectedEof` with its own text — the kind
+    /// `read_exact` uses for a source that ran out, raised by the source
+    /// itself instead.
+    FailAsEndOfFile,
 }
 
 /// A reader that does exactly what its script says, then reports end of input.
@@ -773,6 +777,10 @@ impl std::io::Read for Scripted {
             None => Ok(0),
             Some(Step::Interrupt) => Err(std::io::ErrorKind::Interrupted.into()),
             Some(Step::Fail) => Err(std::io::Error::other("the test source failed on purpose")),
+            Some(Step::FailAsEndOfFile) => Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "the test source reported its own end-of-file error",
+            )),
             Some(Step::Give(mut bytes)) => {
                 let n = bytes.len().min(buf.len());
                 buf[..n].copy_from_slice(&bytes[..n]);
@@ -888,6 +896,43 @@ fn a_source_that_fails_mid_read_creates_no_key() {
     assert!(
         message.contains("failed on purpose"),
         "the source's own error must be carried, so the cause is visible: {out}"
+    );
+    assert_eq!(
+        files_under_keys(&home),
+        Vec::<String>::new(),
+        "a failed draw must write no key material"
+    );
+
+    cleanup(&dir);
+}
+
+/// **A read error's text is carried whatever its kind** — including
+/// `UnexpectedEof`, the kind `read_exact` itself uses when a source runs out.
+///
+/// The draw replaces std's own short-read text with a sentence a user can act
+/// on. Keyed on the error's kind alone, that replacement would also swallow
+/// this source's own words, which "A failed entropy draw creates no key"
+/// requires the reply to include.
+#[test]
+fn a_read_error_of_the_end_of_file_kind_keeps_its_own_text() {
+    let (dir, home) = fresh_home("entropy-own-eof");
+    let half = known_seed()[..16].to_vec();
+
+    let out = parse(&init_profile_with_entropy(
+        &home,
+        "tester",
+        "",
+        opening(Scripted::new(vec![Step::Give(half), Step::FailAsEndOfFile])),
+    ));
+
+    let message = out["error"].as_str().unwrap_or_default();
+    assert!(
+        message.contains(ENTROPY_UNREADABLE),
+        "a failing source must fail with the entropy message, got: {out}"
+    );
+    assert!(
+        message.contains("reported its own end-of-file error"),
+        "the source's own error must be carried, whatever its kind: {out}"
     );
     assert_eq!(
         files_under_keys(&home),
@@ -1060,9 +1105,8 @@ fn a_failed_draw_creates_no_home_directory() {
     cleanup(&dir);
 }
 
-// NO SPEC: the spec says the key is derived from exactly the 32 bytes the
-// source supplied; it does not say what happens to bytes past the 32nd. This
-// pins that they are never read into the seed: the first 32 decide the key.
+/// **A source longer than a seed uses its first 32 bytes**: the bytes past the
+/// 32nd never reach the key.
 #[test]
 fn a_source_longer_than_a_seed_uses_its_first_32_bytes() {
     let (dir, home) = fresh_home("entropy-long");

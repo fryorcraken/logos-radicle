@@ -105,23 +105,54 @@ fn open_system_entropy() -> std::io::Result<std::fs::File> {
 /// full, retries `ErrorKind::Interrupted`, and reports `UnexpectedEof` when a
 /// read returns 0 first. Hand-writing that loop would be a second copy of it.
 ///
-/// Every failure carries one prefix naming entropy, whichever step failed.
+/// Every failure carries one prefix naming entropy, whichever step failed, and
+/// the text of whatever error the source itself reported.
 fn draw_seed<R: Read>(open: impl FnOnce() -> std::io::Result<R>) -> Result<Seed, String> {
     let unreadable =
         |cause: String| format!("the entropy for a new key could not be read: {cause}");
 
-    let mut source = open().map_err(|e| unreadable(e.to_string()))?;
+    let mut source = EndObserved::new(open().map_err(|e| unreadable(e.to_string()))?);
     let mut bytes = [0u8; SEED_BYTES];
     source.read_exact(&mut bytes).map_err(|e| {
-        unreadable(if e.kind() == std::io::ErrorKind::UnexpectedEof {
-            // std's own text here is "failed to fill whole buffer", which
-            // says nothing a user could act on.
+        unreadable(if source.ended {
+            // `read_exact` ran out, and its own text for that is "failed to
+            // fill whole buffer", which says nothing a user could act on.
             format!("the source ended before supplying {SEED_BYTES} bytes")
         } else {
             e.to_string()
         })
     })?;
     Ok(Seed::new(bytes))
+}
+
+/// A reader that passes every read through and records whether its source
+/// reported end of input.
+///
+/// This is what tells `read_exact`'s own "ran out" error from an error the
+/// source raised itself. Both have kind `UnexpectedEof`, so the kind alone
+/// cannot, and replacing the text on the kind would drop a source's own words.
+struct EndObserved<R> {
+    inner: R,
+    ended: bool,
+}
+
+impl<R> EndObserved<R> {
+    fn new(inner: R) -> Self {
+        Self {
+            inner,
+            ended: false,
+        }
+    }
+}
+
+impl<R: Read> Read for EndObserved<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n == 0 && !buf.is_empty() {
+            self.ended = true;
+        }
+        Ok(n)
+    }
 }
 
 /// What a directory holds, as far as creating an identity is concerned.
