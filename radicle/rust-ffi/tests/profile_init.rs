@@ -26,7 +26,9 @@
 mod fixture;
 
 use fixture::{parse, scratch_dir};
-use radicle_local_ffi::profileinit::{init_profile, key_encrypted, profile_exists};
+use radicle_local_ffi::profileinit::{
+    home_state, init_profile, init_profile_with_entropy, key_encrypted, profile_exists, HomeState,
+};
 
 /// A scratch home path that does not exist yet — `init_profile` creates it.
 ///
@@ -332,14 +334,24 @@ fn a_bad_alias_is_refused_and_creates_nothing() {
 /// it would in the real failure.
 fn half_created_home(name: &str) -> (std::path::PathBuf, String) {
     let (dir, home) = fresh_home(name);
-    let created = parse(&init_profile(&home, "tester", ""));
+    make_half_created(&home);
+    (dir, home)
+}
+
+/// The same state, made at a `home` the caller already chose.
+fn make_half_created(home: &str) {
+    make_occupied(home);
+    std::fs::remove_file(std::path::Path::new(home).join("config.json"))
+        .expect("fixture: could not remove config.json");
+}
+
+/// A complete profile at a `home` the caller already chose.
+fn make_occupied(home: &str) {
+    let created = parse(&init_profile(home, "tester", ""));
     assert!(
         created["created"].as_bool().unwrap_or(false),
         "fixture precondition: a profile was created, got: {created}"
     );
-    std::fs::remove_file(std::path::Path::new(&home).join("config.json"))
-        .expect("fixture: could not remove config.json");
-    (dir, home)
 }
 
 /// **A half-created home is not reported as an occupied one.**
@@ -717,6 +729,958 @@ fn the_init_entry_point_is_guarded() {
         assert!(
             v["error"].is_string(),
             "an unusable home must come back as an error object, got: {v}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The entropy draw.
+//
+// `/dev/urandom` cannot be made to short-read, fail or chunk on demand, so the
+// production path alone can never show what creation does with a source that
+// misbehaves. These tests reach the same code through
+// `init_profile_with_entropy`, handing it a scripted reader.
+//
+// The mutation this section exists to kill is the one the embedded node's
+// first review found surviving: `read_exact` replaced by a single `read` that
+// discards the count. A 16-byte short read then leaves half the seed zeroed,
+// and creation reports success with a well-formed DID — the isolation test
+// still passes, because two half-zeroed seeds still differ in their random
+// half.
+// ---------------------------------------------------------------------------
+
+/// What every failed draw must say, per "A failed entropy draw creates no key".
+const ENTROPY_UNREADABLE: &str = "the entropy for a new key could not be read";
+
+/// One thing a scripted entropy source does on its next read.
+enum Step {
+    /// Supply these bytes, as many as fit the caller's buffer; the rest wait
+    /// for the next read.
+    Give(Vec<u8>),
+    /// Report `ErrorKind::Interrupted`, as a read cut short by a signal does.
+    Interrupt,
+    /// Report a hard read error.
+    Fail,
+    /// Report an error of kind `UnexpectedEof` with its own text — the kind
+    /// `read_exact` uses for a source that ran out, raised by the source
+    /// itself instead.
+    FailAsEndOfFile,
+}
+
+/// How many bytes a key seed takes, written out here and not read from the
+/// code under test: the spec's number, which an implementation must meet.
+const SEED_BYTES: usize = 32;
+
+/// A reader that does exactly what its script says, then reports end of input.
+///
+/// It also counts the reads it was asked for after it had already handed over
+/// `SEED_BYTES` bytes, which is the one thing a script alone cannot show: a
+/// draw that reads on past the seed gets the same bytes and the same node id,
+/// and is told apart only by having asked.
+struct Scripted {
+    steps: std::collections::VecDeque<Step>,
+    given: usize,
+    late_reads: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+impl Scripted {
+    fn new(steps: Vec<Step>) -> Self {
+        Self {
+            steps: steps.into(),
+            given: 0,
+            late_reads: Default::default(),
+        }
+    }
+
+    /// The same bytes, one per read.
+    fn one_byte_at_a_time(bytes: &[u8]) -> Self {
+        Self::new(bytes.iter().map(|b| Step::Give(vec![*b])).collect())
+    }
+
+    /// A handle on the late-read count that outlives the source being moved
+    /// into the draw.
+    fn late_reads(&self) -> std::rc::Rc<std::cell::Cell<usize>> {
+        self.late_reads.clone()
+    }
+}
+
+impl std::io::Read for Scripted {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.given >= SEED_BYTES {
+            self.late_reads.set(self.late_reads.get() + 1);
+        }
+        match self.steps.pop_front() {
+            None => Ok(0),
+            Some(Step::Interrupt) => Err(std::io::ErrorKind::Interrupted.into()),
+            Some(Step::Fail) => Err(std::io::Error::other("the test source failed on purpose")),
+            Some(Step::FailAsEndOfFile) => Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "the test source reported its own end-of-file error",
+            )),
+            Some(Step::Give(mut bytes)) => {
+                let n = bytes.len().min(buf.len());
+                buf[..n].copy_from_slice(&bytes[..n]);
+                self.given += n;
+                if n < bytes.len() {
+                    self.steps.push_front(Step::Give(bytes.split_off(n)));
+                }
+                Ok(n)
+            }
+        }
+    }
+}
+
+/// An opener that hands over `source` when the draw asks for it.
+fn opening(source: Scripted) -> impl FnOnce() -> std::io::Result<Scripted> {
+    move || Ok(source)
+}
+
+/// 32 bytes that are all different, so a seed assembled out of order, or with
+/// any byte dropped or zeroed, is a different seed.
+fn known_seed() -> Vec<u8> {
+    (1u8..=32).map(|i| i.wrapping_mul(37)).collect()
+}
+
+/// The node id the `radicle` crate itself derives from `bytes`, through
+/// `Profile::init` directly — not through the code under test. That is what
+/// makes it an oracle: a seam that ignored its source and drew from
+/// `/dev/urandom`, or used a fixed seed, cannot match it.
+fn node_id_the_crate_derives_from(bytes: &[u8], name: &str) -> String {
+    let dir = scratch_dir(name);
+    let home = radicle::profile::Home::new(dir.join("home")).expect("oracle: Home::new");
+    let seed: [u8; 32] = bytes.try_into().expect("oracle: a seed is 32 bytes");
+    let profile = radicle::profile::Profile::init(
+        home,
+        radicle::node::Alias::new("oracle"),
+        None,
+        radicle::crypto::Seed::new(seed),
+    )
+    .expect("oracle: Profile::init");
+    let did = profile.did().to_string();
+    cleanup(&dir);
+    did
+}
+
+/// The names of the files under `<home>/keys`. An absent directory holds none.
+///
+/// Absent is a valid answer here, unlike in `keys_snapshot`, which panics on it:
+/// a failed draw writes nothing, and may leave no `keys/` at all, which is the
+/// state these callers assert. `keys_snapshot` is for a home that was created,
+/// where a missing directory means the fixture is wrong; it also reads every
+/// file's bytes, which a "no key material" check has no use for.
+fn files_under_keys(home: &str) -> Vec<String> {
+    match std::fs::read_dir(std::path::Path::new(home).join("keys")) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => panic!("the keys directory could not be listed: {e}"),
+        Ok(entries) => entries
+            .map(|e| {
+                e.expect("a keys entry must be readable")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect(),
+    }
+}
+
+/// **A source that ends after 16 bytes creates no key.**
+///
+/// The regression test for the surviving mutation: with a lenient `read` the
+/// half-filled seed is accepted and this reply reports `created:true`.
+#[test]
+fn a_source_that_ends_after_16_bytes_creates_no_key() {
+    let (dir, home) = fresh_home("entropy-short");
+    let half = known_seed()[..16].to_vec();
+
+    let out = parse(&init_profile_with_entropy(
+        &home,
+        "tester",
+        "",
+        opening(Scripted::new(vec![Step::Give(half)])),
+    ));
+
+    let message = out["error"].as_str().unwrap_or_default();
+    assert!(
+        message.contains(ENTROPY_UNREADABLE),
+        "a short source must fail with the entropy message, got: {out}"
+    );
+    assert!(
+        out.get("created").is_none() && out.get("nodeId").is_none(),
+        "a failed draw must not report an identity: {out}"
+    );
+    assert_eq!(
+        files_under_keys(&home),
+        Vec::<String>::new(),
+        "a failed draw must write no key material"
+    );
+
+    cleanup(&dir);
+}
+
+/// **A source that fails mid-read creates no key**, and the failure is not
+/// mistaken for end of input or retried as an interruption.
+#[test]
+fn a_source_that_fails_mid_read_creates_no_key() {
+    let (dir, home) = fresh_home("entropy-fail");
+    let half = known_seed()[..16].to_vec();
+
+    let out = parse(&init_profile_with_entropy(
+        &home,
+        "tester",
+        "",
+        opening(Scripted::new(vec![Step::Give(half), Step::Fail])),
+    ));
+
+    let message = out["error"].as_str().unwrap_or_default();
+    assert!(
+        message.contains(ENTROPY_UNREADABLE),
+        "a failing source must fail with the entropy message, got: {out}"
+    );
+    assert!(
+        message.contains("failed on purpose"),
+        "the source's own error must be carried, so the cause is visible: {out}"
+    );
+    assert_eq!(
+        files_under_keys(&home),
+        Vec::<String>::new(),
+        "a failed draw must write no key material"
+    );
+
+    cleanup(&dir);
+}
+
+/// **A read error's text is carried whatever its kind** — including
+/// `UnexpectedEof`, the kind `read_exact` itself uses when a source runs out.
+///
+/// The draw replaces std's own short-read text with a sentence a user can act
+/// on. Keyed on the error's kind alone, that replacement would also swallow
+/// this source's own words, which "A failed entropy draw creates no key"
+/// requires the reply to include.
+#[test]
+fn a_read_error_of_the_end_of_file_kind_keeps_its_own_text() {
+    let (dir, home) = fresh_home("entropy-own-eof");
+    let half = known_seed()[..16].to_vec();
+
+    let out = parse(&init_profile_with_entropy(
+        &home,
+        "tester",
+        "",
+        opening(Scripted::new(vec![Step::Give(half), Step::FailAsEndOfFile])),
+    ));
+
+    let message = out["error"].as_str().unwrap_or_default();
+    assert!(
+        message.contains(ENTROPY_UNREADABLE),
+        "a failing source must fail with the entropy message, got: {out}"
+    );
+    assert!(
+        message.contains("reported its own end-of-file error"),
+        "the source's own error must be carried, whatever its kind: {out}"
+    );
+    assert_eq!(
+        files_under_keys(&home),
+        Vec::<String>::new(),
+        "a failed draw must write no key material"
+    );
+
+    cleanup(&dir);
+}
+
+// NO SPEC: the spec requires a short source's error to state that the entropy
+// could not be read, and says nothing of what it says about why. The wording
+// asserted here is design.md Decision 5's choice: it replaces std's
+// "failed to fill whole buffer", which tells a user nothing, with a sentence
+// they can act on. Kept apart from the spec's scenarios so a spec change to the
+// wording lands on this test alone.
+#[test]
+fn a_source_that_ends_early_says_so_instead_of_quoting_std() {
+    let seed = known_seed();
+
+    for supplied in [0, 16, 31] {
+        let (dir, home) = fresh_home(&format!("entropy-ends-says-so-{supplied}"));
+        let steps = if supplied == 0 {
+            Vec::new()
+        } else {
+            vec![Step::Give(seed[..supplied].to_vec())]
+        };
+
+        let out = parse(&init_profile_with_entropy(
+            &home,
+            "tester",
+            "",
+            opening(Scripted::new(steps)),
+        ));
+
+        let message = out["error"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("the source ended before supplying 32 bytes"),
+            "{supplied} bytes then end of input: the error must say the source \
+             ended early, got: {out}"
+        );
+        assert!(
+            !message.contains("failed to fill whole buffer"),
+            "{supplied} bytes then end of input: the error must not quote \
+             std's own wording, got: {out}"
+        );
+
+        cleanup(&dir);
+    }
+}
+
+/// A source that cannot even be opened fails the same way.
+///
+/// This is the message the old code got wrong: "could not open the system
+/// random source" said nothing about entropy or a key.
+#[test]
+fn a_source_that_cannot_be_opened_creates_no_key() {
+    let (dir, home) = fresh_home("entropy-unopenable");
+
+    let out = parse(&init_profile_with_entropy(&home, "tester", "", || {
+        Err::<Scripted, _>(std::io::Error::other("no such source"))
+    }));
+
+    let message = out["error"].as_str().unwrap_or_default();
+    assert!(
+        message.contains(ENTROPY_UNREADABLE),
+        "an unopenable source must fail with the entropy message, got: {out}"
+    );
+    assert!(
+        message.contains("no such source"),
+        "the opener's own error must be carried: {out}"
+    );
+    assert_eq!(
+        files_under_keys(&home),
+        Vec::<String>::new(),
+        "a failed draw must write no key material"
+    );
+
+    cleanup(&dir);
+}
+
+/// **A failed draw leaves the home completable**: it classifies as Empty, and
+/// a full source then creates into it.
+#[test]
+fn a_failed_draw_leaves_the_home_completable() {
+    let (dir, home) = fresh_home("entropy-completable");
+    let seed = known_seed();
+
+    let failed = parse(&init_profile_with_entropy(
+        &home,
+        "tester",
+        "",
+        opening(Scripted::new(vec![Step::Give(seed[..16].to_vec())])),
+    ));
+    assert!(failed["error"].is_string(), "precondition: {failed}");
+    assert_eq!(
+        home_state(&home),
+        HomeState::Empty,
+        "a failed draw must leave the home Empty, not Partial"
+    );
+
+    let created = parse(&init_profile_with_entropy(
+        &home,
+        "tester",
+        "",
+        opening(Scripted::new(vec![Step::Give(seed)])),
+    ));
+    assert_eq!(created["created"], serde_json::json!(true), "{created}");
+    assert!(
+        !created["nodeId"].as_str().unwrap_or_default().is_empty(),
+        "the retried creation must yield an identity: {created}"
+    );
+
+    cleanup(&dir);
+}
+
+/// **A seed supplied in pieces is used whole.** One byte per read and all 32
+/// in one read give the same identity — and it is the identity the crate
+/// itself derives from those bytes, so neither side can agree by ignoring the
+/// source.
+///
+/// With a single lenient `read`, the one-byte source yields a key from one real
+/// byte and 31 zeros, and the ids differ.
+#[test]
+fn a_seed_supplied_one_byte_per_read_is_used_whole() {
+    let (dir_whole, home_whole) = fresh_home("entropy-whole");
+    let (dir_bytes, home_bytes) = fresh_home("entropy-bytewise");
+    let seed = known_seed();
+
+    let whole = parse(&init_profile_with_entropy(
+        &home_whole,
+        "tester",
+        "",
+        opening(Scripted::new(vec![Step::Give(seed.clone())])),
+    ));
+    let bytewise = parse(&init_profile_with_entropy(
+        &home_bytes,
+        "tester",
+        "",
+        opening(Scripted::one_byte_at_a_time(&seed)),
+    ));
+
+    assert_eq!(whole["created"], serde_json::json!(true), "{whole}");
+    assert_eq!(bytewise["created"], serde_json::json!(true), "{bytewise}");
+    assert_eq!(
+        whole["nodeId"], bytewise["nodeId"],
+        "the same 32 bytes must give the same identity however they arrive"
+    );
+    assert_eq!(
+        whole["nodeId"].as_str().unwrap_or_default(),
+        node_id_the_crate_derives_from(&seed, "entropy-whole-oracle"),
+        "the key must be derived from exactly the bytes the source supplied"
+    );
+
+    cleanup(&dir_whole);
+    cleanup(&dir_bytes);
+}
+
+/// **An interrupted read is retried, not failed.**
+#[test]
+fn an_interrupted_read_is_retried_not_failed() {
+    let (dir, home) = fresh_home("entropy-interrupted");
+    let seed = known_seed();
+
+    let out = parse(&init_profile_with_entropy(
+        &home,
+        "tester",
+        "",
+        opening(Scripted::new(vec![
+            Step::Give(seed[..16].to_vec()),
+            Step::Interrupt,
+            Step::Give(seed[16..].to_vec()),
+        ])),
+    ));
+
+    assert_eq!(
+        out["created"],
+        serde_json::json!(true),
+        "an interruption is not a failure: {out}"
+    );
+    assert_eq!(
+        out["nodeId"].as_str().unwrap_or_default(),
+        node_id_the_crate_derives_from(&seed, "entropy-interrupted-oracle"),
+        "the bytes either side of the interruption must both reach the key"
+    );
+
+    cleanup(&dir);
+}
+
+// NO SPEC: the spec requires a failed draw to leave the home Empty, which an
+// empty directory tree satisfies; it does not say whether that tree may be
+// created. This pins that the draw happens before `Home::new`, so a failed
+// draw creates nothing at all — design.md, Decision 3.
+#[test]
+fn a_failed_draw_creates_no_home_directory() {
+    let (dir, home) = fresh_home("entropy-no-home");
+
+    let out = parse(&init_profile_with_entropy(
+        &home,
+        "tester",
+        "",
+        opening(Scripted::new(vec![Step::Give(known_seed()[..16].to_vec())])),
+    ));
+    assert!(out["error"].is_string(), "precondition: {out}");
+    assert!(
+        !std::path::Path::new(&home).exists(),
+        "a failed draw must leave the filesystem as it found it, but {home} \
+         was created"
+    );
+
+    cleanup(&dir);
+}
+
+/// **A source longer than a seed uses its first 32 bytes**: the bytes past the
+/// 32nd never reach the key. The spec's scenario: 48 bytes, then end of input.
+#[test]
+fn a_source_longer_than_a_seed_uses_its_first_32_bytes() {
+    let (dir, home) = fresh_home("entropy-long");
+    let seed = known_seed();
+    let mut long = seed.clone();
+    long.extend(std::iter::repeat_n(0xAAu8, 16));
+
+    let out = parse(&init_profile_with_entropy(
+        &home,
+        "tester",
+        "",
+        opening(Scripted::new(vec![Step::Give(long)])),
+    ));
+    assert_eq!(out["created"], serde_json::json!(true), "{out}");
+    assert_eq!(
+        out["nodeId"].as_str().unwrap_or_default(),
+        node_id_the_crate_derives_from(&seed, "entropy-long-oracle"),
+        "the first 32 bytes, and only those, must decide the key"
+    );
+
+    cleanup(&dir);
+}
+
+/// **Nothing past the 32nd byte is read.** Once the source has supplied a
+/// seed's worth the draw is over, whatever the source would do next: fail,
+/// raise an error of the end-of-file kind, or simply have more.
+///
+/// Two observations, because neither alone sees every over-read. A source that
+/// fails after the 32nd byte turns a draw that reads on into an error reply. A
+/// source that merely has more, or ends, turns it into nothing at all: the same
+/// bytes, the same node id, and only the count of reads the source was asked for
+/// after the 32nd byte tells. That count is kept by the fake, not by the code
+/// under test. This is the over-read a `/dev/urandom` draw would show as a hang,
+/// since that source never ends.
+#[test]
+fn nothing_past_the_32nd_byte_is_read() {
+    let seed = known_seed();
+    let expected = node_id_the_crate_derives_from(&seed, "entropy-stop-oracle");
+
+    let byte_per_read = |last: Step| {
+        let mut steps: Vec<Step> = seed.iter().map(|b| Step::Give(vec![*b])).collect();
+        steps.push(last);
+        steps
+    };
+    let mut longer = seed.clone();
+    longer.extend(std::iter::repeat_n(0xAAu8, 16));
+
+    // (case, the script)
+    let cases: Vec<(&str, Vec<Step>)> = vec![
+        (
+            "one-read-then-an-error",
+            vec![Step::Give(seed.clone()), Step::Fail],
+        ),
+        (
+            "one-read-then-an-end-of-file-error",
+            vec![Step::Give(seed.clone()), Step::FailAsEndOfFile],
+        ),
+        ("one-byte-per-read-then-an-error", byte_per_read(Step::Fail)),
+        (
+            "one-read-then-an-interruption-then-an-error",
+            vec![Step::Give(seed.clone()), Step::Interrupt, Step::Fail],
+        ),
+        ("one-read-of-more-than-a-seed", vec![Step::Give(longer)]),
+    ];
+
+    for (case, steps) in cases {
+        let (dir, home) = fresh_home(&format!("entropy-stop-{case}"));
+        let source = Scripted::new(steps);
+        let late_reads = source.late_reads();
+
+        let out = parse(&init_profile_with_entropy(
+            &home,
+            "tester",
+            "",
+            opening(source),
+        ));
+
+        assert_eq!(
+            out["created"],
+            serde_json::json!(true),
+            "{case}: a source that failed only after the 32nd byte must not \
+             fail the draw: {out}"
+        );
+        assert_eq!(
+            out["nodeId"].as_str().unwrap_or_default(),
+            expected,
+            "{case}: the first 32 bytes, and only those, must decide the key"
+        );
+        assert_eq!(
+            late_reads.get(),
+            0,
+            "{case}: the source was read again after it had supplied 32 bytes"
+        );
+
+        cleanup(&dir);
+    }
+}
+
+/// A refused call never opens the source, so a refusal is never reported as an
+/// entropy failure — whichever of the five refusals it is.
+///
+/// The message half is each refusal's own existing requirement: whatever the
+/// source would have done, the caller is told what they got wrong. The `opened`
+/// flag is design.md's Decision 2, and it is the half that does the work: an
+/// implementation that opens the source before validating but holds the error
+/// until the draw still reports the refusal correctly, and only the flag sees
+/// it.
+///
+/// A table rather than the occupied home alone, because the draw sits *after*
+/// five checks and a draw moved up past only some of them is a different bug:
+/// moved above the alias check, say, it leaves the occupied-home case green and
+/// turns the bad-alias case into an entropy error.
+// NO SPEC: that the source is not opened for a refused call is design.md's
+// Decision 2, not a requirement. The spec requires only that each refusal keep
+// its own message; the `opened` assertion pins the stronger ordering.
+#[test]
+fn a_refused_home_never_opens_the_entropy_source() {
+    /// One refusal: what it says, the alias the call carries, and how to arrange
+    /// the world for it. Each row holds its own setup, so a row cannot be
+    /// renamed apart from the code that builds it.
+    struct Refusal {
+        case: &'static str,
+        /// The words its own refusal must contain.
+        wanted: &'static str,
+        alias: &'static str,
+        /// Given the scratch home, makes whatever state the case needs and
+        /// returns the home the call is made with.
+        target: fn(&str) -> String,
+    }
+
+    let cases = [
+        Refusal {
+            case: "empty-home",
+            wanted: "no home given",
+            alias: "tester",
+            target: |_| String::new(),
+        },
+        Refusal {
+            case: "relative-home",
+            wanted: "absolute",
+            alias: "tester",
+            target: |_| "tmp/entropy-refused-must-not-appear".to_string(),
+        },
+        Refusal {
+            case: "occupied-home",
+            wanted: "would overwrite its signing key",
+            alias: "tester",
+            target: |home| {
+                make_occupied(home);
+                home.to_string()
+            },
+        },
+        Refusal {
+            case: "half-created-home",
+            // Not "half-created": that is also the scratch directory's name
+            // (`entropy-refused-half-created-home`), which every message for
+            // this home quotes, so it would be found in an occupied-home
+            // refusal too.
+            wanted: "initialisation did not finish",
+            alias: "tester",
+            target: |home| {
+                make_half_created(home);
+                home.to_string()
+            },
+        },
+        Refusal {
+            case: "bad-alias",
+            wanted: "not a usable alias",
+            alias: "not a valid alias",
+            target: |home| home.to_string(),
+        },
+    ];
+
+    for Refusal {
+        case,
+        wanted,
+        alias,
+        target,
+    } in cases
+    {
+        let (dir, home) = fresh_home(&format!("entropy-refused-{case}"));
+        let target = target(&home);
+
+        let opened = std::cell::Cell::new(false);
+        let out = parse(&init_profile_with_entropy(&target, alias, "", || {
+            opened.set(true);
+            Err::<Scripted, _>(std::io::Error::other("no such source"))
+        }));
+
+        let message = out["error"].as_str().unwrap_or_default();
+        assert!(
+            message.contains(wanted),
+            "{case}: must be refused with its own message ({wanted:?}), got: {out}"
+        );
+        assert!(
+            !message.contains(ENTROPY_UNREADABLE),
+            "{case}: a refusal must not be reported as an entropy failure: {out}"
+        );
+        assert!(
+            !opened.get(),
+            "{case}: the entropy source was opened for a call that was always \
+             going to be refused"
+        );
+
+        cleanup(&dir);
+    }
+}
+
+/// **A source that falls short of 32 bytes at any length creates no key**, and
+/// one that fails at any length does too.
+///
+/// The spec's scenarios name 16 bytes. A table, because a draw that accepted
+/// "at least half a seed" (or any other threshold) is red only at the lengths
+/// above it, and an empty source is the one a real `/dev/urandom` open that
+/// succeeds but yields nothing would be.
+#[test]
+fn a_source_short_of_32_bytes_at_any_length_creates_no_key() {
+    let seed = known_seed();
+
+    // (how many bytes arrive, then what the source does: `Some(step)`, or
+    // nothing and end of input). The case label is built from the row, so it
+    // cannot name a length the row does not hold.
+    let cases = [
+        (0, None),
+        (1, None),
+        (31, None),
+        (0, Some(Step::Fail)),
+        (1, Some(Step::Fail)),
+        (31, Some(Step::Fail)),
+    ];
+
+    for (supplied, then) in cases {
+        let case = format!(
+            "{supplied} bytes then {}",
+            if then.is_some() {
+                "a read error"
+            } else {
+                "end of input"
+            }
+        );
+        let (dir, home) = fresh_home(&format!("entropy-any-{supplied}-{}", then.is_some()));
+        let mut steps = Vec::new();
+        if supplied > 0 {
+            steps.push(Step::Give(seed[..supplied].to_vec()));
+        }
+        steps.extend(then);
+
+        let out = parse(&init_profile_with_entropy(
+            &home,
+            "tester",
+            "",
+            opening(Scripted::new(steps)),
+        ));
+
+        assert!(
+            out["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains(ENTROPY_UNREADABLE),
+            "{case}: must fail with the entropy message, got: {out}"
+        );
+        assert!(
+            out.get("created").is_none() && out.get("nodeId").is_none(),
+            "{case}: a failed draw must not report an identity: {out}"
+        );
+        assert_eq!(
+            files_under_keys(&home),
+            Vec::<String>::new(),
+            "{case}: a failed draw must write no key material"
+        );
+
+        cleanup(&dir);
+    }
+}
+
+/// **An interrupted read is retried wherever it falls**: before the first
+/// byte, between reads, twice running, and one byte from the end.
+///
+/// Each yields the identity the crate itself derives from the same 32 bytes, so
+/// a retry that dropped or repeated a chunk is a different key and not merely a
+/// created one.
+#[test]
+fn an_interruption_anywhere_in_the_draw_is_retried() {
+    let seed = known_seed();
+    let expected = node_id_the_crate_derives_from(&seed, "entropy-interrupt-table-oracle");
+
+    // (case, the script)
+    let cases: Vec<(&str, Vec<Step>)> = vec![
+        (
+            "before-any-byte",
+            vec![Step::Interrupt, Step::Give(seed.clone())],
+        ),
+        (
+            "twice-in-a-row",
+            vec![
+                Step::Give(seed[..16].to_vec()),
+                Step::Interrupt,
+                Step::Interrupt,
+                Step::Give(seed[16..].to_vec()),
+            ],
+        ),
+        (
+            "one-byte-from-the-end",
+            vec![
+                Step::Give(seed[..31].to_vec()),
+                Step::Interrupt,
+                Step::Give(seed[31..].to_vec()),
+            ],
+        ),
+    ];
+
+    for (case, steps) in cases {
+        let (dir, home) = fresh_home(&format!("entropy-interrupt-{case}"));
+
+        let out = parse(&init_profile_with_entropy(
+            &home,
+            "tester",
+            "",
+            opening(Scripted::new(steps)),
+        ));
+
+        assert_eq!(
+            out["created"],
+            serde_json::json!(true),
+            "{case}: an interruption is not a failure: {out}"
+        );
+        assert_eq!(
+            out["nodeId"].as_str().unwrap_or_default(),
+            expected,
+            "{case}: every byte on both sides of the interruption must reach the key"
+        );
+
+        cleanup(&dir);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The production source, as production reads it.
+//
+// Everything above reaches the draw through `init_profile_with_entropy` with a
+// scripted source, so none of it touches the wiring from `init_profile` to
+// `/dev/urandom`. That wiring is only as good as what a test can observe of the
+// seed it produced, and the node id alone cannot say how much of it was random.
+// ---------------------------------------------------------------------------
+
+/// The 32-byte seed the key at `home` was made from, read back off the disk.
+///
+/// The keystore holds the key as its seed and public half together; loading it
+/// and taking its secret bytes yields the seed, which is checked against a
+/// known one in the test that uses it.
+fn seed_on_disk(home: &str) -> [u8; 32] {
+    let keys = std::path::Path::new(home).join("keys");
+    let key = radicle::crypto::ssh::Keystore::new(&keys)
+        .secret_key(None)
+        .expect("the key must be readable without a passphrase")
+        .expect("the secret key must exist");
+    *key.as_bytes()
+}
+
+/// **The production source supplies all 32 bytes as entropy.**
+///
+/// Two homes created through the real `init_profile` must differ in the first
+/// half of the seed AND in the second. A node id differing says only that some
+/// of the seed was random: a seed of 8 random bytes and 24 zeros differs
+/// between homes, creates an identity, and is a 64-bit key. Each half of two
+/// independent random seeds is equal with probability 2^-128, so a failure here
+/// is the seed's fault and not chance.
+///
+/// Red under a draw that pads (`take(8).chain(repeat(0))`), under `/dev/zero`
+/// in place of `/dev/urandom`, and under a fixed seed.
+#[test]
+fn production_seeds_differ_in_both_halves() {
+    // The helper is what makes the assertion mean anything, so check it against
+    // a seed we chose: reading the key back must give those bytes.
+    let (dir_known, home_known) = fresh_home("entropy-prod-known");
+    let known = known_seed();
+    let created = parse(&init_profile_with_entropy(
+        &home_known,
+        "tester",
+        "",
+        opening(Scripted::new(vec![Step::Give(known.clone())])),
+    ));
+    assert_eq!(created["created"], serde_json::json!(true), "{created}");
+    assert_eq!(
+        seed_on_disk(&home_known).to_vec(),
+        known,
+        "precondition: the key read back from disk must be the seed it was made from"
+    );
+    cleanup(&dir_known);
+
+    let (dir_a, home_a) = fresh_home("entropy-prod-a");
+    let (dir_b, home_b) = fresh_home("entropy-prod-b");
+    assert_eq!(
+        parse(&init_profile(&home_a, "alice", ""))["created"],
+        serde_json::json!(true)
+    );
+    assert_eq!(
+        parse(&init_profile(&home_b, "bob", ""))["created"],
+        serde_json::json!(true)
+    );
+    let (a, b) = (seed_on_disk(&home_a), seed_on_disk(&home_b));
+
+    assert_ne!(
+        a[..16],
+        b[..16],
+        "the first half of two production seeds must differ"
+    );
+    assert_ne!(
+        a[16..],
+        b[16..],
+        "the second half of two production seeds must differ: a seed whose \
+         tail is not random is a shorter key"
+    );
+
+    cleanup(&dir_a);
+    cleanup(&dir_b);
+}
+
+// ---------------------------------------------------------------------------
+// "No caller can choose the entropy source."
+//
+// The requirement is about two signatures, and a signature is something a test
+// can pin: not by calling the function, but by what the compiler and the C
+// header say its parameters are. The Rust entry point and the header are pinned
+// below. The C++ half, `createEmbeddedIdentity(alias, passphrase)`, is out of
+// this layer's sight, and "every C++ caller passes two arguments" does NOT hold
+// it: a third parameter with a default value compiles at every such call. It is
+// pinned in `radicle/tests/test_radicle_impl.cpp`, by the type of the member.
+// ---------------------------------------------------------------------------
+
+/// The FFI entry point, as compiled, takes a home, an alias and a passphrase
+/// and nothing else.
+///
+/// Assigning the function to a pointer of that exact type is the assertion: a
+/// fourth parameter (a path, a file descriptor, a callback supplying bytes)
+/// changes the type and this stops compiling.
+#[test]
+fn the_init_entry_point_takes_home_alias_and_passphrase_and_nothing_else() {
+    use std::os::raw::c_char;
+
+    let entry: unsafe extern "C" fn(*const c_char, *const c_char, *const c_char) -> *mut c_char =
+        radicle_local_ffi::radicle_local_init_profile;
+
+    // Used, so the binding is not optimised into a vacuous one. A NULL home is
+    // refused as an error object, never read as a source of anything.
+    let raw = unsafe { entry(std::ptr::null(), std::ptr::null(), std::ptr::null()) };
+    assert!(!raw.is_null());
+    unsafe { radicle_local_ffi::radicle_free_string(raw) };
+}
+
+/// The declaration C++ compiles against names the same three parameters.
+///
+/// `radicle_ffi.h` is checked in by hand, so it can drift from the Rust
+/// signature in either direction, and the C++ side would then pass an argument
+/// Rust never reads, or none Rust expects. Counted from the declaration's own
+/// text, up to its `;`.
+#[test]
+fn the_declared_init_prototype_has_three_const_char_pointer_parameters() {
+    // This reads the C++ module's header by a path that leaves `rust-ffi/`, so
+    // the test compiles only from a full checkout. The Nix build of this crate
+    // takes `src = ./rust-ffi` and has `doCheck = false`, so it never builds
+    // this file; if that changes, or the crate is packaged from its own
+    // directory, the failure is a missing file here and not a wrong signature.
+    const HEADER: &str = include_str!("../../src/radicle_ffi.h");
+
+    let start = HEADER
+        .find("char* radicle_local_init_profile(")
+        .expect("the header must declare radicle_local_init_profile");
+    let declaration = &HEADER[start..];
+    let end = declaration
+        .find(';')
+        .expect("the declaration must end in a semicolon");
+    let open = declaration.find('(').unwrap();
+    let params: Vec<&str> = declaration[open + 1..end]
+        .trim_end_matches(')')
+        .split(',')
+        .map(str::trim)
+        .collect();
+
+    assert_eq!(
+        params.len(),
+        3,
+        "the declared prototype must take exactly home, alias and passphrase, \
+         got {params:?}"
+    );
+    for param in &params {
+        assert!(
+            param.starts_with("const char*"),
+            "every declared parameter must be a `const char*`, got {param:?} in \
+             {params:?}"
         );
     }
 }

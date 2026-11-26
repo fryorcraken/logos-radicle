@@ -14,6 +14,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -986,6 +987,38 @@ LOGOS_TEST(the_embedded_identity_methods_refuse_when_no_home_can_be_resolved)
 
     struct stat st{};
     LOGOS_ASSERT_TRUE(::stat((home.dir + "/keys").c_str(), &st) != 0);
+}
+
+LOGOS_TEST(createEmbeddedIdentity_takes_an_alias_and_a_passphrase_and_nothing_else)
+{
+    // "No caller can choose the entropy source", the module half. The Rust
+    // entry point and the header it is declared in are pinned from the Rust
+    // side (tests/profile_init.rs); this is the C++ method the scenario names.
+    //
+    // The assertion is on the member's own type, which is what a caller's
+    // arguments are checked against. "Every call site passes two arguments" is
+    // not a pin: a third parameter with a default value compiles at all of
+    // them, and so would an overload (a third overload makes the address
+    // below ambiguous, so it fails to compile too). A failure here is a build
+    // failure, not a red test: it is a signature, and the compiler is what
+    // reads one.
+    using TwoStrings = std::string (RadicleImpl::*)(const std::string&, const std::string&);
+    static_assert(std::is_same_v<decltype(&RadicleImpl::createEmbeddedIdentity), TwoStrings>,
+                  "createEmbeddedIdentity must take an alias and a passphrase and nothing "
+                  "else: an extra parameter could name or supply an entropy source");
+
+    // And called through that exact type, so the pin is used rather than only
+    // declared. With no home resolvable the call is refused, and refused is the
+    // outcome asserted: it is the one a signature check can observe without
+    // creating an identity anywhere.
+    ScopedRadHome home("embedded-signature");
+    ScopedUnsetEnv noXdg("XDG_DATA_HOME");
+    ScopedUnsetEnv noHome("HOME");
+    auto impl = makeRadicleImpl(SeedClient{}, LocalStore{},
+                                SettingsStore{scratchSettingsPath("embedded-signature")});
+
+    const TwoStrings create = &RadicleImpl::createEmbeddedIdentity;
+    LOGOS_ASSERT_TRUE(parse((impl.*create)("tester", "")).contains("error"));
 }
 
 LOGOS_TEST(embedded_with_no_identity_yet_does_not_tell_the_user_to_run_rad_auth)
