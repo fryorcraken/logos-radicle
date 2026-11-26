@@ -72,6 +72,21 @@ std::string moduleDataDir(const std::string& xdgDataHome,
     return base + "/radicle-module";
 }
 
+/// Whether a URL's authority — the text between its `://` and the first `/`,
+/// `?` or `#` after it — contains an `@`, which makes the text before its last
+/// `@` userinfo (`user:password@host`). An `@` after the authority, in a path
+/// or a query, is not one.
+bool authorityCarriesUserinfo(const std::string& url)
+{
+    const auto scheme = url.find("://");
+    if (scheme == std::string::npos) return false;
+    const auto start = scheme + 3;
+    const auto end = url.find_first_of("/?#", start);
+    const auto authority =
+        url.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    return authority.find('@') != std::string::npos;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -414,6 +429,16 @@ nlohmann::json SettingsStore::validate(const std::string& key, const std::string
         if (!value.empty() && value.rfind("http://", 0) != 0
             && value.rfind("https://", 0) != 0) {
             return makeError("a seed URL must start with http:// or https://");
+        }
+        // A stored seed is written in plain text to the settings file and
+        // handed back by every getSettings, and a Radicle seed's HTTP API takes
+        // no credentials, so a URL carrying them is refused rather than kept.
+        // The message names the rule and never the URL: echoing it would hand
+        // the secret back in the refusal meant to keep it out of storage.
+        if (authorityCarriesUserinfo(value)) {
+            return makeError("a seed URL must not carry a user name or password "
+                             "(user:password@host): a Radicle seed takes none, and the "
+                             "URL would be saved as written");
         }
     }
 

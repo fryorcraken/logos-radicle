@@ -439,6 +439,12 @@ std::string RadicleImpl::setSetting(const std::string& key, const std::string& v
         // setRemoteSeed's job. Doing it here too would put a network round trip
         // on a settings write and give two places an opinion about what makes a
         // seed acceptable.
+        //
+        // Known, and not this door's to settle yet: the value is stored and
+        // announced AS GIVEN, while the client strips trailing slashes, so
+        // after `https://x/` the stored seed and the event say `https://x/` and
+        // the seed in force is `https://x`. setRemoteSeed stores and announces
+        // the normalised form. See the persist-remote-seed design's Risks.
         m_seed.setSeedUrl(value);
         remoteSeedChanged(value);
     }
@@ -468,8 +474,11 @@ std::string RadicleImpl::setRemoteSeed(const std::string& seedUrl)
     // and asked before any request: a URL the store would refuse is not worth
     // a network round trip, and the caller should hear the shape's reason
     // rather than whatever the transport makes of it. Asked of the URL as
-    // typed AND as it will be stored, which the client has normalised:
-    // `https://` passes as typed and is `https:` once its slashes are gone.
+    // typed AND as it will be stored, which the client has normalised, because
+    // each form catches a URL the other lets through: `https://` passes as
+    // typed and is `https:` once its slashes are gone, and `/` normalises to
+    // the empty string, which the rule accepts because through `setSetting` it
+    // means "clear".
     for (const std::string& form : {seedUrl, candidate.seedUrl()}) {
         const auto shape =
             radicle::SettingsStore::validate(radicle::SettingsStore::kKeyRemoteSeed, form);

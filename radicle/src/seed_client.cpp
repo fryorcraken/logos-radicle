@@ -102,7 +102,7 @@ void SeedClient::setSeedUrl(const std::string& seedUrl)
     m_reachable = false;
 }
 
-nlohmann::json SeedClient::getJson(const std::string& path)
+SeedClient::Fetched SeedClient::fetch(const std::string& path)
 {
     const std::string url = m_seedUrl + "/api/v1" + path;
     const HttpResponse res = m_transport ? m_transport(url) : httpGet(url);
@@ -111,27 +111,34 @@ nlohmann::json SeedClient::getJson(const std::string& path)
         m_reachable = false;
         // The seed reports its own errors as JSON; surface that message when
         // present, since it is far more useful than a bare status code. Only a
-        // STRING `error` is a message: the body is the seed's, so anything else
-        // there falls back to the status rather than throwing out of a call
-        // whose contract is to reply.
+        // non-empty STRING `error` is a message: the body is the seed's, so
+        // anything else there falls back to the status, rather than throwing
+        // out of a call whose contract is to reply, or replying with an empty
+        // `error` that a caller testing `doc.error` reads as success.
         if (!res.body.empty()) {
             auto parsed = nlohmann::json::parse(res.body, nullptr, false);
             if (!parsed.is_discarded() && parsed.is_object() && parsed.contains("error")
-                && parsed["error"].is_string()) {
-                return makeError(parsed["error"].get<std::string>());
+                && parsed["error"].is_string()
+                && !parsed["error"].get_ref<const std::string&>().empty()) {
+                return {false, makeError(parsed["error"].get<std::string>())};
             }
         }
-        return makeError(res.error.empty() ? "request failed" : res.error);
+        return {false, makeError(res.error.empty() ? "request failed" : res.error)};
     }
 
     auto parsed = nlohmann::json::parse(res.body, nullptr, false);
     if (parsed.is_discarded()) {
         m_reachable = false;
-        return makeError("malformed JSON from seed");
+        return {false, makeError("malformed JSON from seed")};
     }
 
     m_reachable = true;
-    return parsed;
+    return {true, std::move(parsed)};
+}
+
+nlohmann::json SeedClient::getJson(const std::string& path)
+{
+    return fetch(path).body;
 }
 
 nlohmann::json SeedClient::probe()
@@ -139,12 +146,30 @@ nlohmann::json SeedClient::probe()
     m_apiVersion.clear();
     m_nid.clear();
 
-    nlohmann::json index = getJson("");
-    if (isError(index)) return index;
+    Fetched got = fetch("");
+    if (!got.seedAnswered) return got.body;
+    const nlohmann::json& index = got.body;
+
+    // From here the body is the seed's, so every refusal below is built here
+    // rather than handed on: relayed, a body such as `{"error":null}` would be
+    // a failure whose `error` a caller reads as success.
+    //
+    // An `error` member refuses the seed whatever else the body holds:
+    // `{"error":...}` is this module's failure shape, so such a body is more
+    // plausibly an error reply than a healthy index, and `setRemoteSeed`
+    // stores what this accepts.
+    if (index.is_object() && index.contains("error")) {
+        m_reachable = false;
+        const auto& said = index["error"];
+        const bool hasMessage =
+            said.is_string() && !said.get_ref<const std::string&>().empty();
+        return makeError(m_seedUrl + " answered /api/v1 with an error"
+                         + (hasMessage ? ": " + said.get<std::string>() : std::string{}));
+    }
 
     // Any JSON at all is not enough: a mistyped URL that lands on some other
-    // JSON API answers 200 too, and `setRemoteSeed` stores what this accepts.
-    // A Radicle seed index is an object carrying a string `apiVersion`.
+    // JSON API answers 200 too. A Radicle seed index is an object carrying a
+    // string `apiVersion`.
     if (!index.is_object() || !index.contains("apiVersion")
         || !index["apiVersion"].is_string()) {
         m_reachable = false;

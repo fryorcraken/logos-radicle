@@ -20,11 +20,15 @@ namespace radicle {
  *
  * **Keep this a value type.** `RadicleImpl::setRemoteSeed` copies the client
  * in force, probes the copy and only then moves it in, so that a refused seed
- * leaves the original untouched. That holds only while a copy shares nothing
- * mutable with its source beyond the stateless transport: a member such as a
- * shared response cache or an in-flight request handle would let the
- * candidate's probe reach the client in force, or would stop the copy
- * compiling far from the edit that broke it.
+ * leaves the original untouched. That holds only while the transport is the
+ * one thing a copy shares with its source. The transport may hold state of its
+ * own — a test's fake records every request in one log, which is how a test
+ * names the candidate's request — but it must not make the candidate's probe
+ * change what the client in force reports; production's default calls
+ * `httpGet`, which keeps nothing. Any other shared member, such as a response
+ * cache behind a pointer or an in-flight request handle, would let the
+ * candidate's probe reach the client in force, or would stop the copy compiling
+ * far from the edit that broke it.
  */
 class SeedClient {
 public:
@@ -51,10 +55,12 @@ public:
     /// Fetch `/api/v1` and cache apiVersion + nid. -> the index object.
     ///
     /// The seed answers only with a 2xx reply whose body is a JSON object
-    /// carrying a string `apiVersion`. Anything else — a transport error, any
-    /// other status, a body that is not JSON, JSON that is not an object, an
-    /// object with no string `apiVersion` — is `{"error":"..."}`, and leaves
-    /// `reachable()` false and `apiVersion()` / `nid()` empty.
+    /// carrying a string `apiVersion` and no `error` member. Anything else — a
+    /// transport error, any other status, a body that is not JSON, JSON that is
+    /// not an object, an object with no string `apiVersion`, an object with an
+    /// `error` member whatever else it holds — leaves `reachable()` false and
+    /// `apiVersion()` / `nid()` empty, and returns this client's own
+    /// `{"error":"<non-empty message>"}`, never the seed's body.
     nlohmann::json probe();
 
     nlohmann::json listRepos(const std::string& query, int64_t page, int64_t perPage);
@@ -95,7 +101,21 @@ public:
     std::string resolveSha(const std::string& rid, const std::string& ref);
 
 private:
-    /// GET `path` under /api/v1 and parse. Returns {"error":...} on failure.
+    /// What one GET under /api/v1 produced. `seedAnswered` says whose `body`
+    /// is: the seed's own parsed 2xx reply when true, this client's
+    /// `{"error":"<non-empty message>"}` when false. The two are otherwise the
+    /// same type, and a seed's body can carry an `error` key of its own, so
+    /// `isError(body)` alone cannot tell them apart.
+    struct Fetched {
+        bool seedAnswered = false;
+        nlohmann::json body;
+    };
+
+    /// GET `path` under /api/v1 and parse, saying whose the result is.
+    Fetched fetch(const std::string& path);
+
+    /// `fetch(path).body`: the seed's reply, or {"error":...} on failure. For
+    /// every caller that passes a seed's reply on rather than judging it.
     nlohmann::json getJson(const std::string& path);
 
     Transport m_transport;
