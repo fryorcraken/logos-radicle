@@ -101,6 +101,18 @@ public:
     /// re-renders from one reply and cannot show a stale view of the rest.
     nlohmann::json set(const std::string& key, const std::string& value);
 
+    /// The per-key rule `set()` applies to `value`, without storing anything.
+    ///
+    /// -> `{"error":"..."}` when `set(key, value)` would refuse the value, and
+    /// an empty object when the value's shape is acceptable. A key this store
+    /// does not know is not judged here; `set()` refuses it separately.
+    ///
+    /// Public so that a caller which must refuse exactly what `set()` refuses,
+    /// before it does anything else, asks the same function rather than keeping
+    /// a copy of the rule: `RadicleImpl::setRemoteSeed` checks a seed's shape
+    /// here before it spends a network round trip probing it.
+    static nlohmann::json validate(const std::string& key, const std::string& value);
+
     /// Whether `mode` names a mode this build can actually start.
     ///
     /// Kept as a function rather than a constant so the UI can ask rather than

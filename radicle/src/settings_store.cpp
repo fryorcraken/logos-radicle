@@ -350,6 +350,18 @@ nlohmann::json SettingsStore::set(const std::string& key, const std::string& val
     if (!settings.contains(key))
         return makeError("unknown setting '" + key + "'");
 
+    const auto refusal = validate(key, value);
+    if (isError(refusal)) return refusal;
+
+    settings[key] = value;
+    if (!save(settings))
+        return makeError("could not write settings to " + m_path);
+
+    return settings;
+}
+
+nlohmann::json SettingsStore::validate(const std::string& key, const std::string& value)
+{
     if (key == kKeyMode) {
         // Built from the constants rather than spelled out: this sentence
         // listed the old names verbatim, and a rename would have left it
@@ -397,11 +409,7 @@ nlohmann::json SettingsStore::set(const std::string& key, const std::string& val
         }
     }
 
-    settings[key] = value;
-    if (!save(settings))
-        return makeError("could not write settings to " + m_path);
-
-    return settings;
+    return nlohmann::json::object();
 }
 
 } // namespace radicle
