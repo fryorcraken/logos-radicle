@@ -503,6 +503,14 @@ Item {
 
     /// Source-routed backend call. `method` is the suffix after remote/local.
     ///
+    /// The module serves calls one at a time, in the order they arrive, so
+    /// every call waits behind whatever any view handed over before it. A
+    /// view that hands over many at once makes every later call, from every
+    /// view, wait for all of them; a sync once did, and a cancel could not
+    /// take them back. Keep a fan-out bounded where it is dispatched, as
+    /// SourceTab.syncMaxOutstanding does (the `sync-cancel` design's
+    /// Decisions).
+    ///
     /// The optional `source` argument overrides `root.source` for one call.
     /// No caller uses it today — the toggle moves every view at once, which is
     /// the point — but it is the seam for a future screen that wants to show
