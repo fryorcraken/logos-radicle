@@ -102,6 +102,14 @@ public:
     /// -> the full settings object on success, `{"error":"..."}` on refusal.
     /// Returning everything rather than just the changed key means a caller
     /// re-renders from one reply and cannot show a stale view of the rest.
+    ///
+    /// **Changes only the member `key` names.** Every other member of the file
+    /// keeps its JSON value, including ones this build cannot use, and nothing
+    /// is added; the body says why, and what happens to a file it cannot read.
+    /// A refusal writes nothing.
+    ///
+    /// The reply is NOT the file: it is the normalised view `all()` reports
+    /// next, the five keys with an uninterpretable mode as `explore`.
     nlohmann::json set(const std::string& key, const std::string& value);
 
     /// The per-key rule `set()` applies to `value`, without storing anything.
@@ -163,6 +171,19 @@ public:
     static bool isKnownMode(const std::string& mode);
 
 private:
+    /// The settings file's JSON object exactly as it is on disk, members this
+    /// build does not know included. An empty object when there is no path, no
+    /// file, a file that cannot be read, or one that does not parse as an
+    /// object.
+    nlohmann::json readStored() const;
+
+    /// What the store reports for `stored`: the five keys, a default for each
+    /// that `stored` does not hold as a string, and `explore` for a mode this
+    /// build does not know. Pure, so a reply can be derived from the object
+    /// just written rather than from a second read of the file.
+    static nlohmann::json normalised(const nlohmann::json& stored);
+
+    /// `normalised(readStored())`: what every read reports.
     nlohmann::json load() const;
     bool save(const nlohmann::json& settings) const;
 

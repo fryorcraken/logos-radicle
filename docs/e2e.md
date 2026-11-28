@@ -390,7 +390,7 @@ spec that creates an identity must not be run from a shell that exports it.
 ## The app starts in Explore, and every spec depends on that
 
 A run under sitometres has a throwaway `$HOME` and therefore no settings file,
-so what the app opens in is `SettingsStore::load()`'s **default mode**. That
+so what the app opens in is `SettingsStore::normalised()`'s **default mode**. That
 default is `explore`, and the reason is the one this layer proves: `explore` is
 the only mode that can show anything without a local profile, which is exactly
 what a throwaway `$HOME` — and a first-run user — has.

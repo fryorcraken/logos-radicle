@@ -321,6 +321,26 @@ std::string settingsCarryingSeed(const std::string& name, const std::string& see
     return path;
 }
 
+/// A settings file at a fresh path holding exactly `contents`, written by hand
+/// rather than through the store: the tests that use it start from a file this
+/// module would never write, one a newer build or a hand edit leaves.
+std::string settingsHolding(const std::string& name, const std::string& contents)
+{
+    const auto path = freshSettingsPath(name);
+    std::ofstream(path, std::ios::trunc) << contents;
+    return path;
+}
+
+/// The settings file at `path` as JSON, parsed here rather than asked of the
+/// store, so an assertion about the file does not take the module's word for
+/// what it wrote. A file that does not parse is a discarded value, which equals
+/// no object an assertion names.
+nlohmann::json settingsOnDisk(const std::string& path)
+{
+    std::ifstream in(path);
+    return nlohmann::json::parse(in, nullptr, false);
+}
+
 /// The `/api/v1` index a seed answers its probe with.
 constexpr const char* kSeedIndex = R"({"apiVersion":"6.2.0","nid":"z6MkNew"})";
 
@@ -617,6 +637,27 @@ LOGOS_TEST(the_later_of_two_accepted_seeds_is_the_one_stored)
     auto restarted = makeRadicleImpl(SeedClient{}, LocalStore{}, SettingsStore{path});
     LOGOS_ASSERT_EQ(parse(restarted.getCapabilities())["remoteSeed"].get<std::string>(),
                     std::string("https://second.example.test"));
+}
+
+/// "A seed stored by setRemoteSeed keeps the file's other members": the seed
+/// picker is the everyday control that made a whole-file rewrite reachable,
+/// so its write is pinned here as well as `setSetting`'s in the store tests.
+/// Fails against a `set()` that saves the normalised view: the file would say
+/// `explore`, lose `futureKey`, and gain three empty defaults.
+LOGOS_TEST(a_seed_stored_by_set_remote_seed_keeps_the_files_other_members)
+{
+    const auto path = settingsHolding(
+        "seed-keeps-members",
+        R"({"mode":"turbo","remoteSeed":"https://kept.example.test","futureKey":"x"})");
+
+    FakeSeed fake;
+    fake.replies["/api/v1"] = kSeedIndex;
+    auto impl = makeRadicleImpl(fakeSeedClient(fake), LocalStore{}, SettingsStore{path});
+
+    LOGOS_ASSERT_FALSE(parse(impl.setRemoteSeed("https://chosen.example.test")).contains("error"));
+
+    LOGOS_ASSERT_EQ(settingsOnDisk(path), nlohmann::json::parse(
+        R"({"mode":"turbo","remoteSeed":"https://chosen.example.test","futureKey":"x"})"));
 }
 
 /// "An accepted seed is reported as its normalised URL": exactly one
@@ -1248,7 +1289,7 @@ LOGOS_TEST(get_settings_reports_defaults_when_nothing_has_been_persisted)
 
     // `explore` — the first-run default, because a fresh install may have no
     // Radicle home and `local` there can show nothing at all. See
-    // SettingsStore::load() for the whole argument.
+    // SettingsStore::normalised() for the whole argument.
     const auto out = parse(impl.getSettings());
     LOGOS_ASSERT_EQ(out["mode"].get<std::string>(), std::string("explore"));
     LOGOS_ASSERT_TRUE(out["gitPath"].get<std::string>().empty());
@@ -1335,6 +1376,33 @@ LOGOS_TEST(a_setting_written_through_the_module_is_readable_through_it)
 
     const auto read = parse(impl.getSettings());
     LOGOS_ASSERT_EQ(read["mode"].get<std::string>(), std::string("local"));
+}
+
+/// "A settings write replies with the settings as read, not the file as
+/// stored", across the module boundary: the reply a view re-renders from is
+/// what `getSettings` then reports, while the file keeps the members this
+/// build cannot interpret.
+LOGOS_TEST(a_settings_write_replies_with_what_get_settings_reports_not_the_file)
+{
+    ScopedRadHome home("settings-reply-normalised");
+    const auto path = settingsHolding(
+        "reply-normalised",
+        R"({"mode":"turbo","remoteSeed":"https://a.example","futureKey":"x"})");
+    auto impl = makeRadicleImpl(SeedClient{}, LocalStore{}, SettingsStore{path});
+
+    const auto reply = parse(impl.setSetting("radHome", "/home/u/.radicle"));
+
+    LOGOS_ASSERT_FALSE(reply.contains("error"));
+    LOGOS_ASSERT_EQ(reply.size(), size_t(5));
+    LOGOS_ASSERT_FALSE(reply.contains("futureKey"));
+    LOGOS_ASSERT_EQ(reply["mode"].get<std::string>(), std::string("explore"));
+    LOGOS_ASSERT_EQ(reply["remoteSeed"].get<std::string>(), std::string("https://a.example"));
+    LOGOS_ASSERT_EQ(reply["radHome"].get<std::string>(), std::string("/home/u/.radicle"));
+    LOGOS_ASSERT_EQ(reply, parse(impl.getSettings()));
+
+    const auto disk = settingsOnDisk(path);
+    LOGOS_ASSERT_EQ(disk["mode"].get<std::string>(), std::string("turbo"));
+    LOGOS_ASSERT_EQ(disk["futureKey"].get<std::string>(), std::string("x"));
 }
 
 LOGOS_TEST(set_setting_refuses_an_unknown_key_through_the_module_boundary)
@@ -2076,7 +2144,7 @@ LOGOS_TEST(a_persisted_mode_this_build_does_not_know_does_not_alias_the_local_pr
     // The unknown value never reaches a consumer. It resolves to Explore — the
     // one mode that touches no local profile — rather than to the `local`
     // default, because a file this build cannot interpret is no basis for
-    // claiming a node identity. See SettingsStore::load().
+    // claiming a node identity. See SettingsStore::normalised().
     LOGOS_ASSERT_EQ(caps["mode"].get<std::string>(), std::string("explore"));
     // And no profile leaks through, which is the property that matters: home,
     // availability and write access are all as if no node existed.
@@ -2687,7 +2755,10 @@ LOGOS_TEST(embedded_mode_reads_and_writes_its_own_home_and_leaves_the_local_one_
     LOGOS_ASSERT_TRUE(parse(impl.createEmbeddedIdentity("tester", ""))["created"].get<bool>());
 
     const auto written = parse(impl.setNodeConfig(R"({"alias":"embedded-renamed"})"));
-    LOGOS_ASSERT_FALSE(written.contains("error"));
+    // Compared as a string rather than as `contains("error")`, so that a failure
+    // prints the error it carries instead of a bare "assertion failed", which
+    // cannot tell the sandbox's too-long socket path from a real defect.
+    LOGOS_ASSERT_EQ(written.value("error", std::string{}), std::string{});
     LOGOS_ASSERT_TRUE(written["alias"] == nlohmann::json("embedded-renamed"));
 
     // The file under the EMBEDDED home carries the new alias.

@@ -9,8 +9,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <sys/stat.h>
+#include <unistd.h>
 
 using namespace radicle;
 
@@ -39,7 +41,87 @@ struct ScratchSettings {
         std::ofstream out(path(), std::ios::trunc);
         out << contents;
     }
+
+    /// No file at `path()`. The directory is named per test and nothing cleans
+    /// it, so a test that asserts what a first write creates must not inherit
+    /// the file an earlier run left.
+    void remove() const { std::remove(path().c_str()); }
+
+    /// The file's raw text, so a test can compare it byte for byte.
+    std::string contents() const
+    {
+        std::ifstream in(path());
+        std::stringstream buffer;
+        buffer << in.rdbuf();
+        return buffer.str();
+    }
+
+    /// The file as JSON, parsed here rather than through the store: an
+    /// assertion about what is on disk must not ask the code under test what
+    /// it wrote. A file that does not parse comes back as a discarded value,
+    /// which equals no object an assertion names.
+    nlohmann::json onDisk() const
+    {
+        return nlohmann::json::parse(contents(), nullptr, false);
+    }
 };
+
+/// An array nested `depth` deep, written as text: `[` that many times, then
+/// `]` that many times. Text rather than a built `nlohmann::json`, so a test
+/// states the file's depth without asking the library to construct it.
+std::string nestedArray(size_t depth)
+{
+    return std::string(depth, '[') + std::string(depth, ']');
+}
+
+/// An object nested `depth` deep (`depth` >= 1), as text: `{"a":{"a":{}}}` is
+/// depth 3. Its innermost level is `{}`.
+std::string nestedObject(size_t depth)
+{
+    std::string text;
+    for (size_t level = 1; level < depth; ++level) text += R"({"a":)";
+    return text + "{}" + std::string(depth - 1, '}');
+}
+
+/// Arrays and objects alternating, `depth` levels (`depth` >= 1), outermost an
+/// array and innermost an array: `[{"a":[]}]` is depth 3.
+std::string nestedMixed(size_t depth)
+{
+    std::string open;
+    std::string close;
+    for (size_t level = 1; level < depth; ++level) {
+        const bool array = level % 2 == 1;
+        open += array ? "[" : R"({"a":)";
+        close = (array ? "]" : "}") + close;
+    }
+    return open + "[]" + close;
+}
+
+/// The file after one `radHome` write over `{"mode":"turbo","deep":<member>}`,
+/// parsed here rather than through the store. A write that is refused comes
+/// back as a discarded value, which equals no object a test names.
+nlohmann::json fileAfterWriteOver(const std::string& name, const std::string& member)
+{
+    ScratchSettings s(name);
+    s.write(R"({"mode":"turbo","deep":)" + member + "}");
+    SettingsStore store{s.path()};
+    if (isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")))
+        return nlohmann::json(nlohmann::json::value_t::discarded);
+    return s.onDisk();
+}
+
+/// What a write over a file holding `member` as `deep` must leave: `deep`
+/// still there, or dropped, beside the mode it kept and the key it wrote.
+nlohmann::json keptWith(const std::string& member)
+{
+    return nlohmann::json::parse(
+        R"({"mode":"turbo","deep":)" + member + R"(,"radHome":"/home/u/.radicle"})");
+}
+
+nlohmann::json droppedMember()
+{
+    return nlohmann::json::parse(R"({"mode":"turbo","radHome":"/home/u/.radicle"})");
+}
 
 } // namespace
 
@@ -382,6 +464,359 @@ LOGOS_TEST(the_store_reports_exactly_five_keys_before_and_after_each_write)
     LOGOS_ASSERT_EQ(store.all().size(), size_t(5));
 }
 
+// ---------------------------------------------------------------------------
+// What a write does to the file. "A settings write changes only the key it
+// names": every assertion below is about the file ON DISK, parsed by the test
+// itself, because the store's reply is the normalised view and would hide
+// exactly what these tests are about. Each test writes its starting file by
+// hand, so nothing an earlier run left in the directory can stand in for it.
+//
+// The mutation these exist for is the shape `set()` had before this change:
+// `auto settings = load(); settings[key] = value; save(settings);`, which saves
+// the normalised view: the unknown mode is saved as `explore`, the unknown and
+// non-string members are dropped or defaulted, and the defaults the file never
+// held are added. The refused-write test is the exception, and guards a
+// different mutation: a save that runs before a refusal returns, which the old
+// shape did not do either. Which tests went red under the old shape is in
+// `design.md`, Decision 7, measured there; it is not repeated here, where it
+// would go stale the next time a test is added.
+// ---------------------------------------------------------------------------
+
+LOGOS_TEST(a_write_of_one_key_keeps_an_unknown_mode_and_an_unknown_key)
+{
+    // The file a newer build, or a hand edit, leaves: a mode this build cannot
+    // interpret and a key it does not know, beside a seed it does.
+    ScratchSettings s("write-keeps-unknown");
+    s.write(R"({"mode":"turbo","remoteSeed":"https://a.example","futureKey":"x"})");
+    SettingsStore store{s.path()};
+
+    // A key the file does not hold, so the write is "unrelated" to every member
+    // it must keep.
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"turbo","remoteSeed":"https://a.example","futureKey":"x",)"
+        R"("radHome":"/home/u/.radicle"})"));
+}
+
+LOGOS_TEST(a_write_keeps_a_known_key_whose_value_is_not_a_string)
+{
+    // Two non-string values of two different JSON types. `load()` defaults
+    // both to "", so a write that saved the normalised view would write
+    // `"radSocket":""` and `"gitPath":""` here.
+    ScratchSettings s("write-keeps-non-string");
+    s.write(R"({"mode":"local","radSocket":5,"gitPath":null})");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRemoteSeed, "https://b.example")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"local","radSocket":5,"gitPath":null,"remoteSeed":"https://b.example"})"));
+}
+
+LOGOS_TEST(writing_the_key_that_held_an_uninterpretable_value_replaces_only_that_value)
+{
+    // The other half of "keeps what it did not name": the member it DOES name
+    // is replaced, even when it held a value this build cannot read. A write
+    // that kept every existing member verbatim, its own included, would leave
+    // `turbo` here.
+    ScratchSettings s("write-replaces-named");
+    s.write(R"({"mode":"turbo","futureKey":"x"})");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal)));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"mode":"local","futureKey":"x"})"));
+}
+
+LOGOS_TEST(a_refused_write_leaves_the_file_as_it_was)
+{
+    // Compared byte for byte, not only as JSON: the file is written with
+    // spacing this module would never produce, so a refused write that
+    // rewrote it with the same members would still show here.
+    const std::string original = "{ \"mode\" : \"turbo\",  \"futureKey\" : \"x\" }";
+    ScratchSettings s("write-refused");
+    s.write(original);
+    SettingsStore store{s.path()};
+
+    // Refused by validation: `remote` is a word of this module's vocabulary but
+    // not a mode.
+    LOGOS_ASSERT_TRUE(isError(store.set(SettingsStore::kKeyMode, "remote")));
+    LOGOS_ASSERT_EQ(s.contents(), original);
+
+    // Refused as a key the store does not know.
+    LOGOS_ASSERT_TRUE(isError(store.set("noSuchSetting", "y")));
+    LOGOS_ASSERT_EQ(s.contents(), original);
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"mode":"turbo","futureKey":"x"})"));
+}
+
+LOGOS_TEST(the_reply_is_the_normalised_view_while_the_file_keeps_its_members)
+{
+    ScratchSettings s("write-reply-normalised");
+    s.write(R"({"mode":"turbo","remoteSeed":"https://a.example","futureKey":"x"})");
+    SettingsStore store{s.path()};
+
+    const auto reply = store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle");
+
+    LOGOS_ASSERT_FALSE(isError(reply));
+    // Exactly the five keys: `futureKey` is the file's, not the reply's.
+    LOGOS_ASSERT_EQ(reply.size(), size_t(5));
+    LOGOS_ASSERT_FALSE(reply.contains("futureKey"));
+    // `turbo` is reported as explore, as every read reports it.
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyMode].get<std::string>(),
+                    std::string(SettingsStore::kModeExplore));
+    // Values that came from the file and from this write, so a reply built
+    // from defaults alone, or from the file before the write, fails here.
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyRemoteSeed].get<std::string>(),
+                    std::string("https://a.example"));
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyRadHome].get<std::string>(),
+                    std::string("/home/u/.radicle"));
+    // What the next read reports, which is what getSettings dumps.
+    LOGOS_ASSERT_EQ(reply, store.all());
+
+    // And the file differs from the reply in exactly those members.
+    const auto disk = s.onDisk();
+    LOGOS_ASSERT_EQ(disk[SettingsStore::kKeyMode].get<std::string>(), std::string("turbo"));
+    LOGOS_ASSERT_EQ(disk["futureKey"].get<std::string>(), std::string("x"));
+}
+
+LOGOS_TEST(a_write_over_a_file_that_is_not_json_replaces_it_with_only_the_key_written)
+{
+    ScratchSettings s("write-over-not-json");
+    s.write("{ this is not json at all");
+    SettingsStore store{s.path()};
+
+    const auto reply = store.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
+
+    // The file's state is no reason to refuse: the write is the user's way out
+    // of a file this build cannot read.
+    LOGOS_ASSERT_FALSE(isError(reply));
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyMode].get<std::string>(),
+                    std::string(SettingsStore::kModeLocal));
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"mode":"local"})"));
+}
+
+LOGOS_TEST(a_write_over_json_that_is_not_an_object_replaces_it_with_only_the_key_written)
+{
+    // Valid JSON naming a mode, so a write that tried to carry an array's
+    // contents forward, or refused a file that parsed, is told apart.
+    ScratchSettings s("write-over-array");
+    s.write(R"(["mode","turbo"])");
+    SettingsStore store{s.path()};
+
+    const auto reply = store.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
+
+    LOGOS_ASSERT_FALSE(isError(reply));
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"mode":"local"})"));
+}
+
+LOGOS_TEST(a_write_over_a_file_that_exists_but_cannot_be_opened_replaces_it)
+{
+    // "Cannot be read", as distinct from absent and from not-JSON. A symlink
+    // that points at itself is the one such file whose state does not depend on
+    // who runs the suite: a mode-000 file is still readable by root, so a test
+    // built on it would pass or fail with the user. `open(2)` on it fails with
+    // ELOOP, so the store reads nothing; `rename(2)` replaces the link itself
+    // rather than following it, so the write has somewhere to land.
+    ScratchSettings s("write-over-unopenable");
+    s.remove();
+    LOGOS_ASSERT_EQ(::symlink(s.path().c_str(), s.path().c_str()), 0);
+    // The precondition, checked: were the file openable this test would be
+    // about a different branch of the reader.
+    LOGOS_ASSERT_FALSE(std::ifstream(s.path()).good());
+    SettingsStore store{s.path()};
+
+    // A non-default value, so the reply cannot be mistaken for the defaults.
+    const auto reply = store.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
+
+    // The file's state is no reason to refuse.
+    LOGOS_ASSERT_FALSE(isError(reply));
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyMode].get<std::string>(),
+                    std::string(SettingsStore::kModeLocal));
+    // Parsed through the same path, which only succeeds once the link is gone.
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"mode":"local"})"));
+}
+
+LOGOS_TEST(the_file_layout_does_not_change_what_a_write_keeps)
+{
+    // "The file's layout does not change what a write keeps". The starting file
+    // is laid out the way the module never writes it: a newline after `{` and
+    // after each `,`, a tab before each member, a space either side of each `:`,
+    // and a number spelled in exponent form. Several lines, so a reader that
+    // looked at the first line only, or a write that spliced text into the
+    // file, would lose or mangle a member here and not in the one-line files
+    // above.
+    ScratchSettings s("write-layout");
+    s.write("{\n\t\"futureKey\" : 1.5e3,\n\t\"mode\" : \"turbo\"}");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    // `1.5e3` is the file's spelling; the requirement is on the value, which
+    // equals 1500 however the writer spells it.
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"futureKey":1.5e3,"mode":"turbo","radHome":"/home/u/.radicle"})"));
+}
+
+LOGOS_TEST(a_member_the_file_names_twice_is_kept_once_with_its_last_value)
+{
+    // `futureKey` is not the key written, and its two values differ, so a write
+    // that kept the first, or both, is told apart from one that kept the last.
+    ScratchSettings s("write-duplicate");
+    s.write(R"({"futureKey":"a","mode":"turbo","futureKey":"b"})");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"turbo","futureKey":"b","radHome":"/home/u/.radicle"})"));
+
+    // The text, not the parse: a parse that takes the last value cannot see a
+    // file that still names the member twice, which is what a write that edits
+    // the file's text in place would leave.
+    const std::string text = s.contents();
+    size_t count = 0;
+    for (size_t at = text.find("\"futureKey\""); at != std::string::npos;
+         at = text.find("\"futureKey\"", at + 1))
+        ++count;
+    LOGOS_ASSERT_EQ(count, size_t(1));
+}
+
+LOGOS_TEST(the_first_write_creates_a_file_holding_only_that_key)
+{
+    // No defaults written out for keys the file never held: an empty
+    // `radHome` on disk is indistinguishable from one the user chose to
+    // clear, and a later build's default would then never reach this user.
+    ScratchSettings s("write-first");
+    s.remove();
+    LOGOS_ASSERT_FALSE(std::ifstream(s.path()).good());
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRemoteSeed, "https://a.example")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(R"({"remoteSeed":"https://a.example"})"));
+    LOGOS_ASSERT_EQ(store.get(SettingsStore::kKeyMode), std::string(SettingsStore::kModeExplore));
+}
+
+// ---------------------------------------------------------------------------
+// "A settings write drops a member nested too deep to keep". The cap is 128:
+// the two tests either side of it are what pin the number, since a cap of 127
+// fails the first and a cap of 129 the second. The 100000-deep one is the
+// crash: a write that serialised such a member recursively overflowed the
+// stack and took the host process with it.
+// ---------------------------------------------------------------------------
+
+LOGOS_TEST(a_member_exactly_128_deep_is_kept)
+{
+    const std::string deep = nestedArray(128);
+    ScratchSettings s("write-deep-128");
+    s.write(R"({"mode":"turbo","deep":)" + deep + "}");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"turbo","deep":)" + deep + R"(,"radHome":"/home/u/.radicle"})"));
+}
+
+LOGOS_TEST(a_member_129_deep_is_dropped_and_the_rest_kept)
+{
+    // `turbo` beside it, so a write that answered a too-deep member by
+    // treating the whole file as unreadable, and kept only the key written,
+    // is told apart from one that drops that member alone.
+    ScratchSettings s("write-deep-129");
+    s.write(R"({"mode":"turbo","deep":)" + nestedArray(129) + "}");
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"turbo","radHome":"/home/u/.radicle"})"));
+}
+
+// NO SPEC: the spec leaves the file's whitespace open. This pins that a kept
+// nested member is written compactly, so the file a write leaves grows with
+// what it holds and not with how deep that nests. Indented, every level is a
+// line of its own indented by its depth, so the text grows with the square of
+// the depth.
+LOGOS_TEST(a_kept_nested_member_does_not_grow_the_file_with_its_depth)
+{
+    const std::string original = R"({"mode":"turbo","deep":)" + nestedArray(128) + "}";
+    ScratchSettings s("write-deep-size");
+    s.write(original);
+    SettingsStore store{s.path()};
+
+    LOGOS_ASSERT_FALSE(isError(store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle")));
+
+    // The member is still there, so the size below is not small for want of it.
+    LOGOS_ASSERT_TRUE(s.onDisk().contains("deep"));
+
+    // The file gains one member, `"radHome": "/home/u/.radicle"`, and a line
+    // break and two spaces of indent for each member it now lays out on its
+    // own line: well under 100 bytes. A bound of twice the original, which is
+    // what this was, let a write that adds a line break per level through.
+    // 100 is hardcoded from the one member added, not taken from what the
+    // writer produced.
+    LOGOS_ASSERT_TRUE(s.contents().size() <= original.size() + 100);
+}
+
+// "Of the members other than the one written, ... every one of depth 128 or
+// less" and "the number of arrays and objects on its deepest path, counting the
+// value itself when it is one". The 128 and 129 tests above use arrays only, so
+// a depth that counted arrays and not objects, or followed the first child and
+// not the deepest, would pass them; each shape below is one such mutation.
+
+LOGOS_TEST(a_member_of_nested_objects_counts_its_objects_toward_its_depth)
+{
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-objects-128", nestedObject(128)),
+                    keptWith(nestedObject(128)));
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-objects-129", nestedObject(129)),
+                    droppedMember());
+}
+
+LOGOS_TEST(a_member_alternating_arrays_and_objects_counts_both_toward_its_depth)
+{
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-mixed-128", nestedMixed(128)),
+                    keptWith(nestedMixed(128)));
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-mixed-129", nestedMixed(129)),
+                    droppedMember());
+}
+
+LOGOS_TEST(a_member_is_as_deep_as_its_deepest_path_wherever_that_path_sits)
+{
+    // Depth 129 by the second child, then by the first: a walk that followed
+    // only one end of an array would keep one of them.
+    const std::string deepSecond = "[[]," + nestedArray(128) + "]";
+    const std::string deepFirst = "[" + nestedArray(128) + ",[]]";
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-second", deepSecond), droppedMember());
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-first", deepFirst), droppedMember());
+}
+
+LOGOS_TEST(a_member_with_two_branches_is_as_deep_as_one_of_them_not_both)
+{
+    // Two branches of 127 under one array: depth 128, kept. A depth that added
+    // the branches, or counted every level it visited, would reach 255.
+    const std::string branches = "[" + nestedArray(127) + "," + nestedArray(127) + "]";
+    LOGOS_ASSERT_EQ(fileAfterWriteOver("write-deep-branches", branches), keptWith(branches));
+}
+
+LOGOS_TEST(a_member_nested_far_deeper_still_lets_the_write_complete)
+{
+    // Last of the depth tests on purpose: before the cap, this one ended the
+    // test binary with a stack overflow, and the ones above still reported.
+    ScratchSettings s("write-deep-100000");
+    s.write(R"({"mode":"turbo","deep":)" + nestedArray(100000) + "}");
+    SettingsStore store{s.path()};
+
+    const auto reply = store.set(SettingsStore::kKeyRadHome, "/home/u/.radicle");
+
+    LOGOS_ASSERT_FALSE(isError(reply));
+    LOGOS_ASSERT_EQ(reply[SettingsStore::kKeyRadHome].get<std::string>(),
+                    std::string("/home/u/.radicle"));
+    LOGOS_ASSERT_EQ(s.onDisk(), nlohmann::json::parse(
+        R"({"mode":"turbo","radHome":"/home/u/.radicle"})"));
+}
+
 LOGOS_TEST(all_three_modes_are_accepted)
 {
     ScratchSettings s("modes");
@@ -666,17 +1101,32 @@ LOGOS_TEST(a_store_with_no_path_still_reports_defaults_rather_than_failing)
                     std::string(SettingsStore::kModeExplore));
 }
 
-// NO SPEC: the spec requires a store with no path to refuse every write, and
-// is silent on what the refusal says. This pins that it names the cause, the
-// two variables `settingsPathFor` reads, rather than "could not write settings
-// to " followed by an empty path, a sentence that ends on nothing a user can
-// act on. `setRemoteSeed` passes this message on.
+// "A store with no path reports defaults and refuses to write": the refusal
+// names both variables `settingsPathFor` reads, rather than "could not write
+// settings to " followed by an empty path, a sentence that ends on nothing a
+// user can act on. `setRemoteSeed` passes this message on.
 LOGOS_TEST(a_store_with_no_path_says_why_it_cannot_write)
 {
     const auto result = SettingsStore{""}.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
     LOGOS_ASSERT_TRUE(isError(result));
-    const auto message = result["error"].get<std::string>();
+    auto message = result["error"].get<std::string>();
     LOGOS_ASSERT_CONTAINS(message, "XDG_DATA_HOME");
+
+    // `HOME` is a substring of `XDG_DATA_HOME`, so naming only the latter would
+    // satisfy a plain search for the former. Remove every occurrence of the
+    // longer name first; what is left must still name `HOME` on its own.
+    const std::string longer = "XDG_DATA_HOME";
+    for (auto at = message.find(longer); at != std::string::npos; at = message.find(longer))
+        message.erase(at, longer.size());
     LOGOS_ASSERT_CONTAINS(message, "HOME");
-    LOGOS_ASSERT_TRUE(message.back() != ' ');
+}
+
+// NO SPEC: the spec requires the refusal to name the two variables and says
+// nothing about how the sentence ends. This pins that it does not end on a
+// space, the shape of "could not write settings to " with nothing after it.
+LOGOS_TEST(the_refusal_of_a_store_with_no_path_does_not_end_on_a_space)
+{
+    const auto result = SettingsStore{""}.set(SettingsStore::kKeyMode, SettingsStore::kModeLocal);
+    LOGOS_ASSERT_TRUE(isError(result));
+    LOGOS_ASSERT_TRUE(result["error"].get<std::string>().back() != ' ');
 }
